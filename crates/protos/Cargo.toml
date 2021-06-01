@@ -1,0 +1,11 @@
+[package]
+name = "containerd-protos"
+version = "0.1.0"
+authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+protobuf = "2.23.0"
+
+[build-dependencies]
+ttrpc-codegen = "0.2"
