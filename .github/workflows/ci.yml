@@ -1,0 +1,21 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, macos-10.15]
+
+    steps:
+      - uses: actions/checkout@v2
+      - run: rustup update stable
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --all -- --check --files-with-diff
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo check
+      - run: cargo test --all-features
