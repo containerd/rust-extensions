@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::prelude::*;
 use std::path::Path;
 use ttrpc_codegen::{Codegen, ProtobufCustomize};
 
@@ -22,8 +23,16 @@ fn main() {
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
+            "vendor/google/protobuf/empty.proto",
         ],
     );
+
+    // TODO: shim_ttrpc is not included in mod.rs, file a bug upstream.
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open("src/shim/mod.rs")
+        .unwrap();
+    writeln!(f, "pub mod shim_ttrpc;").unwrap();
 }
 
 fn codegen(path: impl AsRef<Path>, inputs: impl IntoIterator<Item = impl AsRef<Path>>) {

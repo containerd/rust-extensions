@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 protobuf = "2.23.0"
+ttrpc = "0.5.1"
 
 [build-dependencies]
 ttrpc-codegen = "0.2"

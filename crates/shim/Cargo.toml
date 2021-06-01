@@ -5,3 +5,4 @@ authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+containerd-protos = { path = "../protos" }
