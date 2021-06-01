@@ -9,9 +9,14 @@ use std::sync::Arc;
 use thiserror::Error;
 
 mod args;
+mod logger;
 
 pub use containerd_protos as protos;
 pub use containerd_protos::shim::shim_ttrpc::Task;
+
+pub use containerd_protos::shim::shim as api;
+pub use containerd_protos::ttrpc;
+pub use containerd_protos::ttrpc::TtrpcContext as Context;
 
 #[derive(Debug, Default)]
 pub struct StartOpts {
@@ -73,6 +78,8 @@ where
             Ok(())
         }
         _ => {
+            logger::init(flags.debug)?;
+
             let task_service = create_task(Arc::new(Box::new(shim)));
 
             let host = format!("unix://{}", flags.socket);
@@ -95,6 +102,8 @@ pub enum Error {
     Ttrpc(#[from] containerd_protos::ttrpc::Error),
     #[error("Protobuf error")]
     Protobuf(#[from] containerd_protos::protobuf::error::ProtobufError),
+    #[error("Failed to setup logger")]
+    Logger(#[from] logger::Error),
     #[error("IO error")]
     Io(#[from] io::Error),
     #[error("Env error")]

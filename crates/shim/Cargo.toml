@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 go-flag = "0.1.0"
 thiserror = "1.0"
+log = { version = "0.4", features = ["std"] }
 
 containerd-protos = { path = "../protos" }
