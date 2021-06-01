@@ -1,5 +1,5 @@
 use containerd_protos::protobuf::Message;
-use containerd_protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task, shim_ttrpc::Task};
+use containerd_protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
 use containerd_protos::ttrpc::Server;
 use std::env;
 use std::error;
@@ -11,6 +11,7 @@ use thiserror::Error;
 mod args;
 
 pub use containerd_protos as protos;
+pub use containerd_protos::shim::shim_ttrpc::Task;
 
 #[derive(Debug, Default)]
 pub struct StartOpts {
