@@ -10,6 +10,7 @@ use thiserror::Error;
 
 mod args;
 mod logger;
+mod reap;
 
 pub use containerd_protos as protos;
 pub use containerd_protos::shim::shim_ttrpc::Task;
@@ -17,6 +18,15 @@ pub use containerd_protos::shim::shim_ttrpc::Task;
 pub use containerd_protos::shim::shim as api;
 pub use containerd_protos::ttrpc;
 pub use containerd_protos::ttrpc::TtrpcContext as Context;
+
+/// Config of shim binary options provided by shim implementations
+#[derive(Debug, Default)]
+pub struct Config {
+    /// Disables automatic configuration of logrus to use the shim FIFO
+    pub no_setup_logger: bool,
+    /// Disables setting the shim as a child subreaper.
+    pub no_sub_reaper: bool,
+}
 
 #[derive(Debug, Default)]
 pub struct StartOpts {
@@ -27,7 +37,7 @@ pub struct StartOpts {
 }
 
 pub trait Shim: Task {
-    fn new(id: &str, namespace: &str) -> Self;
+    fn new(id: &str, namespace: &str, config: &mut Config) -> Self;
 
     fn start_shim(&mut self, opts: StartOpts) -> Result<String, Box<dyn error::Error>>;
     fn cleanup(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>>;
@@ -47,12 +57,19 @@ fn bootstrap<T>(id: &str) -> Result<(), Error>
 where
     T: Shim + Send + Sync + 'static,
 {
+    // Parse command line
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
 
     let ttrpc_address = env::var("TTRPC_ADDRESS")?;
 
-    let mut shim = T::new(id, &flags.namespace);
+    // Create shim instance
+    let mut config = Config::default();
+    let mut shim = T::new(id, &flags.namespace, &mut config);
+
+    if !config.no_sub_reaper {
+        reap::set_subreaper()?;
+    }
 
     match flags.action.as_str() {
         "start" => {
@@ -78,7 +95,9 @@ where
             Ok(())
         }
         _ => {
-            logger::init(flags.debug)?;
+            if !config.no_setup_logger {
+                logger::init(flags.debug)?;
+            }
 
             let task_service = create_task(Arc::new(Box::new(shim)));
 

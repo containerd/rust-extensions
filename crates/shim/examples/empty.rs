@@ -6,7 +6,7 @@ use std::error::Error;
 struct Service;
 
 impl shim::Shim for Service {
-    fn new(_id: &str, _namespace: &str) -> Self {
+    fn new(_id: &str, _namespace: &str, _config: &mut shim::Config) -> Self {
         todo!()
     }
 
