@@ -1,11 +1,14 @@
-use containerd_protos::protobuf::Message;
-use containerd_protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
-use containerd_protos::ttrpc::Server;
 use std::env;
 use std::error;
 use std::io::{self, Write};
-use std::process;
+use std::process::{self, Command, Stdio};
 use std::sync::Arc;
+use std::thread;
+use std::time;
+
+use containerd_protos::protobuf::Message;
+use containerd_protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
+use containerd_protos::ttrpc::Server;
 use thiserror::Error;
 
 mod args;
@@ -13,11 +16,13 @@ mod logger;
 mod reap;
 
 pub use containerd_protos as protos;
-pub use containerd_protos::shim::shim_ttrpc::Task;
-
 pub use containerd_protos::shim::shim as api;
+pub use containerd_protos::shim::shim_ttrpc::Task;
 pub use containerd_protos::ttrpc;
 pub use containerd_protos::ttrpc::TtrpcContext as Context;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+use std::path::PathBuf;
 
 /// Config of shim binary options provided by shim implementations
 #[derive(Debug, Default)]
@@ -30,17 +35,32 @@ pub struct Config {
 
 #[derive(Debug, Default)]
 pub struct StartOpts {
+    /// ID of the container.
     pub id: String,
-    pub containerd_binary: String,
+    /// Binary path to publish events back to containerd.
+    pub publish_binary: String,
+    /// Address of the containerd's main socket.
     pub address: String,
+    /// TTRPC socket address.
     pub ttrpc_address: String,
+    /// Namespace for the container.
+    pub namespace: String,
 }
 
+/// Shim interface that must be implemented by clients.
 pub trait Shim: Task {
     fn new(id: &str, namespace: &str, config: &mut Config) -> Self;
 
-    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Box<dyn error::Error>>;
-    fn cleanup(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>>;
+    /// Launch new shim.
+    /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
+    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Box<dyn error::Error>> {
+        let address = spawn(opts)?;
+        Ok(address)
+    }
+
+    fn cleanup(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>> {
+        Ok(DeleteResponse::default())
+    }
 }
 
 pub fn run<T>(id: &str)
@@ -75,9 +95,10 @@ where
         "start" => {
             let args = StartOpts {
                 id: id.into(),
-                containerd_binary: flags.publish_binary,
+                publish_binary: flags.publish_binary,
                 address: flags.address,
                 ttrpc_address,
+                namespace: flags.namespace,
             };
 
             let address = shim.start_shim(args).map_err(Error::Start)?;
@@ -100,9 +121,9 @@ where
             }
 
             let task_service = create_task(Arc::new(Box::new(shim)));
-
-            let host = format!("unix://{}", flags.socket);
-            let mut server = Server::new().bind(&host)?.register_service(task_service);
+            let mut server = Server::new()
+                .bind(&flags.socket)?
+                .register_service(task_service);
 
             server.start()?;
 
@@ -131,4 +152,48 @@ pub enum Error {
     Start(Box<dyn error::Error>),
     #[error("Shim cleanup failed")]
     Cleanup(Box<dyn error::Error>),
+}
+
+const SOCKET_ROOT: &str = "/run/containerd";
+
+pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
+    let path = PathBuf::from(socket_path)
+        .join(namespace)
+        .join(id)
+        .display()
+        .to_string();
+
+    let hash = {
+        let mut hasher = DefaultHasher::new();
+        hasher.write(path.as_bytes());
+        hasher.finish()
+    };
+
+    format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
+}
+
+fn spawn(opts: StartOpts) -> Result<String, Error> {
+    let socket_address = socket_address(&opts.address, &opts.namespace, &opts.id);
+
+    Command::new(env::current_exe()?)
+        .current_dir(env::current_dir()?)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .args(&[
+            "-namespace",
+            &opts.namespace,
+            "-id",
+            &opts.id,
+            "-address",
+            &opts.address,
+            "-socket",
+            &socket_address,
+        ])
+        .spawn()?;
+
+    // This is temp HACK.
+    // Give TTRPC server some time to initialize.
+    thread::sleep(time::Duration::from_secs(2));
+
+    Ok(socket_address)
 }
