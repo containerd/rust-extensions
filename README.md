@@ -1,4 +1,4 @@
-# shim v2 runtime crates
+# Rust extensions for containerd
 
 [![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
 
@@ -10,6 +10,7 @@ This repository contains the following crates:
 | --- | --- |
 | [containerd-protos](crates/protos) | Generated TTRPC bindings for containerd |
 | [shim](crates/shim) | Runtime v2 shim wrapper |
+| [containerd-shim-logging](crates/logging) | Shim logger |
 
 ## How to build
 The build process as easy as:
