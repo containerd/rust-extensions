@@ -9,7 +9,7 @@ This repository contains the following crates:
 | Name | Description |
 | --- | --- |
 | [containerd-protos](crates/protos) | Generated TTRPC bindings for containerd |
-| [shim](crates/shim) | Runtime v2 shim wrapper |
+| [containerd-shim](crates/shim) | Runtime v2 shim wrapper |
 | [containerd-shim-logging](crates/logging) | Shim logger |
 
 ## How to build
@@ -18,5 +18,3 @@ The build process as easy as:
 git submodule update --init
 cargo build --release
 ```
-
-[containerd-protos](crates/protos) crate pulls [containerd](https://github.com/containerd/containerd) as a submodule to generate TTRPC bindings.

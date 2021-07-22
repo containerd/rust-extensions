@@ -1,3 +1,6 @@
 [submodule "crates/protos/vendor/github.com/containerd/containerd"]
 	path = crates/protos/vendor/github.com/containerd/containerd
 	url = https://github.com/containerd/containerd.git
+[submodule "crates/shim-protos/vendor/github.com/containerd/containerd"]
+	path = crates/shim-protos/vendor/github.com/containerd/containerd
+	url = https://github.com/containerd/containerd.git

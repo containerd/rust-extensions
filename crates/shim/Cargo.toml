@@ -1,5 +1,5 @@
 [package]
-name = "shim"
+name = "containerd-shim"
 version = "0.1.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
 edition = "2018"
@@ -12,4 +12,4 @@ thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
 
-containerd-protos = { path = "../protos" }
+containerd-shim-protos = { path = "../shim-protos" }

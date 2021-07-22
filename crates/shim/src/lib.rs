@@ -1,28 +1,29 @@
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::error;
+use std::hash::Hasher;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use std::time;
 
-use containerd_protos::protobuf::Message;
-use containerd_protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
-use containerd_protos::ttrpc::Server;
+use containerd_shim_protos as protos;
+use protos::protobuf::Message;
+use protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
+use protos::ttrpc::Server;
+
 use thiserror::Error;
 
 mod args;
 mod logger;
 mod reap;
 
-pub use containerd_protos as protos;
-pub use containerd_protos::shim::shim as api;
-pub use containerd_protos::shim::shim_ttrpc::Task;
-pub use containerd_protos::ttrpc;
-pub use containerd_protos::ttrpc::TtrpcContext as Context;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-use std::path::PathBuf;
+pub use protos::shim::shim as api;
+pub use protos::shim::shim_ttrpc::Task;
+pub use protos::ttrpc;
+pub use protos::ttrpc::TtrpcContext as Context;
 
 /// Config of shim binary options provided by shim implementations
 #[derive(Debug, Default)]
@@ -139,9 +140,9 @@ pub enum Error {
     Flags(#[from] args::Error),
     /// TTRPC specific error.
     #[error("TTRPC error")]
-    Ttrpc(#[from] containerd_protos::ttrpc::Error),
+    Ttrpc(#[from] protos::ttrpc::Error),
     #[error("Protobuf error")]
-    Protobuf(#[from] containerd_protos::protobuf::error::ProtobufError),
+    Protobuf(#[from] protos::protobuf::error::ProtobufError),
     #[error("Failed to setup logger")]
     Logger(#[from] logger::Error),
     #[error("IO error")]
