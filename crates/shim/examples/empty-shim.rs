@@ -1,7 +1,12 @@
-use containerd_protos::shim::shim::DeleteResponse;
-use log::debug;
-use shim::StartOpts;
 use std::error::Error;
+
+use containerd_shim as shim;
+use shim::protos;
+
+use shim::api::DeleteResponse;
+use shim::StartOpts;
+
+use log::debug;
 
 struct Service;
 
@@ -24,7 +29,7 @@ impl shim::Task for Service {
         &self,
         _ctx: &shim::Context,
         _request: shim::api::StateRequest,
-    ) -> shim::protos::ttrpc::Result<shim::api::StateResponse> {
+    ) -> protos::ttrpc::Result<shim::api::StateResponse> {
         debug!("Get state");
         Ok(shim::api::StateResponse::default())
     }

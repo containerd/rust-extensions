@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time;
 
-use containerd_shim_protos as protos;
+pub use containerd_shim_protos as protos;
 use protos::protobuf::Message;
 use protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
 use protos::ttrpc::Server;
