@@ -97,7 +97,7 @@ mod tests {
 
         let flags = parse(&args).unwrap();
 
-        assert_eq!(flags.debug, true);
+        assert!(flags.debug);
         assert_eq!(flags.id, "123");
         assert_eq!(flags.namespace, "default");
         assert_eq!(flags.socket, "/path/to/socket");
@@ -113,7 +113,7 @@ mod tests {
 
         let flags = parse(&args).unwrap();
 
-        assert_eq!(flags.debug, false);
+        assert!(!flags.debug);
         assert_eq!(flags.id, "123");
         assert_eq!(flags.namespace, "default");
         assert_eq!(flags.action, "");

@@ -17,6 +17,9 @@ jobs:
           submodules: true
       - run: rustup update stable
       - run: rustup component add rustfmt clippy
+      - run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libsystemd-dev
       - run: cargo check
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets --all-features -- -D warnings

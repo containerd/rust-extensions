@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead};
 use std::thread;
 
 use containerd_shim_logging as logging;
