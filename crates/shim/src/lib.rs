@@ -22,8 +22,10 @@ mod reap;
 
 pub use protos::shim::shim as api;
 pub use protos::shim::shim_ttrpc::Task;
+
 pub use protos::ttrpc;
-pub use protos::ttrpc::TtrpcContext as Context;
+pub use protos::ttrpc::Result as TtrpcResult;
+pub use protos::ttrpc::TtrpcContext;
 
 /// Config of shim binary options provided by shim implementations
 #[derive(Debug, Default)]
@@ -59,7 +61,7 @@ pub trait Shim: Task {
         Ok(address)
     }
 
-    fn cleanup(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>> {
+    fn delete_shim(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>> {
         Ok(DeleteResponse::default())
     }
 }
@@ -108,7 +110,7 @@ where
             Ok(())
         }
         "delete" => {
-            let response = shim.cleanup().map_err(Error::Cleanup)?;
+            let response = shim.delete_shim().map_err(Error::Cleanup)?;
 
             let stdout = io::stdout();
             let mut locked = stdout.lock();
@@ -122,11 +124,17 @@ where
             }
 
             let task_service = create_task(Arc::new(Box::new(shim)));
+
             let mut server = Server::new()
-                .bind(&flags.socket)?
-                .register_service(task_service);
+                .register_service(task_service)
+                .bind(format!("unix://{}", flags.socket).as_str())?;
 
             server.start()?;
+
+            // TODO: define exit criteria here.
+            std::thread::sleep(std::time::Duration::from_secs(360));
+
+            server.shutdown();
 
             Ok(())
         }
@@ -170,10 +178,12 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finish()
     };
 
-    format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
+    format!("{}/{:x}.sock", SOCKET_ROOT, hash)
 }
 
-fn spawn(opts: StartOpts) -> Result<String, Error> {
+/// Spawn is a helper func to launch shim process.
+/// Typically this expected to be called from `StartShim`.
+pub fn spawn(opts: StartOpts) -> Result<String, Error> {
     let socket_address = socket_address(&opts.address, &opts.namespace, &opts.id);
 
     Command::new(env::current_exe()?)

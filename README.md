@@ -10,7 +10,7 @@ This repository contains the following crates:
 | --- | --- |
 | [containerd-shim-protos](crates/shim-protos) | TTRPC bindings to shim interfaces |
 | [containerd-shim-logging](crates/logging) | Shim logger |
-| [containerd-shim](crates/shim) | Runtime v2 shim wrapper |
+| [containerd-shim](crates/shim) | 🚧 Runtime v2 shim wrapper |
 
 ## How to build
 The build process as easy as:
