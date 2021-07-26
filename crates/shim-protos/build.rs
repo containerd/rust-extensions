@@ -23,6 +23,7 @@ fn main() {
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
+            "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             "vendor/google/protobuf/empty.proto",
         ],
     );
@@ -33,6 +34,7 @@ fn main() {
         .open("src/shim/mod.rs")
         .unwrap();
     writeln!(f, "pub mod shim_ttrpc;").unwrap();
+    writeln!(f, "pub mod events_ttrpc;").unwrap();
 }
 
 fn codegen(path: impl AsRef<Path>, inputs: impl IntoIterator<Item = impl AsRef<Path>>) {
