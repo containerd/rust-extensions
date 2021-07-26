@@ -1,0 +1,20 @@
+[package]
+name = "containerd-client-protos"
+version = "0.1.0"
+authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
+edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/mxpv/containerd-rust-extensions"
+description = "GRPC bindings to containerd APIs"
+
+[dependencies]
+tonic = "0.5"
+prost = "0.8"
+prost-types = "0.8"
+
+[build-dependencies]
+tonic-build = "0.5"
+
+[dev-dependencies]
+tokio = "1.0"
+tower = "0.4"
