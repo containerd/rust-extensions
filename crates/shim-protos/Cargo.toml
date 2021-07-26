@@ -9,7 +9,9 @@ description = "TTRPC bindings for containerd shim interfaces"
 
 [dependencies]
 protobuf = "2.23.0"
-ttrpc = "0.5.1"
+# Needs `Client::connect` to be published on crates.io
+# PR: https://github.com/containerd/ttrpc-rust/pull/93
+ttrpc = { git = "https://github.com/containerd/ttrpc-rust.git", rev = "da67137a8b89d6b796cb7e826ba2f6db2eed8f9e" }
 
 [build-dependencies]
 ttrpc-codegen = "0.2"

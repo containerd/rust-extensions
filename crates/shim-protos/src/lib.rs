@@ -8,3 +8,7 @@ pub use ttrpc;
 pub mod events;
 #[rustfmt::skip]
 pub mod shim;
+
+pub use shim::shim as api;
+pub use shim::shim_ttrpc::{Task, TaskClient};
+pub use ttrpc::Client;
