@@ -6,7 +6,12 @@ use log::info;
 struct Service;
 
 impl shim::Shim for Service {
-    fn new(_id: &str, _namespace: &str, _config: &mut shim::Config) -> Self {
+    fn new(
+        _id: &str,
+        _namespace: &str,
+        _publisher: shim::RemotePublisher,
+        _config: &mut shim::Config,
+    ) -> Self {
         Service {}
     }
 }

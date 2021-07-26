@@ -18,7 +18,10 @@ use thiserror::Error;
 
 mod args;
 mod logger;
+mod publisher;
 mod reap;
+
+pub use publisher::RemotePublisher;
 
 pub use protos::shim::shim as api;
 pub use protos::shim::shim_ttrpc::Task;
@@ -52,7 +55,7 @@ pub struct StartOpts {
 
 /// Shim interface that must be implemented by clients.
 pub trait Shim: Task {
-    fn new(id: &str, namespace: &str, config: &mut Config) -> Self;
+    fn new(id: &str, namespace: &str, publisher: RemotePublisher, config: &mut Config) -> Self;
 
     /// Launch new shim.
     /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
@@ -85,10 +88,11 @@ where
     let flags = args::parse(&os_args[1..])?;
 
     let ttrpc_address = env::var("TTRPC_ADDRESS")?;
+    let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
 
     // Create shim instance
     let mut config = Config::default();
-    let mut shim = T::new(id, &flags.namespace, &mut config);
+    let mut shim = T::new(id, &flags.namespace, publisher, &mut config);
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
@@ -161,6 +165,8 @@ pub enum Error {
     Start(Box<dyn error::Error>),
     #[error("Shim cleanup failed")]
     Cleanup(Box<dyn error::Error>),
+    #[error("Publisher error: {0}")]
+    Publisher(#[from] publisher::Error),
 }
 
 const SOCKET_ROOT: &str = "/run/containerd";
