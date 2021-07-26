@@ -7,13 +7,13 @@ fn main() {
 
     let socket_path = args
         .get(1)
-        .ok_or_else(|| "First argument must be shim socket path")
+        .ok_or("First argument must be shim socket path")
         .unwrap();
 
     let pid = args
         .get(2)
         .and_then(|str| Some(str.to_owned()))
-        .unwrap_or(String::new());
+        .unwrap_or_default();
 
     let client = client::Client::connect(socket_path).expect("Failed to connect to shim");
 
