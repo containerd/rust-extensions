@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/client-protos",
+    "crates/client",
     "crates/logging",
     "crates/shim-protos",
     "crates/shim"

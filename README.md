@@ -11,7 +11,7 @@ This repository contains the following crates:
 | [containerd-shim-protos](crates/shim-protos) | TTRPC bindings to shim interfaces |
 | [containerd-shim-logging](crates/logging) | Shim logger |
 | [containerd-shim](crates/shim) | Runtime v2 shim wrapper 🚧 |
-| [containerd-client-protos](crates/client-protos) | GRPC bindings to containerd APIs |
+| [containerd-client](crates/client) | GRPC bindings to containerd APIs |
 
 ## How to build
 The build process as easy as:

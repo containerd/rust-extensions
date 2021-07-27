@@ -1,9 +1,8 @@
 use std::convert::TryFrom;
 use tokio::net::UnixStream;
 
-use containerd_client_protos as protos;
-use protos::services::v1::version_client::VersionClient;
-use protos::tonic::transport::Endpoint;
+use containerd_client::services::v1::version_client::VersionClient;
+use containerd_client::tonic::transport::Endpoint;
 
 /// Make sure you run containerd before running this example.
 #[tokio::main(flavor = "current_thread")]
