@@ -10,21 +10,47 @@ use client::{Client, Events, EventsClient};
 use protobuf::well_known_types::{Any, Timestamp};
 use protobuf::Message;
 
+use std::os::unix::io::RawFd;
+
 use thiserror::Error;
 
+/// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
     client: EventsClient,
 }
 
 impl RemotePublisher {
+    /// Connect to containerd's TTRPC endpoint.
+    /// containerd uses `/run/containerd/containerd.sock.ttrpc` by default
     pub fn new(address: impl AsRef<str>) -> Result<RemotePublisher, Error> {
-        let client = Client::connect(address.as_ref())?;
+        let fd = Self::connect(address)?;
+        let client = Client::new(fd);
 
         Ok(RemotePublisher {
             client: EventsClient::new(client),
         })
     }
 
+    fn connect(address: impl AsRef<str>) -> Result<RawFd, nix::Error> {
+        use nix::sys::socket::*;
+
+        let fd = socket(
+            AddressFamily::Unix,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+
+        let unix_addr = UnixAddr::new(address.as_ref())?;
+        let sock_addr = SockAddr::Unix(unix_addr);
+
+        connect(fd, &sock_addr)?;
+
+        Ok(fd)
+    }
+
+    /// Publish new event.
+    /// Event object can be anything that Protobuf able serialize (e.g. implement `Message` trait).
     pub fn publish(
         &self,
         ctx: Context,
@@ -51,7 +77,7 @@ impl RemotePublisher {
 
         let mut ts = Timestamp::default();
         ts.set_seconds(now.as_secs() as _);
-        ts.set_nanos(now.as_nanos() as _);
+        ts.set_nanos(now.subsec_nanos() as _);
 
         Ok(ts)
     }
@@ -77,10 +103,12 @@ impl Events for RemotePublisher {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Publisher TTRPC error")]
+    #[error("Publisher TTRPC error: {0}")]
     Ttrpc(#[from] containerd_shim_protos::ttrpc::Error),
-    #[error("Failed to get envelope timestamp")]
+    #[error("Failed to get envelope timestamp: {0}")]
     Timestamp(#[from] std::time::SystemTimeError),
-    #[error("Failed to serialize event")]
+    #[error("Failed to serialize event: {0}")]
     Any(#[from] protobuf::ProtobufError),
+    #[error("Nix error: {0}")]
+    Nix(#[from] nix::Error),
 }

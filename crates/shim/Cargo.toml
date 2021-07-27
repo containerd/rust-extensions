@@ -11,5 +11,6 @@ go-flag = "0.1.0"
 thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
+nix = "0.22"
 
 containerd-shim-protos = { path = "../shim-protos" }
