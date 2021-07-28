@@ -11,10 +11,17 @@ description = "GRPC bindings to containerd APIs"
 tonic = "0.5"
 prost = "0.8"
 prost-types = "0.8"
+tokio = { version = "1.0", optional = true }
+tower = { version = "0.4", optional = true }
 
 [build-dependencies]
 tonic-build = "0.5"
 
-[dev-dependencies]
-tokio = "1.0"
-tower = "0.4"
+[features]
+connect = ["tokio", "tower"]
+
+# Technically Tonic doesn't require Tokio and Tower dependencies here.
+# However we need them to implement `connect` helper and it's highly unlikely
+# that Tonic will be used with any other async runtime (see https://github.com/hyperium/tonic/issues/152)
+# So we enable `connect` feature by default (use `--no-default-features` otherwise).
+default = ["connect"]
