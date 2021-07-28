@@ -24,3 +24,4 @@ jobs:
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-features
+      - run: cargo build --examples --tests --all-targets
