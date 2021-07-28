@@ -1,9 +1,12 @@
 use containerd_shim as shim;
-use shim::{api, TtrpcContext, TtrpcResult};
 
 use log::info;
+use shim::{api, TtrpcContext, TtrpcResult};
+use std::error::Error;
 
-struct Service;
+struct Service {
+    exit: shim::ExitSignal,
+}
 
 impl shim::Shim for Service {
     fn new(
@@ -11,8 +14,13 @@ impl shim::Shim for Service {
         _namespace: &str,
         _publisher: shim::RemotePublisher,
         _config: &mut shim::Config,
+        exit: shim::ExitSignal,
     ) -> Self {
-        Service {}
+        Service { exit }
+    }
+
+    fn start_shim(&mut self, _opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
+        Ok("Socket address here".into())
     }
 }
 
@@ -24,6 +32,11 @@ impl shim::Task for Service {
     ) -> TtrpcResult<api::CreateTaskResponse> {
         info!("Create");
         Ok(api::CreateTaskResponse::default())
+    }
+
+    fn shutdown(&self, _ctx: &TtrpcContext, _req: api::ShutdownRequest) -> TtrpcResult<api::Empty> {
+        self.exit.signal();
+        Ok(api::Empty::default())
     }
 }
 

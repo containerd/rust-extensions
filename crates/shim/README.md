@@ -10,37 +10,46 @@ API offered by containerd's shim v2 runtime implementation written in Go.
 The API is very similar to the one offered by Go version:
 
 ```rust
-struct Service;
+struct Service {
+    exit: shim::ExitSignal,
+}
 
 impl shim::Shim for Service {
-    fn new(_id: &str, _namespace: &str, _config: &mut shim::Config) -> Self {
-        Service {}
+    fn new(
+        _id: &str,
+        _namespace: &str,
+        _publisher: shim::RemotePublisher,
+        _config: &mut shim::Config,
+        exit: shim::ExitSignal,
+    ) -> Self {
+        Service { exit }
     }
 
-    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Box<dyn Error>> {
-        let address = shim::spawn(opts)?;
-        Ok(address)
-    }
-
-    fn delete_shim(&mut self) -> Result<api::DeleteResponse, Box<dyn Error>> {
-        todo!()
+    fn start_shim(&mut self, _opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
+        Ok("Socket address here".into())
     }
 }
 
 impl shim::Task for Service {
     fn create(
         &self,
-        ctx: &TtrpcContext,
-        req: api::CreateTaskRequest,
-    ) -> ::ttrpc::Result<api::CreateTaskResponse> {
-        debug!("Create");
+        _ctx: &TtrpcContext,
+        _req: api::CreateTaskRequest,
+    ) -> TtrpcResult<api::CreateTaskResponse> {
+        // New task nere...
         Ok(api::CreateTaskResponse::default())
+    }
+
+    fn shutdown(&self, _ctx: &TtrpcContext, _req: api::ShutdownRequest) -> TtrpcResult<api::Empty> {
+        self.exit.signal(); // Signal to shutdown shim server
+        Ok(api::Empty::default())
     }
 }
 
 fn main() {
     shim::run::<Service>("io.containerd.empty.v1")
 }
+
 ```
 
 ## How to use
