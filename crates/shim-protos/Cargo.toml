@@ -6,6 +6,8 @@ edition = "2018"
 license = "Apache-2.0"
 repository = "https://github.com/mxpv/containerd-rust-extensions"
 description = "TTRPC bindings for containerd shim interfaces"
+keywords = ["containerd", "shim", "containers", "ttrpc", "client"]
+categories = ["api-bindings"]
 
 [dependencies]
 protobuf = "2.23.0"
