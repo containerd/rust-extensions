@@ -18,3 +18,6 @@ The build process as easy as:
 ```bash
 cargo build --release
 ```
+
+## Minimum supported Rust version (MSRV)
+The minimum supported version of Rust is `1.52`
