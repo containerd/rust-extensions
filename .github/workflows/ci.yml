@@ -9,15 +9,15 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-18.04]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: true
       - run: |
           sudo apt-get update -y
+          # Journal example
           sudo apt-get install -y libsystemd-dev
+        if: runner.os == 'Linux'
       - run: cargo check --examples --tests --all-targets
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets --all-features -- -D warnings
