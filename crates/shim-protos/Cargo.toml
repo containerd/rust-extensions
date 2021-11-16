@@ -11,9 +11,12 @@ categories = ["api-bindings"]
 
 [dependencies]
 protobuf = "2.23.0"
-# Needs `Client::connect` to be published on crates.io
-# PR: https://github.com/containerd/ttrpc-rust/pull/93
-ttrpc = { git = "https://github.com/containerd/ttrpc-rust.git", rev = "da67137a8b89d6b796cb7e826ba2f6db2eed8f9e" }
+
+# Need the following PRs from `master` branch:
+# - https://github.com/containerd/ttrpc-rust/pull/93
+# - https://github.com/containerd/ttrpc-rust/pull/101
+# - https://github.com/containerd/ttrpc-rust/pull/102
+ttrpc = { git = "https://github.com/containerd/ttrpc-rust.git", rev = "c96574c9e359fc03e74a4455180d5ad125340b4a" }
 
 [build-dependencies]
 ttrpc-codegen = "0.2"

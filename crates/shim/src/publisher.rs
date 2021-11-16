@@ -1,3 +1,4 @@
+use std::os::unix::io::RawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use containerd_shim_protos as client;
@@ -9,8 +10,6 @@ use client::{Client, Events, EventsClient};
 
 use protobuf::well_known_types::{Any, Timestamp};
 use protobuf::Message;
-
-use std::os::unix::io::RawFd;
 
 use thiserror::Error;
 
@@ -34,12 +33,22 @@ impl RemotePublisher {
     fn connect(address: impl AsRef<str>) -> Result<RawFd, nix::Error> {
         use nix::sys::socket::*;
 
-        let fd = socket(
-            AddressFamily::Unix,
-            SockType::Stream,
-            SockFlag::SOCK_CLOEXEC,
-            None,
-        )?;
+        // SOCK_CLOEXEC flag is Linux specific
+        #[cfg(target_os = "linux")]
+        const SOCK_CLOEXEC: SockFlag = SockFlag::SOCK_CLOEXEC;
+
+        #[cfg(not(target_os = "linux"))]
+        const SOCK_CLOEXEC: SockFlag = SockFlag::empty();
+
+        let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?;
+
+        // MacOS doesn't support atomic creation of a socket descriptor with `SOCK_CLOEXEC` flag,
+        // so there is a chance of leak if fork + exec happens in between of these calls.
+        #[cfg(not(target_os = "linux"))]
+        {
+            use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+            fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))?;
+        }
 
         let unix_addr = UnixAddr::new(address.as_ref())?;
         let sock_addr = SockAddr::Unix(unix_addr);
