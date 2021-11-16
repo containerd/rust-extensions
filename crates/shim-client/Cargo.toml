@@ -1,5 +1,5 @@
 [package]
-name = "containerd-shim-protos"
+name = "containerd-shim-client"
 version = "0.1.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
 edition = "2018"

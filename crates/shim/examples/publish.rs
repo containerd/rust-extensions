@@ -1,7 +1,7 @@
 use std::env;
 
 use containerd_shim::{ttrpc::context::Context, RemotePublisher};
-use containerd_shim_protos::events::task::TaskOOM;
+use containerd_shim_client::events::task::TaskOOM;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

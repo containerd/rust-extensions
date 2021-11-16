@@ -1,7 +1,7 @@
 use std::os::unix::io::RawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use containerd_shim_protos as client;
+use containerd_shim_client as client;
 
 use client::protobuf;
 use client::shim::{empty, events};
@@ -113,7 +113,7 @@ impl Events for RemotePublisher {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Publisher TTRPC error: {0}")]
-    Ttrpc(#[from] containerd_shim_protos::ttrpc::Error),
+    Ttrpc(#[from] client::ttrpc::Error),
     #[error("Failed to get envelope timestamp: {0}")]
     Timestamp(#[from] std::time::SystemTimeError),
     #[error("Failed to serialize event: {0}")]

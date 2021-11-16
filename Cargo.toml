@@ -2,6 +2,6 @@
 members = [
     "crates/client",
     "crates/logging",
-    "crates/shim-protos",
+    "crates/shim-client",
     "crates/shim"
 ]

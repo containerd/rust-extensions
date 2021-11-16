@@ -1,6 +1,6 @@
 use std::env;
 
-use containerd_shim_protos as client;
+use containerd_shim_client as client;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

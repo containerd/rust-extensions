@@ -8,8 +8,8 @@ This repository contains the following crates:
 
 | Name | Description |
 | --- | --- |
-| [containerd-shim-protos](crates/shim-protos) | TTRPC bindings to shim interfaces |
-| [containerd-shim-logging](crates/logging) | Shim logger |
+| [containerd-shim-client](crates/shim-client) | TTRPC bindings to shim interfaces |
+| [containerd-shim-logging](crates/logging) | Shim logger plugins |
 | [containerd-shim](crates/shim) | Runtime v2 shim wrapper 🚧 |
 | [containerd-client](crates/client) | GRPC bindings to containerd APIs |
 
