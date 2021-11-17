@@ -1,14 +1,14 @@
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::error;
+use std::fs;
 use std::hash::Hasher;
 use std::io::{self, Write};
+use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
-use std::time;
 
 pub use containerd_shim_client as protos;
 
@@ -16,6 +16,9 @@ use protos::protobuf::Message;
 use protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
 use protos::ttrpc::Server;
 
+use command_fds::{CommandFdExt, FdMapping};
+use log::info;
+use nix::errno::Errno;
 use thiserror::Error;
 
 mod args;
@@ -176,14 +179,20 @@ where
 
             let task_service = create_task(Arc::new(Box::new(shim)));
 
-            let mut server = Server::new()
-                .register_service(task_service)
-                .bind(format!("unix://{}", flags.socket).as_str())?;
+            let mut server = Server::new().register_service(task_service);
+
+            server = if flags.socket.is_empty() {
+                server.add_listener(SOCKET_FD)?
+            } else {
+                server.bind(&flags.socket)?
+            };
 
             server.start()?;
 
+            info!("Shim successfully started, waiting for exit signal...");
             exit_signal.wait();
 
+            info!("Shutting down shim instance");
             server.shutdown();
 
             Ok(())
@@ -194,28 +203,49 @@ where
 #[derive(Debug, Error)]
 pub enum Error {
     /// Invalid command line arguments.
-    #[error("Failed to parse command line")]
+    #[error("Failed to parse command line: {0}")]
     Flags(#[from] args::Error),
+
     /// TTRPC specific error.
-    #[error("TTRPC error")]
+    #[error("TTRPC error: {0}")]
     Ttrpc(#[from] protos::ttrpc::Error),
-    #[error("Protobuf error")]
+
+    #[error("Protobuf error: {0}")]
     Protobuf(#[from] protos::protobuf::error::ProtobufError),
-    #[error("Failed to setup logger")]
+
+    #[error("Failed to setup logger: {0}")]
     Logger(#[from] logger::Error),
-    #[error("IO error")]
+
+    #[error("IO error: {0}")]
     Io(#[from] io::Error),
-    #[error("Env error")]
+
+    #[error("Env error: {0}")]
     Env(#[from] env::VarError),
-    #[error("Failed to start shim")]
+
+    #[error("Failed to start shim: {0}")]
     Start(Box<dyn error::Error>),
-    #[error("Shim cleanup failed")]
+
+    #[error("Shim cleanup failed: {0}")]
     Cleanup(Box<dyn error::Error>),
+
     #[error("Publisher error: {0}")]
     Publisher(#[from] publisher::Error),
+
+    /// Unable to pass fd to child process (we rely on `command_fds` crate for this).
+    #[error("Failed to pass socket fd to child: {0}")]
+    FdMap(#[from] command_fds::FdMappingCollision),
+
+    #[error("Error code: {0}")]
+    Errno(#[from] Errno),
 }
 
-const SOCKET_ROOT: &str = "/run/containerd";
+const SOCKET_FD: RawFd = 3;
+
+#[cfg(target_os = "linux")]
+pub const SOCKET_ROOT: &str = "/run/containerd";
+
+#[cfg(target_os = "macos")]
+pub const SOCKET_ROOT: &str = "/var/run/containerd";
 
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
@@ -233,15 +263,57 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     format!("{}/{:x}.sock", SOCKET_ROOT, hash)
 }
 
+fn start_listener(address: &str) -> Result<RawFd, Error> {
+    use nix::fcntl::*;
+    use nix::sys::socket::*;
+
+    let fd = socket(
+        AddressFamily::Unix,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )?;
+
+    fcntl(fd, FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+
+    let unix_addr = UnixAddr::new(address)?;
+
+    fs::create_dir_all(SOCKET_ROOT)?;
+
+    let socket_address = SockAddr::Unix(unix_addr);
+
+    match bind(fd, &socket_address) {
+        Ok(_) => {}
+        Err(err) if err == Errno::EADDRINUSE => {
+            fs::remove_file(address)?;
+            bind(fd, &socket_address)?;
+        }
+        Err(err) => return Err(err.into()),
+    }
+
+    listen(fd, 10)?;
+
+    Ok(fd)
+}
+
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
 pub fn spawn(opts: StartOpts) -> Result<String, Error> {
-    let socket_address = socket_address(&opts.address, &opts.namespace, &opts.id);
+    let address = socket_address(&opts.address, &opts.namespace, &opts.id);
 
-    Command::new(env::current_exe()?)
+    // Create socket and prepare listener.
+    // We'll use `add_listener` when creating TTRPC server.
+    let fd = start_listener(&address)?;
+
+    let result = Command::new(env::current_exe()?)
         .current_dir(env::current_dir()?)
         .stdout(Stdio::null())
+        .stdin(Stdio::null())
         .stderr(Stdio::null())
+        .fd_mappings(vec![FdMapping {
+            parent_fd: fd,
+            child_fd: SOCKET_FD,
+        }])?
         .args(&[
             "-namespace",
             &opts.namespace,
@@ -249,15 +321,17 @@ pub fn spawn(opts: StartOpts) -> Result<String, Error> {
             &opts.id,
             "-address",
             &opts.address,
-            "-socket",
-            &socket_address,
         ])
-        .spawn()?;
+        .spawn();
 
-    // TODO: This is hack: give TTRPC server some time to initialize. Need to pass fd instead.
-    thread::sleep(time::Duration::from_secs(2));
-
-    Ok(socket_address)
+    match result {
+        Ok(_) => Ok(format!("unix://{}", address)),
+        Err(err) => {
+            // Close listener if something went wrong
+            unsafe { libc::close(fd) };
+            Err(err.into())
+        }
+    }
 }
 
 #[cfg(test)]

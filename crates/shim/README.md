@@ -26,7 +26,8 @@ impl shim::Shim for Service {
     }
 
     fn start_shim(&mut self, _opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
-        Ok("Socket address here".into())
+        let address = shim::spawn(opts)?;
+        Ok(address)
     }
 }
 
@@ -40,7 +41,20 @@ impl shim::Task for Service {
         Ok(api::CreateTaskResponse::default())
     }
 
+    fn connect(
+        &self,
+        _ctx: &TtrpcContext,
+        _req: api::ConnectRequest,
+    ) -> TtrpcResult<api::ConnectResponse> {
+        info!("Connect request");
+        Ok(api::ConnectResponse {
+            version: String::from("example"),
+            ..Default::default()
+        })
+    }
+
     fn shutdown(&self, _ctx: &TtrpcContext, _req: api::ShutdownRequest) -> TtrpcResult<api::Empty> {
+        info!("Shutdown request");
         self.exit.signal(); // Signal to shutdown shim server
         Ok(api::Empty::default())
     }
@@ -52,12 +66,59 @@ fn main() {
 
 ```
 
-## How to use
+## How to use with containerd
 
-Runtime binary has to be [named in a special way](https://github.com/containerd/containerd/blob/main/runtime/v2/README.md#binary-naming) to be recognized by containerd:
+With shim v2 runtime:
 
 ```bash
 $ cargo build --example empty-shim
 $ sudo cp ./target/debug/examples/empty-shim /usr/local/bin/containerd-shim-empty-v2
 $ sudo ctr run --rm --runtime io.containerd.empty.v2 -t docker.io/library/hello-world:latest hello
+```
+
+Or if on 1.6+
+
+```bash
+$ cargo build --example empty-shim
+ctr run --rm --runtime ./target/debug/examples/empty_shim docker.io/library/hello-world:latest hello
+```
+
+Or manually:
+
+```
+$ touch log
+
+# Run containerd in background
+$ sudo TTRPC_ADDRESS="/var/run/containerd/containerd.sock.ttrpc" \
+    cargo run --example empty_shim -- \
+    -namespace default \
+    -id 1234 \
+    -address /var/run/containerd/containerd.sock \
+    -publish-binary ./bin/containerd \
+    start
+unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
+
+$ cargo build --example connect
+$ sudo ./target/debug/examples/connect unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
+Connecting to unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock...
+Sending `Connect` request...
+Connect response: version: "example"
+Sending `Shutdown` request...
+Shutdown response: ""
+
+$ cat log
+[INFO] server listen started
+[INFO] server started
+[INFO] Shim successfully started, waiting for exit signal...
+[INFO] Connect request
+[INFO] Shutdown request
+[INFO] Shutting down shim instance
+[INFO] close monitor
+[INFO] listener shutdown for quit flag
+[INFO] ttrpc server listener stopped
+[INFO] listener thread stopped
+[INFO] begin to shutdown connection
+[INFO] connections closed
+[INFO] reaper thread exited
+[INFO] reaper thread stopped
 ```

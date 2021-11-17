@@ -19,22 +19,27 @@ impl shim::Shim for Service {
         Service { exit }
     }
 
-    fn start_shim(&mut self, _opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
-        Ok("Socket address here".into())
+    fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
+        let address = shim::spawn(opts)?;
+        Ok(address)
     }
 }
 
 impl shim::Task for Service {
-    fn create(
+    fn connect(
         &self,
         _ctx: &TtrpcContext,
-        _req: api::CreateTaskRequest,
-    ) -> TtrpcResult<api::CreateTaskResponse> {
-        info!("Create");
-        Ok(api::CreateTaskResponse::default())
+        _req: api::ConnectRequest,
+    ) -> TtrpcResult<api::ConnectResponse> {
+        info!("Connect request");
+        Ok(api::ConnectResponse {
+            version: String::from("example"),
+            ..Default::default()
+        })
     }
 
     fn shutdown(&self, _ctx: &TtrpcContext, _req: api::ShutdownRequest) -> TtrpcResult<api::Empty> {
+        info!("Shutdown request");
         self.exit.signal();
         Ok(api::Empty::default())
     }

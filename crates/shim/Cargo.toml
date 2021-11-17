@@ -13,5 +13,6 @@ thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
 nix = "0.22"
+command-fds = "0.2.1"
 
 containerd-shim-client = { path = "../shim-client" }
