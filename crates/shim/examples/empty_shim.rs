@@ -2,13 +2,14 @@ use containerd_shim as shim;
 
 use log::info;
 use shim::{api, TtrpcContext, TtrpcResult};
-use std::error::Error;
 
 struct Service {
     exit: shim::ExitSignal,
 }
 
 impl shim::Shim for Service {
+    type Error = shim::Error;
+
     fn new(
         _id: &str,
         _namespace: &str,
@@ -19,7 +20,7 @@ impl shim::Shim for Service {
         Service { exit }
     }
 
-    fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
+    fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
         let address = shim::spawn(opts)?;
         Ok(address)
     }

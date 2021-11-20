@@ -92,6 +92,9 @@ impl ExitSignal {
 /// Main shim interface that must be implemented by all shims.
 /// Start and delete routines will be called to handle containerd's shim lifecycle requests.
 pub trait Shim: Task {
+    /// Error type to be returned when starting/deleting shim.
+    type Error: error::Error;
+
     fn new(
         id: &str,
         namespace: &str,
@@ -104,10 +107,10 @@ pub trait Shim: Task {
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
     /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
-    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Box<dyn error::Error>>;
+    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Self::Error>;
 
     /// Delete shim will be called by containerd after shim shutdown to cleanup any leftovers.
-    fn delete_shim(&mut self) -> Result<DeleteResponse, Box<dyn error::Error>> {
+    fn delete_shim(&mut self) -> Result<DeleteResponse, Self::Error> {
         Ok(DeleteResponse::default())
     }
 }
@@ -158,13 +161,18 @@ where
                 namespace: flags.namespace,
             };
 
-            let address = shim.start_shim(args).map_err(Error::Start)?;
+            let address = shim
+                .start_shim(args)
+                .map_err(|err| Error::Start(err.to_string()))?;
+
             io::stdout().lock().write_fmt(format_args!("{}", address))?;
 
             Ok(())
         }
         "delete" => {
-            let response = shim.delete_shim().map_err(Error::Cleanup)?;
+            let response = shim
+                .delete_shim()
+                .map_err(|err| Error::Delete(err.to_string()))?;
 
             let stdout = io::stdout();
             let mut locked = stdout.lock();
@@ -223,10 +231,10 @@ pub enum Error {
     Env(#[from] env::VarError),
 
     #[error("Failed to start shim: {0}")]
-    Start(Box<dyn error::Error>),
+    Start(String),
 
-    #[error("Shim cleanup failed: {0}")]
-    Cleanup(Box<dyn error::Error>),
+    #[error("Failed to delete shim: {0}")]
+    Delete(String),
 
     #[error("Publisher error: {0}")]
     Publisher(#[from] publisher::Error),
