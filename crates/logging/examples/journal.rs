@@ -1,25 +1,22 @@
 use std::fs;
+use std::io;
+use std::io::BufRead;
 use std::thread;
 
 use containerd_shim_logging as logging;
 
 use logging::{Config, Driver};
 
-#[cfg(target_os = "linux")]
 fn pump(reader: fs::File) {
-    use std::io::{self, BufRead};
-    use systemd::journal;
-
     io::BufReader::new(reader)
         .lines()
         .filter_map(|line| line.ok())
-        .for_each(|str| {
-            journal::print(0, &str);
+        .for_each(|_str| {
+            // Write log string to destination here.
+            // For instance with journald:
+            //  systemd::journal::print(0, &str);
         });
 }
-
-#[cfg(not(target_os = "linux"))]
-fn pump(_reader: fs::File) {}
 
 struct Journal {
     stdout_handle: thread::JoinHandle<()>,
