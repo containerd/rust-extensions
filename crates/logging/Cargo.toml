@@ -5,7 +5,7 @@ authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
 edition = "2018"
 description = "Logger extension for containerd v2 runtime"
 license = "Apache-2.0"
-repository = "https://github.com/mxpv/containerd-rust-extensions"
+repository = "https://github.com/containerd/rust-extensions"
 keywords = ["containerd", "shim", "containers"]
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
