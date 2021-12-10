@@ -15,3 +15,10 @@ ttrpc = "0.5.2"
 
 [build-dependencies]
 ttrpc-codegen = "0.2"
+
+[features]
+# In current implementation we check in all generated TTRPC code because of the following Rust limitations:
+# - `include!` doesn't handle well .rs files with attributes: https://github.com/rust-lang/rust/issues/18810
+# - `cargo publish` will complain on modified `src` directory if it's modified from `build.rs` - https://github.com/rust-lang/cargo/issues/5073
+# - There is now way to include the whole module from `OUT_DIR`, not just individual files.
+generate_bindings = []

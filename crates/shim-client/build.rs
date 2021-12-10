@@ -14,11 +14,17 @@
    limitations under the License.
 */
 
+#![allow(unused_imports)]
+
 use std::fs;
-use std::io::prelude::*;
+use std::io::Write;
 use std::path::Path;
 use ttrpc_codegen::{Codegen, ProtobufCustomize};
 
+#[cfg(not(feature = "generate_bindings"))]
+fn main() {}
+
+#[cfg(feature = "generate_bindings")]
 fn main() {
     codegen(
         "src/events",
@@ -53,6 +59,7 @@ fn main() {
     writeln!(f, "pub mod events_ttrpc;").unwrap();
 }
 
+#[cfg(feature = "generate_bindings")]
 fn codegen(path: impl AsRef<Path>, inputs: impl IntoIterator<Item = impl AsRef<Path>>) {
     let path = path.as_ref();
 
