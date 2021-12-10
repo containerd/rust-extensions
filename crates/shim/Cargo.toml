@@ -6,6 +6,7 @@ edition = "2018"
 license = "Apache-2.0"
 repository = "https://github.com/mxpv/containerd-rust-extensions"
 keywords = ["containerd", "shim", "containers"]
+description = "containerd shim extension"
 
 [dependencies]
 go-flag = "0.1.0"
@@ -15,4 +16,4 @@ libc = "0.2.95"
 nix = "0.22"
 command-fds = "0.2.1"
 
-containerd-shim-client = { path = "../shim-client" }
+containerd-shim-client = { path = "../shim-client", version = "0.1.0" }
