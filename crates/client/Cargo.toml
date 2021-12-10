@@ -1,13 +1,14 @@
 [package]
 name = "containerd-client"
 version = "0.1.0"
-authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
+authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 edition = "2018"
 license = "Apache-2.0"
 repository = "https://github.com/containerd/rust-extensions"
 description = "GRPC bindings to containerd APIs"
 keywords = ["containerd", "client", "grpc", "containers"]
 categories = ["api-bindings", "asynchronous"]
+homepage = "https://containerd.io"
 
 [dependencies]
 tonic = "0.5"

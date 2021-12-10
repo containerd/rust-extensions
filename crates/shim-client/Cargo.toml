@@ -1,13 +1,14 @@
 [package]
 name = "containerd-shim-client"
 version = "0.1.0"
-authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
+authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 edition = "2018"
 license = "Apache-2.0"
 repository = "https://github.com/containerd/rust-extensions"
 description = "TTRPC bindings for containerd shim interfaces"
 keywords = ["containerd", "shim", "containers", "ttrpc", "client"]
 categories = ["api-bindings"]
+homepage = "https://containerd.io"
 
 [dependencies]
 protobuf = "2.23.0"
