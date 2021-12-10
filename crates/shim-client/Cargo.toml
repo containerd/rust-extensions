@@ -11,12 +11,7 @@ categories = ["api-bindings"]
 
 [dependencies]
 protobuf = "2.23.0"
-
-# Need the following PRs from `master` branch:
-# - https://github.com/containerd/ttrpc-rust/pull/93
-# - https://github.com/containerd/ttrpc-rust/pull/101
-# - https://github.com/containerd/ttrpc-rust/pull/102
-ttrpc = { git = "https://github.com/containerd/ttrpc-rust.git", rev = "c96574c9e359fc03e74a4455180d5ad125340b4a" }
+ttrpc = "0.5.2"
 
 [build-dependencies]
 ttrpc-codegen = "0.2"
