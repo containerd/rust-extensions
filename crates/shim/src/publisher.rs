@@ -1,3 +1,5 @@
+//! Implements a client to publish events from the shim back to containerd.
+
 use std::os::unix::io::RawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -110,6 +112,7 @@ impl Events for RemotePublisher {
     }
 }
 
+/// Errors returned from client if something went wrong.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Publisher TTRPC error: {0}")]

@@ -1,3 +1,5 @@
+//! A library to implement custom runtime v2 shims for containerd.
+
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::error;
@@ -28,6 +30,7 @@ mod reap;
 
 pub use publisher::RemotePublisher;
 
+/// Generated request/response structures.
 pub mod api {
     pub use super::protos::shim::empty::Empty;
     pub use super::protos::shim::shim::*;
@@ -115,6 +118,7 @@ pub trait Shim: Task {
     }
 }
 
+/// Shim entry point that must be invoked from `main`.
 pub fn run<T>(id: &str)
 where
     T: Shim + Send + Sync + 'static,
@@ -255,6 +259,7 @@ pub const SOCKET_ROOT: &str = "/run/containerd";
 #[cfg(target_os = "macos")]
 pub const SOCKET_ROOT: &str = "/var/run/containerd";
 
+/// Make socket path from namespace and id.
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
         .join(namespace)

@@ -1,3 +1,5 @@
+//! Helper library to implement custom shim loggers for containerd.
+
 use std::env;
 use std::fmt;
 use std::fs;

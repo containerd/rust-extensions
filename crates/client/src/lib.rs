@@ -1,5 +1,8 @@
+//! A GRPC client to query containerd's API.
+
 pub use tonic;
 
+/// Generated `containerd.types` types.
 pub mod types {
     tonic::include_proto!("containerd.types");
 
@@ -8,12 +11,14 @@ pub mod types {
     }
 }
 
+/// Generated `google.rpc` types, containerd services typically use some of these types.
 pub mod google {
     pub mod rpc {
         tonic::include_proto!("google.rpc");
     }
 }
 
+/// Generated `containerd.services.*` services.
 pub mod services {
     pub mod v1 {
         tonic::include_proto!("containerd.services.containers.v1");
@@ -34,12 +39,14 @@ pub mod services {
     }
 }
 
+/// Generated event types.
 pub mod events {
     tonic::include_proto!("containerd.events");
 }
 
 /// Connect creates a unix channel to containerd GRPC socket.
-/// This helper inteded to be used in conjuction with Tokio runtime.
+///
+/// This helper inteded to be used in conjuction with [Tokio](https://tokio.rs) runtime.
 #[cfg(feature = "connect")]
 pub async fn connect(
     path: impl AsRef<std::path::Path>,
