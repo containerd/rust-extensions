@@ -1,4 +1,9 @@
-# Shim protos
+# Shim protos and client for containerd
+
+[![Crates.io](https://img.shields.io/crates/v/containerd-shim-client)](https://crates.io/crates/containerd-shim-client)
+[![docs.rs](https://img.shields.io/docsrs/containerd-shim-client)](https://docs.rs/containerd-shim-client/latest/containerd-shim-client/)
+[![Crates.io](https://img.shields.io/crates/l/containerd-shim-client)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
+[![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
 
 TTRPC bindings for containerd's shim events and interfaces.
 

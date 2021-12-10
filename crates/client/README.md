@@ -1,4 +1,9 @@
-# GRPC bindings to containerd APIs
+# containerd GRPC client
+
+[![Crates.io](https://img.shields.io/crates/v/containerd-client)](https://crates.io/crates/containerd-client)
+[![docs.rs](https://img.shields.io/docsrs/containerd-client)](https://docs.rs/containerd-client/latest/containerd_client/)
+[![Crates.io](https://img.shields.io/crates/l/containerd-client)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
+[![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
 
 This crate implements a GRPC client to query containerd APIs.
 

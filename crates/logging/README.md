@@ -1,5 +1,8 @@
-# logging
+# Shim logging binaries for containerd
 
+[![Crates.io](https://img.shields.io/crates/v/containerd-shim-logging)](https://crates.io/crates/containerd-shim-logging)
+[![docs.rs](https://img.shields.io/docsrs/containerd-shim-logging)](https://docs.rs/containerd-shim-logging/latest/containerd_shim_logging/)
+[![Crates.io](https://img.shields.io/crates/l/containerd-shim-logging)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
 
 Shim v2 runtime supports pluggable logging binaries via stdio URIs.
