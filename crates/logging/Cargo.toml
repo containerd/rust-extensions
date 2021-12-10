@@ -1,6 +1,6 @@
 [package]
 name = "containerd-shim-logging"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 edition = "2018"
 description = "Logger extension for containerd v2 runtime"
