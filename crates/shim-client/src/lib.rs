@@ -21,14 +21,14 @@
 //! protobuf definitions and re-exports the TTRPC client for convenience.
 //!
 //! Here is a quick example:
-//! ```rust
+//! ```no_run
 //! use containerd_shim_client as client;
 //!
 //! use client::api;
 //! use client::ttrpc::context::Context;
 //!
 //! // Create TTRPC client
-//! let client = client::Client::connect("unix:///socket.sock")?;
+//! let client = client::Client::connect("unix:///socket.sock").unwrap();
 //!
 //! // Get task client
 //! let task_client = client::TaskClient::new(client);
