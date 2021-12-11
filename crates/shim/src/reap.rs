@@ -14,21 +14,23 @@
    limitations under the License.
 */
 
-use std::io;
+use std::io::Result;
 
 #[cfg(target_os = "linux")]
-pub fn set_subreaper() -> Result<(), io::Error> {
+pub fn set_subreaper() -> Result<()> {
     use libc::PR_SET_CHILD_SUBREAPER;
+    use std::io::Error;
 
+    // Safe because we trust the kernel and have checked the result.
     let code = unsafe { libc::prctl(PR_SET_CHILD_SUBREAPER, 0, 0, 0) };
     if code != 0 {
-        Err(io::Error::from_raw_os_error(code))
+        Err(Error::from_raw_os_error(code))
     } else {
         Ok(())
     }
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn set_subreaper() -> Result<(), io::Error> {
+pub fn set_subreaper() -> Result<()> {
     Ok(())
 }

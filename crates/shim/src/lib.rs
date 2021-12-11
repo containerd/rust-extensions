@@ -284,7 +284,7 @@ pub const SOCKET_ROOT: &str = "/run/containerd";
 #[cfg(target_os = "macos")]
 pub const SOCKET_ROOT: &str = "/var/run/containerd";
 
-/// Make socket path from namespace and id.
+/// Make socket path from containerd socket path, namespace and id.
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
         .join(namespace)
