@@ -48,6 +48,8 @@ pub use ttrpc;
 #[rustfmt::skip]
 pub mod events;
 #[rustfmt::skip]
+pub mod cgroups;
+#[rustfmt::skip]
 pub mod shim;
 
 /// Includes event names shims can publish to containerd.

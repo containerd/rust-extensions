@@ -41,6 +41,11 @@ fn main() {
     );
 
     codegen(
+        "src/cgroups",
+        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
+    );
+
+    codegen(
         "src/shim",
         &[
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
