@@ -58,8 +58,17 @@ pub mod topics;
 /// TTRPC client reexport for easier access.
 pub use ttrpc::Client;
 
-pub use shim::shim as api;
-pub use shim::shim_ttrpc::{Task, TaskClient};
+/// Shim task service.
+pub use shim::shim_ttrpc::{create_task, Task, TaskClient};
 
-/// Shim events.
-pub use shim::events_ttrpc::{Events, EventsClient};
+/// Shim events service.
+pub use shim::events_ttrpc::{create_events, Events, EventsClient};
+
+/// Reexport auto-generated public data structures.
+pub mod api {
+    pub use crate::shim::empty::*;
+    pub use crate::shim::events::*;
+    pub use crate::shim::mount::*;
+    pub use crate::shim::shim::*;
+    pub use crate::shim::task::*;
+}

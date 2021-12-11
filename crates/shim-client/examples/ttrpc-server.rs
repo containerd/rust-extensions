@@ -17,8 +17,7 @@ use std::sync::Arc;
 use std::thread;
 
 use containerd_shim_client::api::{CreateTaskRequest, CreateTaskResponse};
-use containerd_shim_client::shim::shim_ttrpc;
-use containerd_shim_client::Task;
+use containerd_shim_client::{create_task, Task};
 use log::LevelFilter;
 use ttrpc::server::*;
 
@@ -60,7 +59,7 @@ fn main() {
 
     let t = Box::new(FakeServer::new()) as Box<dyn Task + Send + Sync>;
     let t = Arc::new(t);
-    let tservice = shim_ttrpc::create_task(t);
+    let tservice = create_task(t);
 
     let mut server = Server::new()
         .bind("unix:///tmp/shim-proto-ttrpc-001")

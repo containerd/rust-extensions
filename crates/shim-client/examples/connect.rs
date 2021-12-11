@@ -19,7 +19,7 @@ use std::env;
 use containerd_shim_client as client;
 
 use client::api;
-use client::ttrpc::context::Context;
+use ttrpc::context::Context;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
