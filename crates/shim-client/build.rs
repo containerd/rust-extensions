@@ -19,6 +19,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+#[cfg(feature = "generate_bindings")]
 use ttrpc_codegen::{Codegen, ProtobufCustomize};
 
 #[cfg(not(feature = "generate_bindings"))]
