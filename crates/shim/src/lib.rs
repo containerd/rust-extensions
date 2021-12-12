@@ -316,7 +316,7 @@ fn start_listener(address: &str) -> Result<UnixListener, Error> {
 
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
-pub fn spawn(opts: StartOpts) -> Result<String, Error> {
+pub fn spawn(opts: StartOpts, vars: Vec<(&str, &str)>) -> Result<String, Error> {
     let cmd = env::current_exe()?;
     let cwd = env::current_dir()?;
     let address = socket_address(&opts.address, &opts.namespace, &opts.id);
@@ -342,7 +342,8 @@ pub fn spawn(opts: StartOpts) -> Result<String, Error> {
             &opts.id,
             "-address",
             &opts.address,
-        ]);
+        ])
+        .envs(vars);
 
     command.spawn().map_err(Into::into).map(|_| {
         // Ownership of `listener` has been passed to child.

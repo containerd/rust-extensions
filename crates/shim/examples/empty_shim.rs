@@ -37,7 +37,7 @@ impl shim::Shim for Service {
     }
 
     fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
-        let address = shim::spawn(opts)?;
+        let address = shim::spawn(opts, Vec::new())?;
         Ok(address)
     }
 }
