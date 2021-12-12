@@ -22,6 +22,7 @@ use std::error;
 use std::fs;
 use std::hash::Hasher;
 use std::io::{self, Write};
+use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixListener;
@@ -302,11 +303,14 @@ fn start_listener(address: &str) -> Result<UnixListener, Error> {
 
     UnixListener::bind(address).or_else(|e| {
         if e.kind() == io::ErrorKind::AddrInUse {
-            fs::remove_file(address)?;
-            UnixListener::bind(address).map_err(|e| e.into())
-        } else {
-            Err(e.into())
+            if let Ok(md) = Path::new(address).metadata() {
+                if md.file_type().is_socket() {
+                    fs::remove_file(address)?;
+                    return UnixListener::bind(address).map_err(|e| e.into());
+                }
+            }
         }
+        Err(e.into())
     })
 }
 
