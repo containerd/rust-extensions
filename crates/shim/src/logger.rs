@@ -49,17 +49,20 @@ impl log::Log for FifoLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let mut guard = self.file.lock().unwrap();
-            writeln!(guard.borrow_mut(), "[{}] {}", record.level(), record.args())
-                .expect("Failed to write log fifo file");
+            // The logger server may have temporarily shutdown, ignore the error instead of panic.
+            //
+            // Manual for pipe/FIFO: https://man7.org/linux/man-pages/man7/pipe.7.html
+            // If all file descriptors referring to the read end of a pipe have been closed, then
+            // a write(2) will cause a SIGPIPE signal to be generated for the calling process.
+            // If the calling process is ignoring this signal, then write(2) fails with the error
+            // EPIPE.
+            let _ = writeln!(guard.borrow_mut(), "[{}] {}", record.level(), record.args());
         }
     }
 
     fn flush(&self) {
-        self.file
-            .lock()
-            .unwrap()
-            .sync_all()
-            .expect("Failed to sync log data");
+        // The logger server may have temporarily shutdown, ignore the error instead of panic.
+        let _ = self.file.lock().unwrap().sync_all();
     }
 }
 
@@ -73,13 +76,14 @@ pub enum Error {
 
 pub fn init(debug: bool) -> Result<(), Error> {
     let logger = FifoLogger::new().map_err(Error::Io)?;
-    log::set_boxed_logger(Box::new(logger)).map_err(Error::Setup)?;
-
-    log::set_max_level(if debug {
+    let level = if debug {
         log::LevelFilter::Debug
     } else {
         log::LevelFilter::Info
-    });
+    };
+
+    log::set_boxed_logger(Box::new(logger)).map_err(Error::Setup)?;
+    log::set_max_level(level);
 
     Ok(())
 }
