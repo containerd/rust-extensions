@@ -109,7 +109,7 @@ impl ExitSignal {
     }
 
     /// Wait for the exit signal to be set.
-    fn wait(&self) {
+    pub fn wait(&self) {
         let (lock, cvar) = &*self.0;
         let mut started = lock.lock().unwrap();
         while !*started {
@@ -129,13 +129,7 @@ pub trait Shim {
     type T: Task + Send + Sync;
 
     /// Create a new instance of Shim.
-    fn new(
-        id: &str,
-        namespace: &str,
-        publisher: RemotePublisher,
-        config: &mut Config,
-        exit: ExitSignal,
-    ) -> Self;
+    fn new(id: &str, namespace: &str, publisher: RemotePublisher, config: &mut Config) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -148,6 +142,9 @@ pub trait Shim {
     fn delete_shim(&mut self) -> Result<DeleteResponse, Self::Error> {
         Ok(DeleteResponse::default())
     }
+
+    /// Wait for the shim to exit.
+    fn wait(&mut self);
 
     /// Get the task service object.
     fn get_task_service(&self) -> Self::T;
@@ -176,15 +173,8 @@ where
     let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
 
     // Create shim instance
-    let exit_signal = ExitSignal::default();
     let mut config = Config::default();
-    let mut shim = T::new(
-        id,
-        &flags.namespace,
-        publisher,
-        &mut config,
-        exit_signal.clone(),
-    );
+    let mut shim = T::new(id, &flags.namespace, publisher, &mut config);
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
@@ -237,7 +227,7 @@ where
             server.start()?;
 
             info!("Shim successfully started, waiting for exit signal...");
-            exit_signal.wait();
+            shim.wait();
 
             info!("Shutting down shim instance");
             server.shutdown();
