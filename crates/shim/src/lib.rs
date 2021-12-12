@@ -371,4 +371,28 @@ mod tests {
             panic!("{:?}", err);
         }
     }
+
+    #[test]
+    fn test_start_listener() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().to_str().unwrap().to_owned();
+
+        // A little dangerous, may be turned on under controlled environment.
+        //assert!(start_listener("/").is_err());
+        //assert!(start_listener("/tmp").is_err());
+
+        let socket = path + "/ns1/id1/socket";
+        let _listener = start_listener(&socket).unwrap();
+        let _listener2 = start_listener(&socket).unwrap();
+
+        let socket2 = socket + "/socket";
+        assert!(start_listener(&socket2).is_err());
+
+        let path = tmpdir.path().to_str().unwrap().to_owned();
+        let txt_file = path + "demo.txt";
+        fs::write(&txt_file, "test").unwrap();
+        assert!(start_listener(&txt_file).is_err());
+        let context = fs::read_to_string(&txt_file).unwrap();
+        assert_eq!(context, "test");
+    }
 }
