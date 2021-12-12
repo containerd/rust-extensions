@@ -121,10 +121,14 @@ impl ExitSignal {
 /// Main shim interface that must be implemented by all shims.
 ///
 /// Start and delete routines will be called to handle containerd's shim lifecycle requests.
-pub trait Shim: Task {
+pub trait Shim {
     /// Error type to be returned when starting/deleting shim.
     type Error: error::Error;
 
+    /// Type to provide task service for the shim.
+    type T: Task + Send + Sync;
+
+    /// Create a new instance of Shim.
     fn new(
         id: &str,
         namespace: &str,
@@ -134,6 +138,7 @@ pub trait Shim: Task {
     ) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
+    ///
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
     /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
@@ -143,6 +148,9 @@ pub trait Shim: Task {
     fn delete_shim(&mut self) -> Result<DeleteResponse, Self::Error> {
         Ok(DeleteResponse::default())
     }
+
+    /// Get the task service object.
+    fn get_task_service(&self) -> Self::T;
 }
 
 /// Shim entry point that must be invoked from `main`.
@@ -216,8 +224,8 @@ where
                 logger::init(flags.debug)?;
             }
 
-            let task_service = create_task(Arc::new(Box::new(shim)));
-
+            let task = shim.get_task_service();
+            let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
 
             server = if flags.socket.is_empty() {
