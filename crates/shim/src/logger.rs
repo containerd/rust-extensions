@@ -18,6 +18,7 @@ use std::borrow::BorrowMut;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Mutex;
 
 use log::{Metadata, Record};
@@ -29,11 +30,15 @@ pub struct FifoLogger {
 
 impl FifoLogger {
     pub fn new() -> Result<FifoLogger, io::Error> {
+        Self::with_path("log")
+    }
+
+    pub fn with_path<P: AsRef<Path>>(path: P) -> Result<FifoLogger, io::Error> {
         let f = OpenOptions::new()
             .write(true)
             .read(false)
             .create(false)
-            .open("log")?;
+            .open(path)?;
 
         Ok(FifoLogger {
             file: Mutex::new(f),
@@ -86,4 +91,42 @@ pub fn init(debug: bool) -> Result<(), Error> {
     log::set_max_level(level);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use log::{Log, Record};
+    use nix::{sys::stat, unistd};
+
+    #[test]
+    fn test_fifo_log() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().to_str().unwrap().to_owned() + "/log";
+
+        unistd::mkfifo(Path::new(&path), stat::Mode::S_IRWXU).unwrap();
+
+        let path1 = path.clone();
+        let thread = std::thread::spawn(move || {
+            let _fifo = OpenOptions::new()
+                .write(false)
+                .read(true)
+                .create(false)
+                .open(&path1)
+                .unwrap();
+        });
+
+        let logger = FifoLogger::with_path(&path).unwrap();
+        //log::set_boxed_logger(Box::new(logger)).map_err(Error::Setup)?;
+        log::set_max_level(log::LevelFilter::Info);
+        thread.join().unwrap();
+
+        let record = Record::builder()
+            .level(log::Level::Error)
+            .line(Some(1))
+            .file(Some("sample file"))
+            .build();
+        logger.log(&record);
+        logger.flush();
+    }
 }
