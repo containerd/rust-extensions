@@ -28,8 +28,7 @@ use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 pub use containerd_shim_client as protos;
 
@@ -71,6 +70,7 @@ pub struct Config {
 }
 
 /// Startup options received from containerd to start new shim instance.
+///
 /// These will be passed via [`Shim::start_shim`] to shim.
 #[derive(Debug, Default)]
 pub struct StartOpts {
@@ -87,31 +87,39 @@ pub struct StartOpts {
 }
 
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
+///
 /// Shim implementations are responsible for calling [`Self::signal`].
 #[derive(Clone)]
-pub struct ExitSignal(Arc<AtomicBool>);
+pub struct ExitSignal(Arc<(Mutex<bool>, Condvar)>);
 
 impl Default for ExitSignal {
+    #[allow(clippy::mutex_atomic)]
     fn default() -> Self {
-        ExitSignal(Arc::new(AtomicBool::new(false)))
+        ExitSignal(Arc::new((Mutex::new(false), Condvar::new())))
     }
 }
 
 impl ExitSignal {
     /// Set exit signal to shutdown shim server.
     pub fn signal(&self) {
-        self.0.store(true, Ordering::Release)
+        let (lock, cvar) = &*self.0;
+        let mut exit = lock.lock().unwrap();
+        *exit = true;
+        cvar.notify_all();
     }
 
     /// Wait for the exit signal to be set.
     fn wait(&self) {
-        while !self.0.load(Ordering::Acquire) {
-            std::hint::spin_loop();
+        let (lock, cvar) = &*self.0;
+        let mut started = lock.lock().unwrap();
+        while !*started {
+            started = cvar.wait(started).unwrap();
         }
     }
 }
 
 /// Main shim interface that must be implemented by all shims.
+///
 /// Start and delete routines will be called to handle containerd's shim lifecycle requests.
 pub trait Shim: Task {
     /// Error type to be returned when starting/deleting shim.
