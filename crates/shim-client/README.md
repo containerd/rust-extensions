@@ -7,7 +7,26 @@
 
 TTRPC bindings for containerd's shim events and interfaces.
 
-## Look and feel
+## Design
+
+The `containerd-shim-client` crate provides [Protobuf](https://github.com/protocolbuffers/protobuf.git) message
+and [ttRPC](https://github.com/containerd/ttrpc.git) service definitions for the
+[Containerd shim v2](https://github.com/containerd/containerd/blob/main/runtime/v2/task/shim.proto) protocol.
+
+The message and service definitions are auto-generated from protobuf source files under `vendor/`
+by using [ttrpc-codegen](https://github.com/containerd/ttrpc-rust/tree/master/ttrpc-codegen). So please do not
+edit those auto-generated source files. If upgrading/modification is needed, please follow the steps:
+- Synchronize the latest protobuf source files from the upstream projects into directory 'vendor/'.
+- Re-generate the source files by `cargo build --features=generate_bindings`.
+- Commit the synchronized protobuf source files and auto-generated source files, keeping them in synchronization.
+
+## Usage
+Add `containerd-shim-client` as a dependency in your `Cargo.toml`
+
+```toml
+[dependencies]
+containerd-shim-client = "0.1"
+```
 
 Basic client code looks as follows:
 
@@ -27,8 +46,11 @@ let resp = task_client.connect(context, &req)?;
 
 ## Example
 
-Have a look on example [here](./examples/connect.rs).
+- [ttRPC shim client](./examples/ttrpc-client.rs)
+- [ttRPC shim server](./examples/ttrpc-server.rs)
+- [ttRPC client connect](./examples/connect.rs).
 
+The way to build the [ttRPC client connect](./examples/connect.rs) example:
 ```bash
 $ cargo build --example connect
 $ sudo ./connect unix:///containerd-shim/shim_socket_path.sock

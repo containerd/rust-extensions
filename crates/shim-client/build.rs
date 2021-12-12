@@ -19,6 +19,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+#[cfg(feature = "generate_bindings")]
 use ttrpc_codegen::{Codegen, ProtobufCustomize};
 
 #[cfg(not(feature = "generate_bindings"))]
@@ -37,6 +38,11 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/events/task.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
         ],
+    );
+
+    codegen(
+        "src/cgroups",
+        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
     );
 
     codegen(
