@@ -16,7 +16,6 @@
 
 //! Implements a client to publish events from the shim back to containerd.
 
-use std::os::unix::io::RawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use containerd_shim_client as client;
@@ -38,18 +37,22 @@ pub struct RemotePublisher {
 
 impl RemotePublisher {
     /// Connect to containerd's TTRPC endpoint.
+    ///
     /// containerd uses `/run/containerd/containerd.sock.ttrpc` by default
     pub fn new(address: impl AsRef<str>) -> Result<RemotePublisher, Error> {
-        let fd = Self::connect(address)?;
-        let client = Client::new(fd);
+        let client = Self::connect(address)?;
 
         Ok(RemotePublisher {
             client: EventsClient::new(client),
         })
     }
 
-    fn connect(address: impl AsRef<str>) -> Result<RawFd, nix::Error> {
+    fn connect(address: impl AsRef<str>) -> Result<Client, nix::Error> {
         use nix::sys::socket::*;
+        use nix::unistd::close;
+
+        let unix_addr = UnixAddr::new(address.as_ref())?;
+        let sock_addr = SockAddr::Unix(unix_addr);
 
         // SOCK_CLOEXEC flag is Linux specific
         #[cfg(target_os = "linux")]
@@ -65,18 +68,23 @@ impl RemotePublisher {
         #[cfg(not(target_os = "linux"))]
         {
             use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-            fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))?;
+            fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(|e| {
+                let _ = close(fd);
+                e
+            })?;
         }
 
-        let unix_addr = UnixAddr::new(address.as_ref())?;
-        let sock_addr = SockAddr::Unix(unix_addr);
+        connect(fd, &sock_addr).map_err(|e| {
+            let _ = close(fd);
+            e
+        })?;
 
-        connect(fd, &sock_addr)?;
-
-        Ok(fd)
+        // Client::new() takes ownership of the RawFd.
+        Ok(Client::new(fd))
     }
 
-    /// Publish new event.
+    /// Publish a new event.
+    ///
     /// Event object can be anything that Protobuf able serialize (e.g. implement `Message` trait).
     pub fn publish(
         &self,
@@ -139,4 +147,72 @@ pub enum Error {
     Any(#[from] protobuf::ProtobufError),
     #[error("Nix error: {0}")]
     Nix(#[from] nix::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use client::api::{Empty, ForwardRequest};
+    use client::events::task::TaskOOM;
+    use std::os::unix::io::AsRawFd;
+    use std::os::unix::net::UnixListener;
+    use std::sync::{Arc, Barrier};
+    use ttrpc::server::Server;
+
+    struct FakeServer {}
+
+    impl Events for FakeServer {
+        fn forward(&self, _ctx: &ttrpc::TtrpcContext, req: ForwardRequest) -> ttrpc::Result<Empty> {
+            let env = req.get_envelope();
+            assert_eq!(env.get_topic(), "/tasks/oom");
+            Ok(Empty::default())
+        }
+    }
+
+    #[test]
+    fn test_timestamp() {
+        let ts = RemotePublisher::timestamp().unwrap();
+        assert!(ts.seconds > 0);
+    }
+
+    #[test]
+    fn test_connect() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = format!("{}/socket", tmpdir.as_ref().to_str().unwrap());
+        let path1 = path.clone();
+
+        assert!(RemotePublisher::connect("a".repeat(16384)).is_err());
+        assert!(RemotePublisher::connect(&path).is_err());
+
+        let barrier = Arc::new(Barrier::new(2));
+        let barrier2 = barrier.clone();
+        let thread = std::thread::spawn(move || {
+            let listener = UnixListener::bind(&path1).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
+            let service = client::create_events(t);
+            let mut server = Server::new()
+                .add_listener(listener.as_raw_fd())
+                .unwrap()
+                .register_service(service);
+            std::mem::forget(listener);
+
+            server.start().unwrap();
+            barrier2.wait();
+
+            barrier2.wait();
+            server.shutdown();
+        });
+
+        barrier.wait();
+        let client = RemotePublisher::new(&path).unwrap();
+        let mut msg = TaskOOM::new();
+        msg.set_container_id("test".to_string());
+        client
+            .publish(Context::default(), "/tasks/oom", "ns1", msg)
+            .unwrap();
+        barrier.wait();
+
+        thread.join().unwrap();
+    }
 }

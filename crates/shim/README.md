@@ -127,3 +127,9 @@ $ cat log
 [INFO] reaper thread exited
 [INFO] reaper thread stopped
 ```
+
+## Supported Platforms
+Currently following OSs and hardware architectures are supported, and more efforts are needed to enable and validate other OSs and architectures.
+- Linux
+- Mac OS
+- x86_64

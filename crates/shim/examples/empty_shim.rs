@@ -17,28 +17,39 @@
 use containerd_shim as shim;
 
 use log::info;
-use shim::{api, TtrpcContext, TtrpcResult};
+use shim::{api, ExitSignal, TtrpcContext, TtrpcResult};
 
+#[derive(Clone)]
 struct Service {
-    exit: shim::ExitSignal,
+    exit: ExitSignal,
 }
 
 impl shim::Shim for Service {
     type Error = shim::Error;
+    type T = Service;
 
     fn new(
         _id: &str,
         _namespace: &str,
         _publisher: shim::RemotePublisher,
         _config: &mut shim::Config,
-        exit: shim::ExitSignal,
     ) -> Self {
-        Service { exit }
+        Service {
+            exit: ExitSignal::default(),
+        }
     }
 
     fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
-        let address = shim::spawn(opts)?;
+        let address = shim::spawn(opts, Vec::new())?;
         Ok(address)
+    }
+
+    fn wait(&mut self) {
+        self.exit.wait();
+    }
+
+    fn get_task_service(&self) -> Self::T {
+        self.clone()
     }
 }
 
