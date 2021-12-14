@@ -129,7 +129,20 @@ pub trait Shim {
     type T: Task + Send + Sync;
 
     /// Create a new instance of Shim.
-    fn new(id: &str, namespace: &str, publisher: RemotePublisher, config: &mut Config) -> Self;
+    ///
+    /// # Arguments
+    /// - `runtime_id`: identifier of the container runtime.
+    /// - `id`: identifier of the shim/container, passed in from Containerd.
+    /// - `namespace`: namespace of the shim/container, passed in from Containerd.
+    /// - `publisher`: publisher to send events to Containerd.
+    /// - `config`: for the shim to pass back configuration information
+    fn new(
+        runtime_id: &str,
+        id: &str,
+        namespace: &str,
+        publisher: RemotePublisher,
+        config: &mut Config,
+    ) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -151,17 +164,17 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-pub fn run<T>(id: &str)
+pub fn run<T>(runtime_id: &str)
 where
     T: Shim + Send + Sync + 'static,
 {
-    if let Some(err) = bootstrap::<T>(id).err() {
-        eprintln!("{}: {:?}", id, err);
+    if let Some(err) = bootstrap::<T>(runtime_id).err() {
+        eprintln!("{}: {:?}", runtime_id, err);
         process::exit(1);
     }
 }
 
-fn bootstrap<T>(id: &str) -> Result<(), Error>
+fn bootstrap<T>(runtime_id: &str) -> Result<(), Error>
 where
     T: Shim + Send + Sync + 'static,
 {
@@ -174,7 +187,13 @@ where
 
     // Create shim instance
     let mut config = Config::default();
-    let mut shim = T::new(id, &flags.namespace, publisher, &mut config);
+    let mut shim = T::new(
+        runtime_id,
+        &flags.id,
+        &flags.namespace,
+        publisher,
+        &mut config,
+    );
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
