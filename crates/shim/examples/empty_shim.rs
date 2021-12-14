@@ -29,6 +29,7 @@ impl shim::Shim for Service {
     type T = Service;
 
     fn new(
+        _runtime_id: &str,
         _id: &str,
         _namespace: &str,
         _publisher: shim::RemotePublisher,
