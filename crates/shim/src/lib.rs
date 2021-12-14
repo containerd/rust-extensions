@@ -183,7 +183,7 @@ where
     match flags.action.as_str() {
         "start" => {
             let args = StartOpts {
-                id: id.into(),
+                id: flags.id,
                 publish_binary: flags.publish_binary,
                 address: flags.address,
                 ttrpc_address,

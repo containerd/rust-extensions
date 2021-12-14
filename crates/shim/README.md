@@ -73,19 +73,21 @@ fn main() {
 
 ## How to use with containerd
 
+**Note**: All operations are in the root directory of `rust-extensions`.
+
 With shim v2 runtime:
 
 ```bash
-$ cargo build --example empty-shim
-$ sudo cp ./target/debug/examples/empty-shim /usr/local/bin/containerd-shim-empty-v2
-$ sudo ctr run --rm --runtime io.containerd.empty.v2 -t docker.io/library/hello-world:latest hello
+$ cargo build --example empty_shim
+$ sudo cp ./target/debug/examples/empty_shim /usr/local/bin/containerd-shim-empty-v1
+$ sudo ctr run --rm --runtime io.containerd.empty.v1 -t docker.io/library/hello-world:latest hello
 ```
 
 Or if on 1.6+
 
 ```bash
-$ cargo build --example empty-shim
-ctr run --rm --runtime ./target/debug/examples/empty_shim docker.io/library/hello-world:latest hello
+$ cargo build --example empty_shim
+$ sudo ctr run --rm --runtime ./target/debug/examples/empty_shim docker.io/library/hello-world:latest hello
 ```
 
 Or manually:
@@ -103,8 +105,8 @@ $ sudo TTRPC_ADDRESS="/var/run/containerd/containerd.sock.ttrpc" \
     start
 unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
 
-$ cargo build --example connect
-$ sudo ./target/debug/examples/connect unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
+$ cargo build --example shim-proto-connect
+$ sudo ./target/debug/examples/shim-proto-connect unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
 Connecting to unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock...
 Sending `Connect` request...
 Connect response: version: "example"
