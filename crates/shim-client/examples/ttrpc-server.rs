@@ -18,7 +18,6 @@ use std::thread;
 
 use containerd_shim_client::api::{CreateTaskRequest, CreateTaskResponse};
 use containerd_shim_client::{create_task, Task};
-use log::LevelFilter;
 use ttrpc::server::*;
 
 #[derive(Debug, PartialEq)]
@@ -55,7 +54,7 @@ impl Task for FakeServer {
 }
 
 fn main() {
-    simple_logging::log_to_stderr(LevelFilter::Trace);
+    simple_logger::SimpleLogger::new().init().unwrap();
 
     let t = Box::new(FakeServer::new()) as Box<dyn Task + Send + Sync>;
     let t = Arc::new(t);
