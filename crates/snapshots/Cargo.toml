@@ -8,3 +8,9 @@ repository = "https://github.com/containerd/rust-extensions"
 homepage = "https://containerd.io"
 
 [dependencies]
+tonic = "0.6"
+prost = "0.9"
+prost-types = "0.9"
+
+[build-dependencies]
+tonic-build = "0.6"
