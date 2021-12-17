@@ -3,5 +3,6 @@ members = [
     "crates/client",
     "crates/logging",
     "crates/shim-client",
-    "crates/shim"
+    "crates/shim",
+    "crates/snapshots"
 ]
