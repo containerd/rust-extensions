@@ -1,0 +1,10 @@
+[package]
+name = "containerd-snapshots"
+version = "0.1.0"
+authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>"]
+edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/containerd/rust-extensions"
+homepage = "https://containerd.io"
+
+[dependencies]
