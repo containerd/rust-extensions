@@ -14,13 +14,19 @@
    limitations under the License.
 */
 
-//! Remote snapshotter library for containerd.
+//! Remote snapshotter extension for containerd.
 //!
-//! This crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying
+//! Snapshots crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying
 //! complexity of GRPC interfaces, streaming and request/response conversions and provide one
 //! [Snapshots] trait to implement.
 //!
-//! # How to use from containerd.
+//! # Proxy plugins
+//! A proxy plugin is configured using containerd's config file and will be loaded alongside the
+//! internal plugins when containerd is started. These plugins are connected to containerd using a
+//! local socket serving one of containerd's GRPC API services. Each plugin is configured with a
+//! type and name just as internal plugins are.
+//!
+//! # How to use from containerd
 //! Add the following to containerd's configuration file:
 //! ```toml
 //! [proxy_plugins]
@@ -37,7 +43,7 @@
 //! ```bash
 //! $ cargo run --example snapshotter /tmp/snap2.sock
 //! ```
-//! Specify the snapshotter when pulling an image:
+//! Now specify `custom` snapshotter when pulling an image with `ctr`:
 //! ```bash
 //! $ ctr i pull --snapshotter custom docker.io/library/hello-world:latest
 //! ```
