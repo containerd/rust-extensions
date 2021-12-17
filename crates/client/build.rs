@@ -73,7 +73,7 @@ fn main() {
 // 47 |     pub diff: ::core::option::Option<super::super::super::types::Descriptor>,
 //    |                                                    ^^^^^ there are too many leading `super` keywords
 //
-// This func aims to fix these imports to crate level ones, like `crate::types::Mount`
+// This func fixes imports to crate level ones, like `crate::types::Mount`
 fn fixup_imports(path: &str) -> Result<(), io::Error> {
     let out_dir = env::var("OUT_DIR").unwrap();
     let path = format!("{}/{}.rs", out_dir, path);
