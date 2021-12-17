@@ -17,7 +17,7 @@
 //! Trait wrapper to server GRPC requests.
 
 use std::convert::TryInto;
-use std::error::Error;
+use std::fmt::Debug;
 
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -209,7 +209,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
     }
 }
 
-fn status<E: Error>(err: E) -> tonic::Status {
-    let message = format!("{}", err);
+fn status<E: Debug>(err: E) -> tonic::Status {
+    let message = format!("{:?}", err);
     tonic::Status::internal(message)
 }

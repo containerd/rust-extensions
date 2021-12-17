@@ -16,11 +16,34 @@
 
 //! Remote snapshotter library for containerd.
 //!
-//! This crate aims to hide the underlying complexity of GRPC interfaces, streaming and request/response
-//! conversions and provide one clean [Snapshots] trait to implement for remote snapshotting.
+//! This crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying
+//! complexity of GRPC interfaces, streaming and request/response conversions and provide one
+//! [Snapshots] trait to implement.
+//!
+//! # How to use from containerd.
+//! Add the following to containerd's configuration file:
+//! ```toml
+//! [proxy_plugins]
+//!   [proxy_plugins.custom]
+//!     type = "snapshot"
+//!     address = "/tmp/snap2.sock"
+//! ```
+//! Start containerd daemon:
+//! ```bash
+//! containerd --config /path/config.toml
+//! ```
+//!
+//! Run remote snapshotter instance:
+//! ```bash
+//! $ cargo run --example snapshotter /tmp/snap2.sock
+//! ```
+//! Specify the snapshotter when pulling an image:
+//! ```bash
+//! $ ctr i pull --snapshotter custom docker.io/library/hello-world:latest
+//! ```
+//!
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt::Debug;
 use std::ops::AddAssign;
 use std::time::SystemTime;
@@ -56,6 +79,12 @@ pub enum Kind {
     Committed,
 }
 
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Unknown
+    }
+}
+
 /// Information about a particular snapshot.
 #[derive(Debug)]
 pub struct Info {
@@ -73,11 +102,24 @@ pub struct Info {
     pub updated_at: SystemTime,
 }
 
+impl Default for Info {
+    fn default() -> Self {
+        Info {
+            kind: Default::default(),
+            name: Default::default(),
+            parent: Default::default(),
+            labels: Default::default(),
+            created_at: SystemTime::now(),
+            updated_at: SystemTime::now(),
+        }
+    }
+}
+
 /// Defines statistics for disk resources consumed by the snapshot.
 ///
 // These resources only include the resources consumed by the snapshot itself and does not include
 // resources usage by the parent.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Usage {
     /// Number of inodes in use.
     pub inodes: i64,
@@ -105,7 +147,7 @@ pub trait Snapshotter: Send + Sync + 'static {
     /// Error type returned from the underlying snapshotter implementation.
     ///
     /// This type must be convertable to GRPC status.
-    type Error: Error;
+    type Error: Debug;
 
     /// Returns the info for an active or committed snapshot by name or key.
     ///

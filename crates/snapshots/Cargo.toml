@@ -15,5 +15,11 @@ prost-types = "0.9"
 tokio = { version = "1.15", features = ["sync"] }
 tokio-stream = "0.1.8"
 
+[dev-dependencies]
+log = "0.4"
+async-stream = "0.3.2"
+futures = "0.3.17"
+simple_logger = { version  = "1.13", default-features = false }
+
 [build-dependencies]
 tonic-build = "0.6"
