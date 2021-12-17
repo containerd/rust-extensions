@@ -6,6 +6,9 @@ edition = "2018"
 license = "Apache-2.0"
 repository = "https://github.com/containerd/rust-extensions"
 homepage = "https://containerd.io"
+keywords = ["containerd", "server", "grpc", "containers"]
+categories = ["api-bindings", "asynchronous"]
+description = "Remote snapshotter extension for containerd"
 
 [dependencies]
 thiserror = "1.0"
