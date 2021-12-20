@@ -45,6 +45,7 @@ pub mod services {
         tonic::include_proto!("containerd.services.introspection.v1");
         tonic::include_proto!("containerd.services.leases.v1");
         tonic::include_proto!("containerd.services.namespaces.v1");
+        tonic::include_proto!("containerd.services.tasks.v1");
 
         // Snapshot's `Info` conflicts with Content's `Info`, so wrap it into a separate sub module.
         pub mod snapshots {
@@ -82,4 +83,18 @@ pub async fn connect(
         .await?;
 
     Ok(channel)
+}
+
+/// Help to inject namespace into request.
+///
+/// To use this macro, the `tonic::Request` is needed.
+#[macro_export]
+macro_rules! with_namespace {
+    ($req : ident, $ns: expr) => {{
+        let mut req = Request::new($req);
+        let md = req.metadata_mut();
+        // https://github.com/containerd/containerd/blob/main/namespaces/grpc.go#L27
+        md.insert("containerd-namespace", $ns.parse().unwrap());
+        req
+    }};
 }
