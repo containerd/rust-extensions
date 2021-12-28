@@ -16,8 +16,10 @@
 use std::sync::Arc;
 use std::thread;
 
-use containerd_shim_client::api::{CreateTaskRequest, CreateTaskResponse};
-use containerd_shim_client::{create_task, Task};
+use containerd_shim_protos::{
+    api::{CreateTaskRequest, CreateTaskResponse},
+    create_task, Task,
+};
 use ttrpc::server::*;
 
 #[derive(Debug, PartialEq)]

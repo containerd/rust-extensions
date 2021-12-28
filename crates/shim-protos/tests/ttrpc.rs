@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
-use containerd_shim_client::api::{CreateTaskRequest, CreateTaskResponse, DeleteRequest};
-use containerd_shim_client::shim::shim_ttrpc::create_task;
-use containerd_shim_client::Task;
+use containerd_shim_protos::api::{CreateTaskRequest, CreateTaskResponse, DeleteRequest};
+use containerd_shim_protos::shim::shim_ttrpc::create_task;
+use containerd_shim_protos::Task;
 use protobuf::{CodedInputStream, CodedOutputStream, Message};
 use ttrpc::common::{MESSAGE_TYPE_REQUEST, MESSAGE_TYPE_RESPONSE};
 use ttrpc::{Code, MessageHeader, Request, Response, TtrpcContext};
