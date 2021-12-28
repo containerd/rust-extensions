@@ -16,7 +16,7 @@
 
 use std::env;
 
-use containerd_shim_client as client;
+use containerd_shim_protos as client;
 
 use client::api;
 use ttrpc::context::Context;

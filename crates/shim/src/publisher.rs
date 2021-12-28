@@ -18,7 +18,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use containerd_shim_client as client;
+use containerd_shim_protos as client;
 
 use client::protobuf;
 use client::shim::{empty, events};

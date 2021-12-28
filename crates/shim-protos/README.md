@@ -9,8 +9,8 @@ TTRPC bindings for containerd's shim events and interfaces.
 
 ## Design
 
-The `containerd-shim-client` crate provides [Protobuf](https://github.com/protocolbuffers/protobuf.git) message
-and [ttRPC](https://github.com/containerd/ttrpc.git) service definitions for the
+The `containerd-shim-protos` crate provides [Protobuf](https://github.com/protocolbuffers/protobuf.git) message
+and [TTRPC](https://github.com/containerd/ttrpc.git) service definitions for the
 [Containerd shim v2](https://github.com/containerd/containerd/blob/main/runtime/v2/task/shim.proto) protocol.
 
 The message and service definitions are auto-generated from protobuf source files under `vendor/`
@@ -25,7 +25,7 @@ Add `containerd-shim-client` as a dependency in your `Cargo.toml`
 
 ```toml
 [dependencies]
-containerd-shim-client = "0.1"
+containerd-shim-protos = "0.1"
 ```
 
 Basic client code looks as follows:
@@ -46,9 +46,9 @@ let resp = task_client.connect(context, &req)?;
 
 ## Example
 
-- [ttRPC shim client](./examples/ttrpc-client.rs)
-- [ttRPC shim server](./examples/ttrpc-server.rs)
-- [ttRPC client connect](./examples/connect.rs).
+- [TTRPC shim client](./examples/ttrpc-client.rs)
+- [TTRPC shim server](./examples/ttrpc-server.rs)
+- [TTRPC client connect](./examples/connect.rs).
 
 The way to build the [ttRPC client connect](./examples/connect.rs) example:
 ```bash
