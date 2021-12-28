@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 
-pub use containerd_shim_client as protos;
+pub use containerd_shim_protos as protos;
 
 use protos::protobuf::Message;
 use protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};

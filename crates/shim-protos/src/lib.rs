@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-//! `containerd-shim-client` contains TTRPC bindings and client/server code to interact with
+//! `containerd-shim-protos` contains TTRPC bindings and client/server code to interact with
 //! containerd's runtime v2 shims.
 //!
 //! This crate relies on [ttrpc-rust](https://github.com/containerd/ttrpc-rust) crate to generate
