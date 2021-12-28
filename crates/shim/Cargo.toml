@@ -14,7 +14,7 @@ go-flag = "0.1.0"
 thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
-nix = "0.22"
+nix = "0.23.1"
 command-fds = "0.2.1"
 
 containerd-shim-client = { path = "../shim-client", version = "0.1.0" }
