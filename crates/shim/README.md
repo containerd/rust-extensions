@@ -78,16 +78,16 @@ fn main() {
 With shim v2 runtime:
 
 ```bash
-$ cargo build --example empty_shim
-$ sudo cp ./target/debug/examples/empty_shim /usr/local/bin/containerd-shim-empty-v1
-$ sudo ctr run --rm --runtime io.containerd.empty.v1 -t docker.io/library/hello-world:latest hello
+$ cargo build --example skeleton
+$ sudo cp ./target/debug/examples/skeleton /usr/local/bin/containerd-shim-skeleton-v1
+$ sudo ctr run --rm --runtime io.containerd.skeleton.v1 -t docker.io/library/hello-world:latest hello
 ```
 
 Or if on 1.6+
 
 ```bash
-$ cargo build --example empty_shim
-$ sudo ctr run --rm --runtime ./target/debug/examples/empty_shim docker.io/library/hello-world:latest hello
+$ cargo build --example skeleton
+$ sudo ctr run --rm --runtime ./target/debug/examples/skeleton docker.io/library/hello-world:latest hello
 ```
 
 Or manually:
@@ -97,7 +97,7 @@ $ touch log
 
 # Run containerd in background
 $ sudo TTRPC_ADDRESS="/var/run/containerd/containerd.sock.ttrpc" \
-    cargo run --example empty_shim -- \
+    cargo run --example skeleton -- \
     -namespace default \
     -id 1234 \
     -address /var/run/containerd/containerd.sock \
@@ -131,7 +131,6 @@ $ cat log
 ```
 
 ## Supported Platforms
-Currently following OSs and hardware architectures are supported, and more efforts are needed to enable and validate other OSs and architectures.
+Currently, following OSs and hardware architectures are supported, and more efforts are needed to enable and validate other OSs and architectures.
 - Linux
 - Mac OS
-- x86_64
