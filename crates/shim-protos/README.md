@@ -1,8 +1,8 @@
 # Shim protos and client for containerd
 
-[![Crates.io](https://img.shields.io/crates/v/containerd-shim-client)](https://crates.io/crates/containerd-shim-client)
-[![docs.rs](https://img.shields.io/docsrs/containerd-shim-client)](https://docs.rs/containerd-shim-client/latest/containerd-shim-client/)
-[![Crates.io](https://img.shields.io/crates/l/containerd-shim-client)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/containerd-shim-protos)](https://crates.io/crates/containerd-shim-protos)
+[![docs.rs](https://img.shields.io/docsrs/containerd-shim-protos)](https://docs.rs/containerd-shim-protos/latest/containerd_shim_protos/)
+[![Crates.io](https://img.shields.io/crates/l/containerd-shim-protos)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
 
 TTRPC bindings for containerd's shim events and interfaces.
@@ -50,7 +50,7 @@ let resp = task_client.connect(context, &req)?;
 - [TTRPC shim server](./examples/ttrpc-server.rs)
 - [TTRPC client connect](./examples/connect.rs).
 
-The way to build the [ttRPC client connect](./examples/connect.rs) example:
+The way to build the [TTRPC client connect](./examples/connect.rs) example:
 ```bash
 $ cargo build --example connect
 $ sudo ./connect unix:///containerd-shim/shim_socket_path.sock
