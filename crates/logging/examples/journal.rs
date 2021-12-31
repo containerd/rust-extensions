@@ -52,7 +52,7 @@ impl Driver for Journal {
         })
     }
 
-    fn run(self) -> Result<(), Self::Error> {
+    fn wait(self) -> Result<(), Self::Error> {
         self.stdout_handle
             .join()
             .map_err(|err| format!("{:?}", err))?;

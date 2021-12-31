@@ -10,7 +10,6 @@ This crate implement `logging::run` to easy custom logger implementations in Rus
 
 [containerd Documentation](https://github.com/containerd/containerd/tree/master/runtime/v2#logging)
 
-
 ## Example
 
 There is a journal example available as reference (originally written in Go [here](https://github.com/containerd/containerd/tree/dbef1d56d7ebc05bc4553d72c419ed5ce025b05d/runtime/v2#logging)):
@@ -36,8 +35,3 @@ Jul 22 11:53:35 dev journal[3233968]: For more examples and ideas, visit:
 Jul 22 11:53:35 dev journal[3233968]:  https://docs.docker.com/get-started/
 Jul 22 11:53:35 dev journal[3233968]:
 ```
-
-## Things to do
-
-- Windows support
-- Async support

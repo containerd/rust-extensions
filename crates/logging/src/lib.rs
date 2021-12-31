@@ -15,6 +15,13 @@
 */
 
 //! Helper library to implement custom shim loggers for containerd.
+//!
+//! # Runtime
+//! containerd shims may support pluggable logging via stdio URIs. Binary logging has the ability to
+//! forward a container's STDIO to an external binary for consumption.
+//!
+//! This crates replicates APIs provided by Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/README.md#logging).
+//!
 
 use std::env;
 use std::fmt;
@@ -23,18 +30,27 @@ use std::os::unix::io::FromRawFd;
 use std::process;
 
 /// Logging binary configuration received from containerd.
+#[derive(Debug)]
 pub struct Config {
+    /// Container id.
     pub id: String,
+    /// Container namespace.
     pub namespace: String,
+    /// Stdout to forward logs from.
     pub stdout: fs::File,
+    /// Stderr to forward logs from.
     pub stderr: fs::File,
 }
 
 impl Config {
-    /// Creates a new configuration object. This will pull environment provided by containerd to fill
-    /// up [Config] structure.
+    /// Creates a new configuration object.
     ///
-    /// `new` will panic if the environment is incorrect (not likely to happen if used properly).
+    /// It'll query environment provided by containerd to fill up [Config] structure fields.
+    ///
+    /// # Panics
+    /// Function call will panic if the environment is incorrect (note that this should be happen
+    /// if launched from containerd).
+    ///
     fn new() -> Config {
         let id = match env::var("CONTAINER_ID") {
             Ok(id) => id,
@@ -58,8 +74,13 @@ impl Config {
     }
 }
 
-/// Tiny wrapper around containerd's wait signal file.
-/// See https://github.com/containerd/containerd/blob/dbef1d56d7ebc05bc4553d72c419ed5ce025b05d/runtime/v2/logging/logging_unix.go#L44
+/// Signal file wrapper.
+/// containerd uses a file with fd 5 as a signaling mechanism between the daemon and logger process.
+/// This is a wrapper for convenience.
+///
+/// See [logging_unix.go] for details.
+///
+/// [logging_unix.go]: https://github.com/containerd/containerd/blob/dbef1d56d7ebc05bc4553d72c419ed5ce025b05d/runtime/v2/logging/logging_unix.go#L44
 struct Ready(fs::File);
 
 impl Ready {
@@ -74,22 +95,49 @@ impl Ready {
 }
 
 /// Driver is a trait to be implemented by v2 logging binaries.
+///
 /// This trait is Rusty alternative to Go's `LoggerFunc`.
+///
+/// # Example
+///
+/// ```rust
+/// use containerd_shim_logging::{Config, Driver};
+///
+/// struct Logger;
+///
+/// impl Driver for Logger {
+///     type Error = ();
+///
+///     // Launch logger threads here.
+///     fn new(config: Config) -> Result<Self, Self::Error> {
+///         Ok(Logger {})
+///     }
+///
+///     // Wait for threads to finish.
+///     // In this example `Logger` will finish immediately.
+///     fn wait(self) -> Result<(), Self::Error> {
+///         Ok(())
+///     }
+/// }
+/// ```
 pub trait Driver: Sized {
     /// The error type to be returned from driver routines if something goes wrong.
     type Error: fmt::Debug;
 
-    /// Create a new binary logger implementation from the provided `Config`.
-    /// Once returned, the crate will signal that we're ready and
-    /// setup for the container to be started
+    /// Create and run a new binary logger from the provided [Config].
+    ///
+    /// Implementations are expected to start the logger driver (typically by spawning threads).
+    /// Once returned, the crate will signal containerd that we're ready to log.
     fn new(config: Config) -> Result<Self, Self::Error>;
 
-    /// Run the logging driver.
-    /// The process will shutdown once exited.
-    fn run(self) -> Result<(), Self::Error>;
+    /// Wait for the driver to finish.
+    ///
+    /// Once returned from this function, the binary logger process will shutdown.
+    fn wait(self) -> Result<(), Self::Error>;
 }
 
 /// Entry point to run the logging driver.
+///
 /// Typically `run` must be called from the `main` function to launch the driver.
 pub fn run<D: Driver>() {
     let config = Config::new();
@@ -105,7 +153,7 @@ pub fn run<D: Driver>() {
     ready.signal();
 
     // Run and block until exit
-    if let Err(err) = logger.run() {
+    if let Err(err) = logger.wait() {
         handle_err(err)
     } else {
         process::exit(0);
