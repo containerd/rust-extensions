@@ -15,37 +15,42 @@ API offered by containerd's shim v2 runtime implementation written in Go.
 The API is very similar to the one offered by Go version:
 
 ```rust
+#[derive(Clone)]
 struct Service {
-    exit: shim::ExitSignal,
+    exit: ExitSignal,
 }
 
 impl shim::Shim for Service {
+    type Error = shim::Error;
+    type T = Service;
+
     fn new(
+        _runtime_id: &str,
         _id: &str,
         _namespace: &str,
         _publisher: shim::RemotePublisher,
         _config: &mut shim::Config,
-        exit: shim::ExitSignal,
     ) -> Self {
-        Service { exit }
+        Service {
+            exit: ExitSignal::default(),
+        }
     }
 
-    fn start_shim(&mut self, _opts: shim::StartOpts) -> Result<String, Box<dyn Error>> {
-        let address = shim::spawn(opts)?;
+    fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
+        let address = shim::spawn(opts, Vec::new())?;
         Ok(address)
+    }
+
+    fn wait(&mut self) {
+        self.exit.wait();
+    }
+
+    fn get_task_service(&self) -> Self::T {
+        self.clone()
     }
 }
 
 impl shim::Task for Service {
-    fn create(
-        &self,
-        _ctx: &TtrpcContext,
-        _req: api::CreateTaskRequest,
-    ) -> TtrpcResult<api::CreateTaskResponse> {
-        // New task nere...
-        Ok(api::CreateTaskResponse::default())
-    }
-
     fn connect(
         &self,
         _ctx: &TtrpcContext,
