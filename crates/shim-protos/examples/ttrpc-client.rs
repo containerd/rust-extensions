@@ -15,8 +15,8 @@
 
 use containerd_shim_protos::{api::CreateTaskRequest, TaskClient};
 
-use ttrpc::client::Client;
 use ttrpc::context::{self, Context};
+use ttrpc::Client;
 
 fn main() {
     let c = Client::connect("unix:///tmp/shim-proto-ttrpc-001").unwrap();

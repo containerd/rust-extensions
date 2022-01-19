@@ -11,8 +11,10 @@ use containerd_shim_protos::api::{CreateTaskRequest, CreateTaskResponse, DeleteR
 use containerd_shim_protos::shim::shim_ttrpc::create_task;
 use containerd_shim_protos::Task;
 use protobuf::{CodedInputStream, CodedOutputStream, Message};
-use ttrpc::common::{MESSAGE_TYPE_REQUEST, MESSAGE_TYPE_RESPONSE};
 use ttrpc::{Code, MessageHeader, Request, Response, TtrpcContext};
+
+const MESSAGE_TYPE_REQUEST: u8 = 0x1;
+const MESSAGE_TYPE_RESPONSE: u8 = 0x2;
 
 #[derive(Debug, PartialEq)]
 struct FakeServer {

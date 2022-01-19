@@ -157,7 +157,7 @@ mod tests {
     use std::os::unix::io::AsRawFd;
     use std::os::unix::net::UnixListener;
     use std::sync::{Arc, Barrier};
-    use ttrpc::server::Server;
+    use ttrpc::Server;
 
     struct FakeServer {}
 
