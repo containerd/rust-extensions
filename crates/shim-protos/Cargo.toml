@@ -20,7 +20,7 @@ ttrpc-codegen = { version = "0.3.0", optional = true }
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 log = "0.4"
-simple_logger = { version = "1.16", default-features = false, features = ["stderr"] }
+simple_logger = { version = "2.0", default-features = false, features = ["stderr"] }
 
 [features]
 # In current implementation we check in all generated TTRPC code because of the following Rust limitations:

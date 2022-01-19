@@ -22,7 +22,7 @@ tokio-stream = "0.1.8"
 log = "0.4"
 async-stream = "0.3.2"
 futures = "0.3.17"
-simple_logger = { version  = "1.13", default-features = false }
+simple_logger = { version  = "2.0", default-features = false }
 
 [build-dependencies]
 tonic-build = "0.6"
