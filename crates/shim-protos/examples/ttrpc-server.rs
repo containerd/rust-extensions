@@ -20,7 +20,7 @@ use containerd_shim_protos::{
     api::{CreateTaskRequest, CreateTaskResponse},
     create_task, Task,
 };
-use ttrpc::server::*;
+use ttrpc::Server;
 
 #[derive(Debug, PartialEq)]
 struct FakeServer {
