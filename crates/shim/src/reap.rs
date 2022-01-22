@@ -22,7 +22,7 @@ pub fn set_subreaper() -> Result<()> {
     use std::io::Error;
 
     // Safe because we trust the kernel and have checked the result.
-    let code = unsafe { libc::prctl(PR_SET_CHILD_SUBREAPER, 0, 0, 0) };
+    let code = unsafe { libc::prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0) };
     if code != 0 {
         Err(Error::from_raw_os_error(code))
     } else {
