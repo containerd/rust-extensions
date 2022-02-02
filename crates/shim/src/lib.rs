@@ -253,11 +253,7 @@ where
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
 
-            server = if flags.socket.is_empty() {
-                server.add_listener(SOCKET_FD)?
-            } else {
-                server.bind(&flags.socket)?
-            };
+            server = server.add_listener(SOCKET_FD)?;
 
             server.start()?;
 
