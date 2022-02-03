@@ -103,7 +103,7 @@ impl Display for LogFormat {
 ///
 /// ```ignore
 /// use runc::{LogFormat, RuncConfig};
-/// 
+///
 /// let config = RuncConfig::new()
 ///     .root("./new_root")
 ///     .debug(false)
