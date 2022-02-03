@@ -1,0 +1,29 @@
+[package]
+name = "runc"
+version = "0.1.0"
+authors = ["Yuna Tomida <ytomida.mmm@gmail.com>", "The containerd Authors"]
+edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/containerd/rust-extensions"
+keywords = ["containerd", "containers", "runc"]
+description = "A crate for consuming the runc binary in your Rust applications"
+homepage = "https://containerd.io"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+async-trait = "0.1.52"
+chrono = { version = "0.4.19", features = ["serde"] }
+futures = "0.3.19"
+libc = "0.2.112"
+log = "0.4.14"
+nix = "0.23.1"
+oci-spec = "0.5.4"
+path-absolutize = "3.0.11"
+rand = "0.8.4"
+serde = { version = "1.0.133", features = ["derive"] }
+serde_json = "1.0.74"
+tempfile = "3.3.0"
+thiserror = "1.0.30"
+tokio = { version = "1.15.0", features = ["full"] }
+uuid = { version = "0.8.2", features = ["v4"] }
