@@ -51,7 +51,7 @@ pub enum Error {
     MissingArg(String),
     /// Syntax error.
     #[error("Parse failed: {0}")]
-    ParseError(String),
+    ParseFailed(String),
 }
 
 /// Parses command line arguments passed to the shim.
@@ -72,7 +72,7 @@ pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags, Error> {
         FlagError::BadFlag { flag } => Error::InvalidArg(flag),
         FlagError::UnknownFlag { name } => Error::InvalidArg(name),
         FlagError::ArgumentNeeded { name } => Error::MissingArg(name),
-        FlagError::ParseError { error } => Error::ParseError(format!("{:?}", error)),
+        FlagError::ParseError { error } => Error::ParseFailed(format!("{:?}", error)),
     })?;
 
     if let Some(action) = args.get(0) {
