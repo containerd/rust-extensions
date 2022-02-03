@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::error::Error;
-use crate::io::RuncIO;
+use crate::io::Io;
 use crate::utils::{self, ALL, CONSOLE_SOCKET, DETACH, FORCE, NO_NEW_KEYRING, NO_PIVOT, PID_FILE};
 
 pub trait Args {
@@ -47,7 +47,7 @@ pub trait Args {
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateOpts {
-    pub io: Option<Arc<dyn RuncIO>>,
+    pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -90,7 +90,7 @@ impl CreateOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn RuncIO>) -> Self {
+    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
         self.io = Some(io);
         self
     }
@@ -130,7 +130,7 @@ impl CreateOpts {
 /// Container execution options
 #[derive(Debug, Clone, Default)]
 pub struct ExecOpts {
-    pub io: Option<Arc<dyn RuncIO>>,
+    pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -163,7 +163,7 @@ impl ExecOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn RuncIO>) -> Self {
+    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
         self.io = Some(io);
         self
     }

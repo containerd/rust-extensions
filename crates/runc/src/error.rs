@@ -82,10 +82,10 @@ pub enum Error {
     FileSystemError(io::Error),
 
     #[error("Failed to spec file: {0}")]
-    SpecFileCreationError(io::Error),
+    SpecFileCreationFailed(io::Error),
 
     #[error(transparent)]
-    SpecFileCleanupError(io::Error),
+    SpecFileCleanupFailed(io::Error),
 
     #[error("Failed to find valid path for spec file")]
     SpecFileNotFound,
@@ -103,10 +103,10 @@ pub enum Error {
     UnixSocketBindFailed(io::Error),
 
     #[error("Unix socket failed to receive pty")]
-    UnixSocketReceiveMessageError,
+    UnixSocketReceiveMessageFailed,
 
     #[error("Unix socket unexpectedly closed")]
-    UnixSocketUnexpectedCloseError,
+    UnixSocketClosed,
 
     #[error("Failed to handle environment variable: {0}")]
     EnvError(env::VarError),

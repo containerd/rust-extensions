@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+#![allow(unused)]
+
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -68,6 +70,18 @@ where
         .unwrap())
 }
 
+pub fn temp_filename_in_runtime_dir() -> Result<String, Error> {
+    env::var_os("XDG_RUNTIME_DIR")
+        .map(|runtime_dir| {
+            format!(
+                "{}/runc-process-{}",
+                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
+                Uuid::new_v4(),
+            )
+        })
+        .ok_or(Error::SpecFileNotFound)
+}
+
 pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error> {
     let file_name = env::var_os("XDG_RUNTIME_DIR")
         .map(|runtime_dir| {
@@ -81,7 +95,7 @@ pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error>
     let temp_file = Builder::new()
         .prefix(&file_name)
         .tempfile()
-        .map_err(Error::SpecFileCreationError)?;
+        .map_err(Error::SpecFileCreationFailed)?;
     Ok((temp_file, file_name))
 }
 

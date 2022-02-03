@@ -36,13 +36,11 @@
 //! A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
 
 use std::fmt::{self, Display};
-use std::io::Write;
 use std::path::Path;
 use std::process::{ExitStatus, Output, Stdio};
 use std::time::Duration;
 
 use oci_spec::runtime::{Linux, Process};
-use tempfile::NamedTempFile;
 
 // suspended for difficulties
 // pub mod console;
@@ -64,9 +62,9 @@ use crate::utils::{JSON, TEXT};
 
 type Result<T> = std::result::Result<T, crate::error::Error>;
 
-/// RuncResponse is for (pid, exit status, outputs).
+/// Response is for (pid, exit status, outputs).
 #[derive(Debug, Clone)]
-pub struct RuncResponse {
+pub struct Response {
     pub pid: u32,
     pub status: ExitStatus,
     pub output: String,
@@ -97,14 +95,14 @@ impl Display for LogFormat {
 /// Configuration for runc client.
 ///
 /// This struct provide chaining interface like, for example, [`std::fs::OpenOptions`].
-/// Note that you cannot access the members of RuncConfig directly.
+/// Note that you cannot access the members of Config directly.
 ///
 /// # Example
 ///
 /// ```ignore
-/// use runc::{LogFormat, RuncConfig};
+/// use runc::{LogFormat, Config};
 ///
-/// let config = RuncConfig::new()
+/// let config = Config::new()
 ///     .root("./new_root")
 ///     .debug(false)
 ///     .log("/path/to/logfile.json")
@@ -113,9 +111,9 @@ impl Display for LogFormat {
 /// let client = config.build();
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct RuncConfig(runc::RuncConfig);
+pub struct Config(runc::Config);
 
-impl RuncConfig {
+impl Config {
     pub fn new() -> Self {
         Self::default()
     }
@@ -195,21 +193,21 @@ impl RuncConfig {
         self
     }
 
-    pub fn build(&mut self) -> Result<RuncClient> {
-        Ok(RuncClient(self.0.build()?))
+    pub fn build(&mut self) -> Result<Client> {
+        Ok(Client(self.0.build()?))
     }
 
-    pub fn build_async(&mut self) -> Result<RuncAsyncClient> {
-        Ok(RuncAsyncClient(self.0.build()?))
+    pub fn build_async(&mut self) -> Result<AsyncClient> {
+        Ok(AsyncClient(self.0.build()?))
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct RuncClient(runc::Runc);
+pub struct Client(runc::Runc);
 
-impl RuncClient {
+impl Client {
     /// Create a new runc client from the supplied configuration
-    pub fn from_config(mut config: RuncConfig) -> Result<Self> {
+    pub fn from_config(mut config: Config) -> Result<Self> {
         config.build()
     }
 
@@ -235,7 +233,7 @@ impl RuncClient {
         mut cmd: std::process::Command,
         combined_output: bool,
         forget: bool,
-    ) -> Result<RuncResponse> {
+    ) -> Result<Response> {
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
         let pid = child.id();
         let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
@@ -248,13 +246,13 @@ impl RuncClient {
         }
         if status.success() {
             if combined_output {
-                Ok(RuncResponse {
+                Ok(Response {
                     pid,
                     status,
                     output: stdout + stderr.as_str(),
                 })
             } else {
-                Ok(RuncResponse {
+                Ok(Response {
                     pid,
                     status,
                     output: stdout,
@@ -270,7 +268,7 @@ impl RuncClient {
     }
 
     /// Create a new container
-    pub fn create<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<RuncResponse>
+    pub fn create<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<Response>
     where
         P: AsRef<Path>,
     {
@@ -308,17 +306,10 @@ impl RuncClient {
 
     /// Execute an additional process inside the container
     pub fn exec(&self, id: &str, spec: &Process, opts: Option<&ExecOpts>) -> Result<()> {
-        let (mut temp_file, file_name): (NamedTempFile, String) =
-            utils::make_temp_file_in_runtime_dir()?;
-        {
-            let f = temp_file.as_file_mut();
-            let spec_json =
-                serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
-            f.write(spec_json.as_bytes())
-                .map_err(Error::SpecFileCreationError)?;
-            f.flush().map_err(Error::SpecFileCreationError)?;
-        }
-        let mut args = vec!["exec".to_string(), "process".to_string(), file_name];
+        let filename = utils::temp_filename_in_runtime_dir()?;
+        let spec_json = serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
+        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
+        let mut args = vec!["exec".to_string(), "process".to_string(), filename];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);
         }
@@ -379,7 +370,7 @@ impl RuncClient {
     }
 
     /// Run the create, start, delete lifecycle of the container and return its exit status
-    pub fn run<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<RuncResponse>
+    pub fn run<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<Response>
     where
         P: AsRef<Path>,
     {
@@ -402,7 +393,7 @@ impl RuncClient {
     }
 
     /// Start an already created container
-    pub fn start(&self, id: &str) -> Result<RuncResponse> {
+    pub fn start(&self, id: &str) -> Result<Response> {
         let args = ["start".to_string(), id.to_string()];
         self.launch(self.command(&args)?, true, false)
     }
@@ -416,20 +407,14 @@ impl RuncClient {
 
     /// Update a container with the provided resource spec
     pub fn update(&self, id: &str, resources: &Linux) -> Result<()> {
-        let (mut temp_file, file_name): (NamedTempFile, String) =
-            utils::make_temp_file_in_runtime_dir()?;
-        {
-            let f = temp_file.as_file_mut();
-            let spec_json =
-                serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
-            f.write(spec_json.as_bytes())
-                .map_err(Error::SpecFileCreationError)?;
-            f.flush().map_err(Error::SpecFileCreationError)?;
-        }
+        let filename = utils::temp_filename_in_runtime_dir()?;
+        let spec_json =
+            serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
+        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
         let args = [
             "update".to_string(),
             "--resources".to_string(),
-            file_name,
+            filename,
             id.to_string(),
         ];
         self.launch(self.command(&args)?, true, false)?;
@@ -438,7 +423,7 @@ impl RuncClient {
 }
 
 #[derive(Debug, Clone)]
-pub struct RuncAsyncClient(runc::Runc);
+pub struct AsyncClient(runc::Runc);
 
 // As monitor instance never have to be mutable (it has only &self methods), declare it as const.
 const MONITOR: DefaultMonitor = DefaultMonitor::new();
@@ -446,9 +431,9 @@ const MONITOR: DefaultMonitor = DefaultMonitor::new();
 /// Async client for runc
 /// Note that you MUST use this client on tokio runtime, as this client internally use [`tokio::process::Command`]
 /// and some other utilities.
-impl RuncAsyncClient {
+impl AsyncClient {
     /// Create a new runc client from the supplied configuration
-    pub fn from_config(mut config: RuncConfig) -> Result<Self> {
+    pub fn from_config(mut config: Config) -> Result<Self> {
         config.build_async()
     }
 
@@ -467,7 +452,7 @@ impl RuncAsyncClient {
         cmd: tokio::process::Command,
         combined_output: bool,
         forget: bool,
-    ) -> Result<RuncResponse> {
+    ) -> Result<Response> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
         let start = MONITOR.start(cmd, tx, forget);
         let wait = MONITOR.wait(rx);
@@ -488,13 +473,13 @@ impl RuncAsyncClient {
 
         if status.success() {
             if combined_output {
-                Ok(RuncResponse {
+                Ok(Response {
                     pid,
                     status,
                     output: stdout + stderr.as_str(),
                 })
             } else {
-                Ok(RuncResponse {
+                Ok(Response {
                     pid,
                     status,
                     output: stdout,
@@ -534,7 +519,6 @@ impl RuncAsyncClient {
                 let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
                 let start = MONITOR.start(cmd, tx, true);
                 let wait = MONITOR.wait(rx);
-                _io.close_after_start();
                 let (
                     Output {
                         status,
@@ -543,6 +527,7 @@ impl RuncAsyncClient {
                     },
                     _,
                 ) = tokio::try_join!(start, wait).map_err(Error::InvalidCommand)?;
+                _io.close_after_start();
 
                 let stdout = String::from_utf8(stdout).unwrap();
                 let stderr = String::from_utf8(stderr).unwrap();
@@ -668,7 +653,7 @@ impl RuncAsyncClient {
     pub async fn state(&self, id: &str) -> Result<Vec<usize>> {
         let args = vec!["state".to_string(), id.to_string()];
         let res = self.launch(self.command(&args)?, true, false).await?;
-        Ok(serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)?)
+        serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
     }
 
     /// Return the latest statistics for a container
@@ -686,20 +671,14 @@ impl RuncAsyncClient {
 
     /// Update a container with the provided resource spec
     pub async fn update(&self, id: &str, resources: &Linux) -> Result<()> {
-        let (mut temp_file, file_name): (NamedTempFile, String) =
-            utils::make_temp_file_in_runtime_dir()?;
-        {
-            let f = temp_file.as_file_mut();
-            let spec_json =
-                serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
-            f.write(spec_json.as_bytes())
-                .map_err(Error::SpecFileCreationError)?;
-            f.flush().map_err(Error::SpecFileCreationError)?;
-        }
+        let filename = utils::temp_filename_in_runtime_dir()?;
+        let spec_json =
+            serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
+        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
         let args = vec![
             "update".to_string(),
             "--resources".to_string(),
-            file_name,
+            filename,
             id.to_string(),
         ];
         let _ = self.launch(self.command(&args)?, true, false).await?;
@@ -715,29 +694,29 @@ mod tests {
     const CMD_TRUE: &str = "/bin/true";
     const CMD_FALSE: &str = "/bin/false";
 
-    fn ok_client() -> RuncClient {
-        RuncConfig::new()
+    fn ok_client() -> Client {
+        Config::new()
             .command(CMD_TRUE)
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn fail_client() -> RuncClient {
-        RuncConfig::new()
+    fn fail_client() -> Client {
+        Config::new()
             .command(CMD_FALSE)
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn ok_async_client() -> RuncAsyncClient {
-        RuncConfig::new()
+    fn ok_async_client() -> AsyncClient {
+        Config::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance")
     }
 
-    fn fail_async_client() -> RuncAsyncClient {
-        RuncConfig::new()
+    fn fail_async_client() -> AsyncClient {
+        Config::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance")
@@ -935,7 +914,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_run() {
         let opts = CreateOpts::new();
-        let ok_runc = RuncConfig::new()
+        let ok_runc = Config::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance");
@@ -948,7 +927,7 @@ mod tests {
         });
 
         let opts = CreateOpts::new();
-        let fail_runc = RuncConfig::new()
+        let fail_runc = Config::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance");
@@ -979,7 +958,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_delete() {
         let opts = DeleteOpts::new();
-        let ok_runc = RuncConfig::new()
+        let ok_runc = Config::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance");
@@ -992,7 +971,7 @@ mod tests {
         });
 
         let opts = DeleteOpts::new();
-        let fail_runc = RuncConfig::new()
+        let fail_runc = Config::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance");

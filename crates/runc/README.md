@@ -10,11 +10,11 @@ Call `build()` or `build_async()` to get client.
 Note that async client depends on [tokio](https://github.com/tokio-rs/tokio), then please use it on tokio runtime.
 
 ```rust
-use runc_rust as runc;
+use runc;
 
 #[tokio::main]
 async fn main() {
-    let config = runc::RuncConfig::new()
+    let config = runc::Config::new()
         .root("./new_root")
         .debug(false)
         .log("/path/to/logfile.json")
@@ -23,7 +23,7 @@ async fn main() {
 
     let client = config.build_async().unwrap();
 
-    let opts = CreateOpts::new()
+    let opts = runc::options::CreateOpts::new()
         .pid_file("/path/to/pid/file")
         .no_pivot(true);
     

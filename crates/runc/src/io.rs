@@ -16,7 +16,7 @@
 use std::fmt::{self, Debug, Formatter};
 use std::fs::File;
 use std::os::unix::io::FromRawFd;
-use std::os::unix::prelude::{AsRawFd, RawFd};
+use std::os::unix::prelude::AsRawFd;
 use std::process::Command;
 use std::sync::Mutex;
 
@@ -24,7 +24,7 @@ use nix::fcntl::OFlag;
 use nix::sys::stat::Mode;
 use nix::unistd::{Gid, Uid};
 
-pub trait RuncIO: Sync + Send {
+pub trait Io: Sync + Send {
     /// Return write side of stdin
     fn stdin(&self) -> Option<File> {
         None
@@ -40,29 +40,19 @@ pub trait RuncIO: Sync + Send {
         None
     }
 
-    fn close(&self) {
-        unimplemented!()
-    }
-
     /// Set IO for passed command.
     /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
-    fn set(&self, _cmd: &mut Command) -> std::io::Result<()> {
-        unimplemented!()
-    }
+    fn set(&self, _cmd: &mut Command) -> std::io::Result<()>;
 
     // tokio version of set()
-    fn set_tk(&self, _cmd: &mut tokio::process::Command) -> std::io::Result<()> {
-        unimplemented!()
-    }
+    fn set_tk(&self, _cmd: &mut tokio::process::Command) -> std::io::Result<()>;
 
-    fn close_after_start(&self) {
-        unimplemented!()
-    }
+    fn close_after_start(&self);
 }
 
-impl Debug for dyn RuncIO {
+impl Debug for dyn Io {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "RuncIO",)
+        write!(f, "Io",)
     }
 }
 
@@ -124,24 +114,19 @@ impl Pipe {
         let mut m = self.wr.lock().unwrap();
         let _ = m.take();
     }
-
-    pub fn close(&self) {
-        self.close_read();
-        self.close_write();
-    }
 }
 
 #[derive(Debug)]
-pub struct RuncPipedIO {
+pub struct PipedIo {
     stdin: Option<Pipe>,
     stdout: Option<Pipe>,
     stderr: Option<Pipe>,
 }
 
-impl RuncPipedIO {
-    pub fn new(uid: isize, gid: isize, opts: IOOption) -> std::io::Result<Self> {
-        let uid = Some(Uid::from_raw(uid as u32));
-        let gid = Some(Gid::from_raw(gid as u32));
+impl PipedIo {
+    pub fn new(uid: u32, gid: u32, opts: IOOption) -> std::io::Result<Self> {
+        let uid = Some(Uid::from_raw(uid));
+        let gid = Some(Gid::from_raw(gid));
         let stdin = if opts.open_stdin {
             let pipe = Pipe::new()?;
             {
@@ -189,7 +174,7 @@ impl RuncPipedIO {
     }
 }
 
-impl RuncIO for RuncPipedIO {
+impl Io for PipedIo {
     fn stdin(&self) -> Option<File> {
         if let Some(ref stdin) = self.stdin {
             stdin.take_write()
@@ -214,18 +199,6 @@ impl RuncIO for RuncPipedIO {
         }
     }
 
-    fn close(&self) {
-        if let Some(ref stdin) = self.stdin {
-            stdin.close();
-        }
-        if let Some(ref stdout) = self.stdout {
-            stdout.close();
-        }
-        if let Some(ref stderr) = self.stderr {
-            stderr.close();
-        }
-    }
-
     /// Note that this internally use [`std::fs::File`]'s [`try_clone()`].
     /// Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
@@ -241,7 +214,7 @@ impl RuncIO for RuncPipedIO {
             let m = p.wr.lock().unwrap();
             if let Some(f) = &*m {
                 let f = f.try_clone()?;
-                cmd.stdin(f);
+                cmd.stdout(f);
             }
         }
 
@@ -249,7 +222,7 @@ impl RuncIO for RuncPipedIO {
             let m = p.wr.lock().unwrap();
             if let Some(f) = &*m {
                 let f = f.try_clone()?;
-                cmd.stdin(f);
+                cmd.stderr(f);
             }
         }
         Ok(())
@@ -268,7 +241,7 @@ impl RuncIO for RuncPipedIO {
             let m = p.wr.lock().unwrap();
             if let Some(f) = &*m {
                 let f = f.try_clone()?;
-                cmd.stdin(f);
+                cmd.stdout(f);
             }
         }
 
@@ -276,7 +249,7 @@ impl RuncIO for RuncPipedIO {
             let m = p.wr.lock().unwrap();
             if let Some(f) = &*m {
                 let f = f.try_clone()?;
-                cmd.stdin(f);
+                cmd.stderr(f);
             }
         }
         Ok(())
@@ -295,39 +268,38 @@ impl RuncIO for RuncPipedIO {
 
 // IO setup for /dev/null use with runc
 #[derive(Debug)]
-pub struct NullIO {
-    dev_null: RawFd,
+pub struct NullIo {
+    dev_null: Mutex<Option<File>>,
 }
 
-impl NullIO {
+impl NullIo {
     pub fn new() -> std::io::Result<Self> {
         let fd = nix::fcntl::open("/dev/null", OFlag::O_RDONLY, Mode::empty())?;
-        Ok(Self { dev_null: fd })
+        let dev_null = unsafe { Mutex::new(Some(std::fs::File::from_raw_fd(fd))) };
+        Ok(Self { dev_null })
     }
 }
 
-impl RuncIO for NullIO {
+impl Io for NullIo {
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
-        let null = unsafe { std::fs::File::from_raw_fd(self.dev_null) };
-        cmd.stdout(null.try_clone()?);
-        cmd.stderr(null.try_clone()?);
-        std::mem::forget(null);
+        if let Some(null) = self.dev_null.lock().unwrap().as_ref() {
+            cmd.stdout(null.try_clone()?);
+            cmd.stderr(null.try_clone()?);
+        }
         Ok(())
     }
 
     fn set_tk(&self, cmd: &mut tokio::process::Command) -> std::io::Result<()> {
-        let null = unsafe { std::fs::File::from_raw_fd(self.dev_null) };
-        cmd.stdout(null.try_clone()?);
-        cmd.stderr(null.try_clone()?);
-        std::mem::forget(null);
+        if let Some(null) = self.dev_null.lock().unwrap().as_ref() {
+            cmd.stdout(null.try_clone()?);
+            cmd.stderr(null.try_clone()?);
+        }
         Ok(())
     }
 
-    fn close(&self) {
-        let _ = unsafe { std::fs::File::from_raw_fd(self.dev_null) };
-    }
-
+    /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
-        self.close();
+        let mut m = self.dev_null.lock().unwrap();
+        let _ = m.take();
     }
 }

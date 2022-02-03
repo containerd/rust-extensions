@@ -58,20 +58,30 @@ mod tests {
 
     #[test]
     fn serde_test() {
-        let j = "
+        let j = r#"
             {
-                \"id\": \"fake\",
-                \"pid\": 1000,
-                \"status\": \"RUNNING\",
-                \"bundle\": \"/path/to/root\",
-                \"rootfs\": \"/path/to/rootfs\",
-                \"created\": 1431684000,
-                \"annotations\": {
-                    \"foo\": \"bar\"
+                "id": "fake",
+                "pid": 1000,
+                "status": "RUNNING",
+                "bundle": "/path/to/bundle",
+                "rootfs": "/path/to/rootfs",
+                "created": 1431684000,
+                "annotations": {
+                    "foo": "bar"
                 }
-            }";
+            }"#;
 
         let c: Container = serde_json::from_str(j).unwrap();
-        println!("{:#?}", c);
+        assert_eq!(c.id, "fake");
+        assert_eq!(c.pid, 1000);
+        assert_eq!(c.status, "RUNNING");
+        assert_eq!(c.bundle, "/path/to/bundle");
+        assert_eq!(c.rootfs, "/path/to/rootfs");
+        assert_eq!(
+            c.created,
+            OffsetDateTime::from_unix_timestamp(1431684000).unwrap()
+        );
+        assert_eq!(c.annotations.get("foo"), Some(&"bar".to_string()));
+        assert_eq!(c.annotations.get("bar"), None);
     }
 }
