@@ -35,9 +35,8 @@
 
 use std::collections::HashMap;
 
-use chrono::serde::ts_seconds_option;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 /// Information for runc container
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,7 +46,30 @@ pub struct Container {
     pub status: String,
     pub bundle: String,
     pub rootfs: String,
-    #[serde(with = "ts_seconds_option")]
-    pub created: Option<DateTime<Utc>>,
+    pub created: OffsetDateTime,
     pub annotations: HashMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serde_test() {
+        let j = "
+            {
+                \"id\": \"fake\",
+                \"pid\": 1000,
+                \"status\": \"RUNNING\",
+                \"bundle\": \"/path/to/root\",
+                \"rootfs\": \"/path/to/rootfs\",
+                \"created\": 1431684000,
+                \"annotations\": {
+                    \"foo\": \"bar\"
+                }
+            }";
+
+        let c: Container = serde_json::from_str(j).unwrap();
+        println!("{:#?}", c);
+    }
 }

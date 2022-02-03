@@ -41,8 +41,8 @@ use std::path::Path;
 use std::process::{ExitStatus, Output, Stdio};
 use std::time::Duration;
 
-use tempfile::NamedTempFile;
 use oci_spec::runtime::{Linux, Process};
+use tempfile::NamedTempFile;
 
 // suspended for difficulties
 // pub mod console;

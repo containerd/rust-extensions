@@ -17,8 +17,8 @@
 use std::process::Output;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use log::error;
+use time::OffsetDateTime;
 use tokio::sync::oneshot::{Receiver, Sender};
 
 // ProcessMonitor for handling runc process exit
@@ -40,7 +40,7 @@ pub trait ProcessMonitor {
             .id()
             .expect("failed to take pid of the container process.");
         let out = chi.wait_with_output().await?;
-        let ts = Utc::now();
+        let ts = OffsetDateTime::now_utc();
         match tx.send(Exit {
             ts,
             pid,
@@ -80,7 +80,7 @@ impl DefaultMonitor {
 
 #[derive(Debug)]
 pub struct Exit {
-    pub ts: DateTime<Utc>,
+    pub ts: OffsetDateTime,
     pub pid: u32,
     pub status: i32,
 }
