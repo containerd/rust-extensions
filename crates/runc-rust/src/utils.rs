@@ -77,7 +77,7 @@ pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error>
                 Uuid::new_v4(),
             )
         })
-        .ok_or_else(|| Error::SpecFileNotFound)?;
+        .ok_or(Error::SpecFileNotFound)?;
     let temp_file = Builder::new()
         .prefix(&file_name)
         .tempfile()

@@ -101,14 +101,14 @@ impl Display for LogFormat {
 ///
 /// # Example
 ///
-/// ```no_run
-/// use containerd_runc_rust as runc;
-///
-/// let config = runc::RuncConfig::new()
+/// ```ignore
+/// use runc::{LogFormat, RuncConfig};
+/// 
+/// let config = RuncConfig::new()
 ///     .root("./new_root")
 ///     .debug(false)
 ///     .log("/path/to/logfile.json")
-///     .log_format(runc::LogFormat::Json)
+///     .log_format(LogFormat::Json)
 ///     .rootless(true);
 /// let client = config.build();
 /// ```
@@ -411,7 +411,7 @@ impl RuncClient {
     pub fn state(&self, id: &str) -> Result<Container> {
         let args = ["state".to_string(), id.to_string()];
         let res = self.launch(self.command(&args)?, true, false)?;
-        Ok(serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)?)
+        serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
     }
 
     /// Update a container with the provided resource spec
@@ -744,7 +744,17 @@ mod tests {
     }
 
     fn dummy_process() -> Process {
-        serde_json::from_str("{}").unwrap()
+        serde_json::from_str(
+            "
+            {
+                \"user\": {
+                    \"uid\": 1000,
+                    \"gid\": 1000
+                },
+                \"cwd\": \"/path/to/dir\"
+            }",
+        )
+        .unwrap()
     }
 
     #[test]

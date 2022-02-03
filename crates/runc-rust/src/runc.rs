@@ -138,13 +138,13 @@ impl RuncConfig {
         let command = utils::binary_path(
             self.command
                 .clone()
-                .unwrap_or(PathBuf::from(DEFAULT_COMMAND)),
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_COMMAND)),
         )
         .ok_or(Error::NotFound)?;
         Ok(Runc {
             command,
             root: self.root.clone(),
-            debug: self.debug.clone(),
+            debug: self.debug,
             log: self.log.clone(),
             log_format: self.log_format.clone().unwrap_or(LogFormat::Text),
             // self.pdeath_signal: self.pdeath_signal,
@@ -153,7 +153,7 @@ impl RuncConfig {
             // criu: self.criu,
             rootless: self.rootless,
             // extra_args: self.extra_args,
-            timeout: self.timeout.unwrap_or(Duration::from_millis(5000)),
+            timeout: self.timeout.unwrap_or_else(|| Duration::from_millis(5000)),
         })
     }
 }

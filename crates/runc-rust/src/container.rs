@@ -36,6 +36,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use time::serde::timestamp;
 use time::OffsetDateTime;
 
 /// Information for runc container
@@ -46,6 +47,7 @@ pub struct Container {
     pub status: String,
     pub bundle: String,
     pub rootfs: String,
+    #[serde(with = "timestamp")]
     pub created: OffsetDateTime,
     pub annotations: HashMap<String, String>,
 }
