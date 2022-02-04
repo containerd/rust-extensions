@@ -228,22 +228,13 @@ impl Client {
         Err(Error::Unimplemented("checkpoint".to_string()))
     }
 
-    fn launch(
-        &self,
-        mut cmd: std::process::Command,
-        combined_output: bool,
-        forget: bool,
-    ) -> Result<Response> {
+    fn launch(&self, mut cmd: std::process::Command, combined_output: bool) -> Result<Response> {
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
         let pid = child.id();
         let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
         let status = result.status;
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap();
-        if forget {
-            // reserve fds of pipes for after use
-            std::mem::forget(cmd);
-        }
         if status.success() {
             if combined_output {
                 Ok(Response {
@@ -285,11 +276,11 @@ impl Client {
         match opts {
             Some(CreateOpts { io: Some(_io), .. }) => {
                 _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
-                let res = self.launch(cmd, true, true)?;
+                let res = self.launch(cmd, true)?;
                 _io.close_after_start();
                 Ok(res)
             }
-            _ => self.launch(cmd, true, false),
+            _ => self.launch(cmd, true),
         }
     }
 
@@ -300,7 +291,7 @@ impl Client {
             args.append(&mut opts.args());
         }
         args.push(id.to_string());
-        self.launch(self.command(&args)?, true, false)?;
+        self.launch(self.command(&args)?, true)?;
         Ok(())
     }
 
@@ -315,14 +306,10 @@ impl Client {
         }
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
-        let forget = match opts {
-            Some(ExecOpts { io: Some(_io), .. }) => {
-                _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
-                true
-            }
-            _ => false,
-        };
-        let _ = self.launch(cmd, true, forget)?;
+        if let Some(ExecOpts { io: Some(_io), .. }) = opts {
+            _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+        }
+        let _ = self.launch(cmd, true)?;
         Ok(())
     }
 
@@ -334,14 +321,14 @@ impl Client {
         }
         args.push(id.to_string());
         args.push(sig.to_string());
-        let _ = self.launch(self.command(&args)?, true, false)?;
+        let _ = self.launch(self.command(&args)?, true)?;
         Ok(())
     }
 
     /// List all containers associated with this runc instance
     pub fn list(&self) -> Result<Vec<Container>> {
         let args = ["list".to_string(), "--format-json".to_string()];
-        let res = self.launch(self.command(&args)?, true, false)?;
+        let res = self.launch(self.command(&args)?, true)?;
         let output = res.output.trim();
         // Ugly hack to work around golang
         Ok(if output == "null" {
@@ -354,7 +341,7 @@ impl Client {
     /// Pause a container
     pub fn pause(&self, id: &str) -> Result<()> {
         let args = ["pause".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true, false)?;
+        let _ = self.launch(self.command(&args)?, true)?;
         Ok(())
     }
 
@@ -365,7 +352,7 @@ impl Client {
     /// Resume a container
     pub fn resume(&self, id: &str) -> Result<()> {
         let args = ["pause".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true, false)?;
+        let _ = self.launch(self.command(&args)?, true)?;
         Ok(())
     }
 
@@ -381,27 +368,22 @@ impl Client {
         args.push(utils::abs_string(bundle)?);
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
-        let forget = match opts {
-            Some(CreateOpts { io: Some(_io), .. }) => {
-                _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
-                true
-            }
-            _ => false,
+        if let Some(CreateOpts { io: Some(_io), .. }) = opts {
+            _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
         };
-
-        self.launch(self.command(&args)?, true, forget)
+        self.launch(self.command(&args)?, true)
     }
 
     /// Start an already created container
     pub fn start(&self, id: &str) -> Result<Response> {
         let args = ["start".to_string(), id.to_string()];
-        self.launch(self.command(&args)?, true, false)
+        self.launch(self.command(&args)?, true)
     }
 
     /// Return the state of a container
     pub fn state(&self, id: &str) -> Result<Container> {
         let args = ["state".to_string(), id.to_string()];
-        let res = self.launch(self.command(&args)?, true, false)?;
+        let res = self.launch(self.command(&args)?, true)?;
         serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
     }
 
@@ -417,7 +399,7 @@ impl Client {
             filename,
             id.to_string(),
         ];
-        self.launch(self.command(&args)?, true, false)?;
+        self.launch(self.command(&args)?, true)?;
         Ok(())
     }
 }
@@ -451,10 +433,9 @@ impl AsyncClient {
         &self,
         cmd: tokio::process::Command,
         combined_output: bool,
-        forget: bool,
     ) -> Result<Response> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-        let start = MONITOR.start(cmd, tx, forget);
+        let start = MONITOR.start(cmd, tx);
         let wait = MONITOR.wait(rx);
         let (
             Output {
@@ -517,7 +498,7 @@ impl AsyncClient {
             Some(CreateOpts { io: Some(_io), .. }) => {
                 _io.set_tk(&mut cmd).map_err(Error::UnavailableIO)?;
                 let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-                let start = MONITOR.start(cmd, tx, true);
+                let start = MONITOR.start(cmd, tx);
                 let wait = MONITOR.wait(rx);
                 let (
                     Output {
@@ -540,7 +521,7 @@ impl AsyncClient {
                 }
             }
             _ => {
-                let _ = self.launch(cmd, true, false).await?;
+                let _ = self.launch(cmd, true).await?;
             }
         }
         Ok(())
@@ -553,7 +534,7 @@ impl AsyncClient {
             args.append(&mut opts.args());
         }
         args.push(id.to_string());
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
@@ -575,14 +556,14 @@ impl AsyncClient {
         }
         args.push(id.to_string());
         args.push(sig.to_string());
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
     /// List all containers associated with this runc instance
     pub async fn list(&self) -> Result<Vec<Container>> {
         let args = ["list".to_string(), "--format-json".to_string()];
-        let res = self.launch(self.command(&args)?, true, false).await?;
+        let res = self.launch(self.command(&args)?, true).await?;
         let output = res.output.trim();
         // Ugly hack to work around golang
         Ok(if output == "null" {
@@ -595,7 +576,7 @@ impl AsyncClient {
     /// Pause a container
     pub async fn pause(&self, id: &str) -> Result<()> {
         let args = ["pause".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
@@ -606,7 +587,7 @@ impl AsyncClient {
             "--format-json".to_string(),
             id.to_string(),
         ];
-        let res = self.launch(self.command(&args)?, true, false).await?;
+        let res = self.launch(self.command(&args)?, true).await?;
         let output = res.output.trim();
         // Ugly hack to work around golang
         Ok(if output == "null" {
@@ -623,7 +604,7 @@ impl AsyncClient {
     /// Resume a container
     pub async fn resume(&self, id: &str) -> Result<()> {
         let args = ["pause".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
@@ -638,28 +619,28 @@ impl AsyncClient {
         }
         args.push(utils::abs_string(bundle)?);
         args.push(id.to_string());
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
     /// Start an already created container
     pub async fn start(&self, id: &str) -> Result<()> {
         let args = vec!["start".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 
     /// Return the state of a container
     pub async fn state(&self, id: &str) -> Result<Vec<usize>> {
         let args = vec!["state".to_string(), id.to_string()];
-        let res = self.launch(self.command(&args)?, true, false).await?;
+        let res = self.launch(self.command(&args)?, true).await?;
         serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
     }
 
     /// Return the latest statistics for a container
     pub async fn stats(&self, id: &str) -> Result<Stats> {
         let args = vec!["events".to_string(), "--stats".to_string(), id.to_string()];
-        let res = self.launch(self.command(&args)?, true, false).await?;
+        let res = self.launch(self.command(&args)?, true).await?;
         let event: Event =
             serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)?;
         if let Some(stats) = event.stats {
@@ -681,7 +662,7 @@ impl AsyncClient {
             filename,
             id.to_string(),
         ];
-        let _ = self.launch(self.command(&args)?, true, false).await?;
+        let _ = self.launch(self.command(&args)?, true).await?;
         Ok(())
     }
 }

@@ -33,7 +33,6 @@ pub trait ProcessMonitor {
         &self,
         mut cmd: tokio::process::Command,
         tx: Sender<Exit>,
-        forget: bool,
     ) -> std::io::Result<Output> {
         let chi = cmd.spawn()?;
         let pid = chi
@@ -46,12 +45,7 @@ pub trait ProcessMonitor {
             pid,
             status: out.status.code().unwrap(),
         }) {
-            Ok(_) => {
-                if forget {
-                    std::mem::forget(cmd);
-                }
-                Ok(out)
-            }
+            Ok(_) => Ok(out),
             Err(e) => {
                 error!("command {:?} exited but receiver dropped.", cmd);
                 error!("couldn't send messages: {:?}", e);
