@@ -220,7 +220,7 @@ impl Client {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn command(&self, args: &[String]) -> Result<()> {
+    pub fn command(&self, _args: &[String]) -> Result<std::process::Command> {
         Err(Error::Unimplemented("command".to_string()))
     }
 
@@ -668,6 +668,7 @@ impl AsyncClient {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "linux")]
 mod tests {
     use super::*;
 
