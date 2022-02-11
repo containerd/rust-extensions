@@ -36,7 +36,7 @@
 //! A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
 
 use std::fmt::{self, Display};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Output, Stdio};
 use std::time::Duration;
 
@@ -50,7 +50,6 @@ pub mod events;
 pub mod io;
 pub mod monitor;
 pub mod options;
-mod runc;
 mod utils;
 
 use crate::container::Container;
@@ -92,136 +91,240 @@ impl Display for LogFormat {
     }
 }
 
-/// Configuration for runc client.
-///
-/// This struct provide chaining interface like, for example, [`std::fs::OpenOptions`].
-/// Note that you cannot access the members of Config directly.
-///
-/// # Example
-///
-/// ```ignore
-/// use runc::{LogFormat, Config};
-///
-/// let config = Config::new()
-///     .root("./new_root")
-///     .debug(false)
-///     .log("/path/to/logfile.json")
-///     .log_format(LogFormat::Json)
-///     .rootless(true);
-/// let client = config.build();
-/// ```
-#[derive(Debug, Clone, Default)]
-pub struct Config(runc::Config);
+impl Default for LogFormat {
+    fn default() -> Self {
+        LogFormat::Text
+    }
+}
 
-impl Config {
+/// Global options builder for the runc binary.
+///
+/// These options will be passed for all subsequent runc calls.
+/// See <https://github.com/opencontainers/runc/blob/main/man/runc.8.md#global-options>
+#[derive(Debug, Default)]
+pub struct ConfigBuilder {
+    /// Override the name of the runc binary. If [`None`], `runc` is used.
+    command: Option<PathBuf>,
+    /// Path to root directory of container rootfs.
+    root: Option<PathBuf>,
+    /// Debug logging.
+    ///
+    /// If true, debug level logs are emitted.
+    debug: bool,
+    /// Path to log file.
+    log: Option<PathBuf>,
+    /// Log format to use.
+    log_format: LogFormat,
+    /// Set process group ID (gpid).
+    set_pgid: bool,
+    /// Use systemd cgroup.
+    systemd_cgroup: bool,
+    /// Whether to use rootless mode.
+    ///
+    /// If [`None`], `auto` settings is used.
+    /// Note that "auto" is different from explicit "true" or "false".
+    rootless: Option<bool>,
+    /// Timeout settings for runc command.
+    ///
+    /// Default is 5 seconds.
+    /// This will be used only in AsyncClient.
+    timeout: Duration,
+}
+
+/// A shortcut to create `runc` global options builder.
+pub fn builder() -> ConfigBuilder {
+    ConfigBuilder::default()
+}
+
+impl ConfigBuilder {
+    /// Create new config builder with no options.
     pub fn new() -> Self {
-        Self::default()
+        Default::default()
     }
 
-    pub fn command<P>(&mut self, command: P) -> &mut Self
-    where
-        P: AsRef<Path>,
-    {
-        self.0.command(command);
+    pub fn command(mut self, command: impl AsRef<Path>) -> Self {
+        self.command = Some(command.as_ref().to_path_buf());
         self
     }
 
-    pub fn root<P>(&mut self, root: P) -> &mut Self
-    where
-        P: AsRef<Path>,
-    {
-        self.0.root(root);
+    /// Set the root directory to store containers' state.
+    ///
+    /// The path should be located on tmpfs.
+    /// Default is `/run/runc`, or `$XDG_RUNTIME_DIR/runc` for rootless containers.
+    pub fn root(mut self, root: impl AsRef<Path>) -> Self {
+        self.root = Some(root.as_ref().to_path_buf());
         self
     }
 
-    pub fn debug(&mut self, debug: bool) -> &mut Self {
-        self.0.debug(debug);
+    /// Enable debug logging.
+    pub fn debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
         self
     }
 
-    pub fn log<P>(&mut self, log: P) -> &mut Self
-    where
-        P: AsRef<Path>,
-    {
-        self.0.log(log);
+    /// Set the log destination to path.
+    ///
+    /// The default is to log to stderr.
+    pub fn log(&mut self, log: impl AsRef<Path>) -> &mut Self {
+        self.log = Some(log.as_ref().to_path_buf());
         self
     }
 
-    pub fn log_format(&mut self, log_format: LogFormat) -> &mut Self {
-        self.0.log_format(log_format);
+    /// Set the log format (default is text).
+    pub fn log_format(mut self, log_format: LogFormat) -> Self {
+        self.log_format = log_format;
         self
     }
 
-    pub fn log_format_json(&mut self) -> &mut Self {
-        self.0.log_format_json();
+    /// Set the log format to JSON.
+    pub fn log_json(self) -> Self {
+        self.log_format(LogFormat::Json)
+    }
+
+    /// Set the log format to TEXT.
+    pub fn log_text(self) -> Self {
+        self.log_format(LogFormat::Text)
+    }
+
+    /// Enable systemd cgroup support.
+    ///
+    /// If this is set, the container spec (`config.json`) is expected to have `cgroupsPath` value in
+    // the `slice:prefix:name` form (e.g. `system.slice:runc:434234`).
+    pub fn systemd_cgroup(mut self, systemd_cgroup: bool) -> Self {
+        self.systemd_cgroup = systemd_cgroup;
         self
     }
 
-    pub fn log_format_text(&mut self) -> &mut Self {
-        self.0.log_format_text();
+    /// Enable or disable rootless mode.
+    ///
+    // Default is auto, meaning to auto-detect whether rootless should be enabled.
+    pub fn rootless(mut self, rootless: bool) -> Self {
+        self.rootless = Some(rootless);
         self
     }
 
-    pub fn systemd_cgroup(&mut self, systemd_cgroup: bool) -> &mut Self {
-        self.0.systemd_cgroup(systemd_cgroup);
+    /// Set rootless mode to auto.
+    pub fn rootless_auto(mut self) -> Self {
+        self.rootless = None;
         self
     }
 
-    // FIXME: criu is not supported now
-    // pub fn criu(mut self, criu: bool) -> Self {
-    //     self.0.criu(criu);
-    //     self
-    // }
-
-    pub fn rootless(&mut self, rootless: bool) -> &mut Self {
-        self.0.rootless(rootless);
-        self
-    }
-
-    pub fn set_pgid(&mut self, set_pgid: bool) -> &mut Self {
-        self.0.set_pgid(set_pgid);
-        self
-    }
-
-    pub fn rootless_auto(&mut self) -> &mut Self {
-        self.0.rootless_auto();
+    pub fn set_pgid(mut self, set_pgid: bool) -> Self {
+        self.set_pgid = set_pgid;
         self
     }
 
     pub fn timeout(&mut self, millis: u64) -> &mut Self {
-        self.0.timeout(millis);
+        self.timeout = Duration::from_millis(millis);
         self
     }
 
-    pub fn build(&mut self) -> Result<Client> {
-        Ok(Client(self.0.build()?))
+    fn build_runc(self) -> Result<Runc> {
+        let path = self
+            .command
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("runc"));
+
+        let command = utils::binary_path(path).ok_or(Error::NotFound)?;
+
+        let mut args = Vec::new();
+
+        // --root path : Set the root directory to store containers' state.
+        if let Some(root) = self.root {
+            args.push("--root".into());
+            args.push(utils::abs_string(root)?);
+        }
+
+        // --debug : Enable debug logging.
+        if self.debug {
+            args.push("--debug".into());
+        }
+
+        // --log path : Set the log destination to path. The default is to log to stderr.
+        if let Some(log_path) = self.log {
+            args.push("--log".into());
+            args.push(utils::abs_string(log_path)?);
+        }
+
+        // --log-format text|json : Set the log format (default is text).
+        args.push("--log-format".into());
+        args.push(self.log_format.to_string());
+
+        // --systemd-cgroup : Enable systemd cgroup support.
+        if self.systemd_cgroup {
+            args.push("--systemd-cgroup".into());
+        }
+
+        // --rootless true|false|auto : Enable or disable rootless mode.
+        if let Some(mode) = self.rootless {
+            let arg = format!("--rootless={}", mode);
+            args.push(arg);
+        }
+
+        Ok(Runc { command, args })
     }
 
-    pub fn build_async(&mut self) -> Result<AsyncClient> {
-        Ok(AsyncClient(self.0.build()?))
+    pub fn build(self) -> Result<Client> {
+        let runc = self.build_runc()?;
+        Ok(Client(runc))
+    }
+
+    pub fn build_async(self) -> Result<AsyncClient> {
+        let runc = self.build_runc()?;
+        Ok(AsyncClient(runc))
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Client(runc::Runc);
+pub struct Runc {
+    command: PathBuf,
+    args: Vec<String>,
+}
 
-impl Client {
-    /// Create a new runc client from the supplied configuration
-    pub fn from_config(mut config: Config) -> Result<Self> {
-        config.build()
-    }
-
+impl Runc {
     #[cfg(target_os = "linux")]
-    pub fn command(&self, args: &[String]) -> Result<std::process::Command> {
-        let args = [&self.0.args()?, args].concat();
-        let mut cmd = std::process::Command::new(&self.0.command);
-        cmd.args(&args).env_remove("NOTIFY_SOCKET"); // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
+    fn command(&self, args: &[String]) -> Result<std::process::Command> {
+        let args = [&self.args, args].concat();
+        let mut cmd = std::process::Command::new(&self.command);
+
+        // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
+        cmd.args(&args).env_remove("NOTIFY_SOCKET");
+
         Ok(cmd)
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn command(&self, _args: &[String]) -> Result<std::process::Command> {
+    fn command(&self, _args: &[String]) -> Result<std::process::Command> {
         Err(Error::Unimplemented("command".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn command_async(&self, args: &[String]) -> Result<tokio::process::Command> {
+        let args = [&self.args, args].concat();
+        let mut cmd = tokio::process::Command::new(&self.command);
+
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
+        cmd.args(&args).env_remove("NOTIFY_SOCKET");
+
+        Ok(cmd)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn command_async(&self, _args: &[String]) -> Result<tokio::process::Command> {
+        Err(Error::Unimplemented("command".to_string()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Client(Runc);
+
+impl Client {
+    fn command(&self, args: &[String]) -> Result<std::process::Command> {
+        self.0.command(args)
     }
 
     pub fn checkpoint(&self) -> Result<()> {
@@ -405,7 +508,7 @@ impl Client {
 }
 
 #[derive(Debug, Clone)]
-pub struct AsyncClient(runc::Runc);
+pub struct AsyncClient(Runc);
 
 // As monitor instance never have to be mutable (it has only &self methods), declare it as const.
 const MONITOR: DefaultMonitor = DefaultMonitor::new();
@@ -414,19 +517,8 @@ const MONITOR: DefaultMonitor = DefaultMonitor::new();
 /// Note that you MUST use this client on tokio runtime, as this client internally use [`tokio::process::Command`]
 /// and some other utilities.
 impl AsyncClient {
-    /// Create a new runc client from the supplied configuration
-    pub fn from_config(mut config: Config) -> Result<Self> {
-        config.build_async()
-    }
-
-    pub fn command(&self, args: &[String]) -> Result<tokio::process::Command> {
-        let args = [&self.0.args()?, args].concat();
-        let mut cmd = tokio::process::Command::new(&self.0.command);
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-        cmd.args(&args).env_remove("NOTIFY_SOCKET"); // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
-        Ok(cmd)
+    fn command(&self, args: &[String]) -> Result<tokio::process::Command> {
+        self.0.command_async(args)
     }
 
     pub async fn launch(
@@ -677,28 +769,28 @@ mod tests {
     const CMD_FALSE: &str = "/bin/false";
 
     fn ok_client() -> Client {
-        Config::new()
+        ConfigBuilder::new()
             .command(CMD_TRUE)
             .build()
             .expect("unable to create runc instance")
     }
 
     fn fail_client() -> Client {
-        Config::new()
+        ConfigBuilder::new()
             .command(CMD_FALSE)
             .build()
             .expect("unable to create runc instance")
     }
 
     fn ok_async_client() -> AsyncClient {
-        Config::new()
+        ConfigBuilder::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance")
     }
 
     fn fail_async_client() -> AsyncClient {
-        Config::new()
+        ConfigBuilder::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance")
@@ -896,7 +988,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_run() {
         let opts = CreateOpts::new();
-        let ok_runc = Config::new()
+        let ok_runc = ConfigBuilder::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance");
@@ -909,7 +1001,7 @@ mod tests {
         });
 
         let opts = CreateOpts::new();
-        let fail_runc = Config::new()
+        let fail_runc = ConfigBuilder::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance");
@@ -940,7 +1032,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_delete() {
         let opts = DeleteOpts::new();
-        let ok_runc = Config::new()
+        let ok_runc = ConfigBuilder::new()
             .command(CMD_TRUE)
             .build_async()
             .expect("unable to create runc instance");
@@ -953,7 +1045,7 @@ mod tests {
         });
 
         let opts = DeleteOpts::new();
-        let fail_runc = Config::new()
+        let fail_runc = ConfigBuilder::new()
             .command(CMD_FALSE)
             .build_async()
             .expect("unable to create runc instance");
