@@ -282,7 +282,6 @@ pub struct Runc {
 }
 
 impl Runc {
-    #[cfg(target_os = "linux")]
     fn command(&self, args: &[String]) -> Result<std::process::Command> {
         let args = [&self.args, args].concat();
         let mut cmd = std::process::Command::new(&self.command);
@@ -293,12 +292,6 @@ impl Runc {
         Ok(cmd)
     }
 
-    #[cfg(not(target_os = "linux"))]
-    fn command(&self, _args: &[String]) -> Result<std::process::Command> {
-        Err(Error::Unimplemented("command".to_string()))
-    }
-
-    #[cfg(target_os = "linux")]
     fn command_async(&self, args: &[String]) -> Result<tokio::process::Command> {
         let args = [&self.args, args].concat();
         let mut cmd = tokio::process::Command::new(&self.command);
@@ -311,11 +304,6 @@ impl Runc {
         cmd.args(&args).env_remove("NOTIFY_SOCKET");
 
         Ok(cmd)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn command_async(&self, _args: &[String]) -> Result<tokio::process::Command> {
-        Err(Error::Unimplemented("command".to_string()))
     }
 }
 
