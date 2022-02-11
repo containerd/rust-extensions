@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/containerd-shim-protos)](https://crates.io/crates/containerd-shim-protos)
 [![docs.rs](https://img.shields.io/docsrs/containerd-shim-protos)](https://docs.rs/containerd-shim-protos/latest/containerd_shim_protos/)
 [![Crates.io](https://img.shields.io/crates/l/containerd-shim-protos)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
-[![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
+[![CI](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml)
 
 TTRPC bindings for containerd's shim events and interfaces.
 

@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/containerd-snapshots)](https://crates.io/crates/containerd-snapshots)
 [![docs.rs](https://img.shields.io/docsrs/containerd-snapshots)](https://docs.rs/containerd-snapshots/latest/containerd_snapshots/)
 [![Crates.io](https://img.shields.io/crates/l/containerd-shim-logging)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
-[![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
+[![CI](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml)
 
 Snapshots crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying complexity of GRPC
 interfaces, streaming, and request/response conversions and provide one `Snapshots` trait to implement.
