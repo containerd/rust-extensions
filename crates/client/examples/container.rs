@@ -158,7 +158,7 @@ async fn main() {
 
     // test container output
     let actual_stdout = fs::read_to_string(stdout).expect("read stdout actual");
-    assert_eq!(actual_stdout.strip_suffix("\n").unwrap(), output);
+    assert_eq!(actual_stdout.strip_suffix('\n').unwrap(), output);
 
     // clear stdin/stdout/stderr
     let _ = fs::remove_dir_all(tmp);
