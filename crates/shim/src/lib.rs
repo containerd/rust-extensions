@@ -307,6 +307,9 @@ pub enum Error {
     Errno(#[from] Errno),
 }
 
+/// The shim process communicates with the containerd server through a communication channel
+/// created by containerd. One endpoint of the communication channel is passed to shim process
+/// through a file descriptor during forking, which is the fourth(3) file descriptor.
 const SOCKET_FD: RawFd = 3;
 
 #[cfg(target_os = "linux")]
