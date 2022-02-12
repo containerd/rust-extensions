@@ -139,7 +139,7 @@ impl GlobalOpts {
     /// Set the log destination to path.
     ///
     /// The default is to log to stderr.
-    pub fn log(&mut self, log: impl AsRef<Path>) -> &mut Self {
+    pub fn log(mut self, log: impl AsRef<Path>) -> Self {
         self.log = Some(log.as_ref().to_path_buf());
         self
     }
@@ -573,5 +573,41 @@ mod tests {
         assert_eq!(KillOpts::new().all(false).args(), vec![String::new(); 0]);
 
         assert_eq!(KillOpts::new().all(true).args(), vec!["--all".to_string()],);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn global_opts_test() {
+        let cfg = GlobalOpts::default().command("true");
+        let runc = cfg.build().unwrap();
+        let args = &runc.args;
+        assert_eq!(args.len(), 2);
+        assert!(args.contains(&LOG_FORMAT.to_string()));
+        assert!(args.contains(&TEXT.to_string()));
+
+        let cfg = GlobalOpts::default().command("/bin/true");
+        let runc = cfg.build().unwrap();
+        assert_eq!(runc.args.len(), 2);
+
+        let cfg = GlobalOpts::default()
+            .command("true")
+            .root("/tmp")
+            .debug(true)
+            .log("/tmp/runc.log")
+            .log_json()
+            .systemd_cgroup(true)
+            .rootless(true);
+        let runc = cfg.build().unwrap();
+        let args = &runc.args;
+        assert!(args.contains(&ROOT.to_string()));
+        assert!(args.contains(&DEBUG.to_string()));
+        assert!(args.contains(&"/tmp".to_string()));
+        assert!(args.contains(&LOG.to_string()));
+        assert!(args.contains(&"/tmp/runc.log".to_string()));
+        assert!(args.contains(&LOG_FORMAT.to_string()));
+        assert!(args.contains(&JSON.to_string()));
+        assert!(args.contains(&"--rootless=true".to_string()));
+        assert!(args.contains(&SYSTEMD_CGROUP.to_string()));
+        assert_eq!(args.len(), 9);
     }
 }
