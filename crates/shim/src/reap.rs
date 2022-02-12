@@ -17,10 +17,20 @@
 use std::io::Result;
 
 #[cfg(target_os = "linux")]
+/// Set current process as subreaper for child processes.
+///
+/// A subreaper fulfills the role of `init` for its descendant processes.  When a process becomes
+/// orphaned (i.e., its immediate parent terminates), then that process will be reparented to the
+/// nearest still living ancestor subreaper. Subsequently, calls to `getppid()` in the orphaned
+/// process will now return the PID of the subreaper process, and when the orphan terminates,
+/// it is the subreaper process that will receive a SIGCHLD signal and will be able to `wait()`
+/// on the process to discover its termination status.
 pub fn set_subreaper() -> Result<()> {
     use libc::PR_SET_CHILD_SUBREAPER;
     use std::io::Error;
 
+    // Set current process as `subreaper` for child processes if the second parameter is non-zero,
+    // otherwise unset the attribute.
     // Safe because we trust the kernel and have checked the result.
     let code = unsafe { libc::prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0) };
     if code != 0 {
