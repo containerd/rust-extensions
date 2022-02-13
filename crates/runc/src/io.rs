@@ -122,52 +122,37 @@ pub struct PipedIo {
 
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: IOOption) -> std::io::Result<Self> {
-        let uid = Some(Uid::from_raw(uid));
-        let gid = Some(Gid::from_raw(gid));
-        let stdin = if opts.open_stdin {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.rd.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
-        let stdout = if opts.open_stdout {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.wr.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
-        let stderr = if opts.open_stderr {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.wr.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
         Ok(Self {
-            stdin,
-            stdout,
-            stderr,
+            stdin: Self::create_pipe(uid, gid, opts.open_stdin, true)?,
+            stdout: Self::create_pipe(uid, gid, opts.open_stdout, false)?,
+            stderr: Self::create_pipe(uid, gid, opts.open_stderr, false)?,
         })
+    }
+
+    fn create_pipe(
+        uid: u32,
+        gid: u32,
+        enabled: bool,
+        stdin: bool,
+    ) -> std::io::Result<Option<Pipe>> {
+        if !enabled {
+            return Ok(None);
+        }
+
+        let pipe = Pipe::new()?;
+        let guard = if stdin {
+            pipe.rd.lock().unwrap()
+        } else {
+            pipe.wr.lock().unwrap()
+        };
+        if let Some(f) = guard.as_ref() {
+            let uid = Some(Uid::from_raw(uid));
+            let gid = Some(Gid::from_raw(gid));
+            nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
+        }
+        drop(guard);
+
+        Ok(Some(pipe))
     }
 }
 
