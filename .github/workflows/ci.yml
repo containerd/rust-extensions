@@ -16,11 +16,12 @@ jobs:
       - run: cargo check --examples --tests --all-targets
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
       - env:
+          # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
         run: |
           mkdir -p /tmp/dummy-xdr
+          cargo test
           cargo test --all-features
 
   deny:
