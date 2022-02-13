@@ -91,3 +91,38 @@ pub struct Exit {
     pub pid: u32,
     pub status: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Stdio;
+    use tokio::process::Command;
+    use tokio::sync::oneshot::channel;
+
+    #[tokio::test]
+    async fn test_start_wait_without_output() {
+        let monitor = DefaultMonitor::new();
+        let cmd = Command::new("ls");
+        let (tx, rx) = channel();
+
+        let output = monitor.start(cmd, tx).await.unwrap();
+        assert_eq!(output.stdout.len(), 0);
+        assert_eq!(output.stderr.len(), 0);
+        let status = monitor.wait(rx).await.unwrap();
+        assert_eq!(status.status, 0);
+    }
+
+    #[tokio::test]
+    async fn test_start_wait_with_output() {
+        let monitor = DefaultMonitor::new();
+        let mut cmd = Command::new("ls");
+        cmd.stdout(Stdio::piped());
+        let (tx, rx) = channel();
+
+        let output = monitor.start(cmd, tx).await.unwrap();
+        assert!(output.stdout.len() > 0);
+        assert_eq!(output.stderr.len(), 0);
+        let status = monitor.wait(rx).await.unwrap();
+        assert_eq!(status.status, 0);
+    }
+}
