@@ -14,12 +14,15 @@
    limitations under the License.
 */
 
-use std::process::Output;
+use std::process::{ExitStatus, Output, Stdio};
 
 use async_trait::async_trait;
 use log::error;
 use time::OffsetDateTime;
-use tokio::sync::oneshot::{Receiver, Sender};
+use tokio::process::Command;
+use tokio::sync::oneshot::{channel, Receiver, Sender};
+
+use crate::error::Error;
 
 /// A trait for spawning and waiting for a process.
 ///
@@ -36,11 +39,7 @@ pub trait ProcessMonitor {
     /// Use [tokio::process::Command::stdout(Stdio::piped())](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#method.stdout)
     /// and/or [tokio::process::Command::stderr(Stdio::piped())](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#method.stderr)
     /// respectively, when creating the [Command](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#).
-    async fn start(
-        &self,
-        mut cmd: tokio::process::Command,
-        tx: Sender<Exit>,
-    ) -> std::io::Result<Output> {
+    async fn start(&self, mut cmd: Command, tx: Sender<Exit>) -> std::io::Result<Output> {
         let chi = cmd.spawn()?;
         // Safe to expect() because wait() hasn't been called yet, dependence on tokio interanl
         // implementation details.
@@ -90,6 +89,49 @@ pub struct Exit {
     pub status: i32,
 }
 
+/// Execution result returned by `execute()`.
+pub struct ExecuteResult {
+    pub exit: Exit,
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Execute a `Command` and collect exit status, output and error messages.
+///
+/// To collect output and error messages, pipes must be used for Command's stdout and stderr.
+/// This method will create pipes and overwrite stdout/stderr of `cmd`.
+///
+/// Note: invalid UTF-8 characters in output and error messages will be replaced with the `�` char.
+pub async fn execute<T: ProcessMonitor + Send + Sync>(
+    monitor: &T,
+    mut cmd: Command,
+) -> Result<ExecuteResult, Error> {
+    let (tx, rx) = channel::<Exit>();
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    let start = monitor.start(cmd, tx);
+    let wait = monitor.wait(rx);
+    let (
+        Output {
+            stdout,
+            stderr,
+            status,
+        },
+        exit,
+    ) = tokio::try_join!(start, wait).map_err(Error::InvalidCommand)?;
+    let stdout = String::from_utf8_lossy(&stdout).to_string();
+    let stderr = String::from_utf8_lossy(&stderr).to_string();
+
+    Ok(ExecuteResult {
+        exit,
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,5 +164,17 @@ mod tests {
         assert_eq!(output.stderr.len(), 0);
         let status = monitor.wait(rx).await.unwrap();
         assert_eq!(status.status, 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute() {
+        let cmd = Command::new("ls");
+        let monitor = DefaultMonitor::new();
+        let result = execute(&monitor, cmd).await.unwrap();
+
+        assert_eq!(result.exit.status, 0);
+        assert!(result.status.success());
+        assert!(!result.stdout.is_empty());
+        assert_eq!(result.stderr.len(), 0);
     }
 }
