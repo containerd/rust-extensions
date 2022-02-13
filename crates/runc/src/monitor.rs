@@ -21,20 +21,29 @@ use log::error;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::{Receiver, Sender};
 
-// ProcessMonitor for handling runc process exit
-// Implementation is different from Go's, because if you return Sender in start() and want to
-// use it in wait(), then start and wait cannot be executed concurrently.
-// Alternatively, caller of start() and wait() have to prepare channel
+/// A trait for spawning and waiting for a process.
+///
+/// The design is different from Go's, because if you return a `Sender` in [ProcessMonitor::start()]
+/// and want to use it in [ProcessMonitor::wait()], then start and wait cannot be executed
+/// concurrently. Alternatively, let the caller to prepare the communication channel for
+/// [ProcessMonitor::start()] and [ProcessMonitor::wait()] so they could be executed concurrently.
 #[async_trait]
 pub trait ProcessMonitor {
-    /// Caller cand choose [`std::mem::forget`] about resource
-    /// associated to that command, e.g. file descriptors.
+    /// Spawn a process and return its output.
+    ///
+    /// In order to capture the output/error, it is necessary for the caller to create new pipes
+    /// between parent and child.
+    /// Use [tokio::process::Command::stdout(Stdio::piped())](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#method.stdout)
+    /// and/or [tokio::process::Command::stderr(Stdio::piped())](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#method.stderr)
+    /// respectively, when creating the [Command](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#).
     async fn start(
         &self,
         mut cmd: tokio::process::Command,
         tx: Sender<Exit>,
     ) -> std::io::Result<Output> {
         let chi = cmd.spawn()?;
+        // Safe to expect() because wait() hasn't been called yet, dependence on tokio interanl
+        // implementation details.
         let pid = chi
             .id()
             .expect("failed to take pid of the container process.");
@@ -53,6 +62,8 @@ pub trait ProcessMonitor {
             }
         }
     }
+
+    /// Wait for the spawned process to exit and return the exit status.
     async fn wait(&self, rx: Receiver<Exit>) -> std::io::Result<Exit> {
         rx.await.map_err(|_| {
             error!("sender dropped.");
@@ -61,6 +72,7 @@ pub trait ProcessMonitor {
     }
 }
 
+/// A default implementation of [ProcessMonitor].
 #[derive(Debug, Clone, Default)]
 pub struct DefaultMonitor {}
 
@@ -72,6 +84,7 @@ impl DefaultMonitor {
     }
 }
 
+/// Process exit status returned by [ProcessMonitor::wait()].
 #[derive(Debug)]
 pub struct Exit {
     pub ts: OffsetDateTime,
