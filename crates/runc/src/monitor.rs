@@ -49,11 +49,9 @@ pub trait ProcessMonitor {
             .expect("failed to take pid of the container process.");
         let out = chi.wait_with_output().await?;
         let ts = OffsetDateTime::now_utc();
-        match tx.send(Exit {
-            ts,
-            pid,
-            status: out.status.code().unwrap(),
-        }) {
+        // On Unix, out.status.code() will return None if the process was terminated by a signal.
+        let status = out.status.code().unwrap_or(-1);
+        match tx.send(Exit { ts, pid, status }) {
             Ok(_) => Ok(out),
             Err(e) => {
                 error!("command {:?} exited but receiver dropped.", cmd);
@@ -120,7 +118,7 @@ mod tests {
         let (tx, rx) = channel();
 
         let output = monitor.start(cmd, tx).await.unwrap();
-        assert!(output.stdout.len() > 0);
+        assert!(!output.stdout.is_empty());
         assert_eq!(output.stderr.len(), 0);
         let status = monitor.wait(rx).await.unwrap();
         assert_eq!(status.status, 0);
