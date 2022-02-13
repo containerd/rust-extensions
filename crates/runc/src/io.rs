@@ -16,12 +16,9 @@
 use std::fmt::{self, Debug, Formatter};
 use std::fs::File;
 use std::io::Result;
-use std::os::unix::io::FromRawFd;
-use std::os::unix::prelude::AsRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::sync::Mutex;
 
-use nix::fcntl::OFlag;
-use nix::sys::stat::Mode;
 use nix::unistd::{Gid, Uid};
 
 use crate::Command;
@@ -46,6 +43,7 @@ pub trait Io: Sync + Send {
     /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
     fn set(&self, cmd: &mut Command) -> Result<()>;
 
+    /// Only close write side (should be stdout/err "from" runc process)
     fn close_after_start(&self);
 }
 
@@ -72,9 +70,9 @@ impl Default for IOOption {
     }
 }
 
-/// This struct represents pipe that can be used to transfer
-/// stdio inputs and outputs
-/// when one side of closed, this struct represent it with [`None`]
+/// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
+///
+/// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
     // Might be ugly hack: using mutex in order to take rd/wr under immutable [`Pipe`]
@@ -175,31 +173,19 @@ impl PipedIo {
 
 impl Io for PipedIo {
     fn stdin(&self) -> Option<File> {
-        if let Some(ref stdin) = self.stdin {
-            stdin.take_write()
-        } else {
-            None
-        }
+        self.stdin.as_ref().map(|v| v.take_write()).flatten()
     }
 
     fn stdout(&self) -> Option<File> {
-        if let Some(ref stdout) = self.stdout {
-            stdout.take_read()
-        } else {
-            None
-        }
+        self.stdout.as_ref().map(|v| v.take_read()).flatten()
     }
 
     fn stderr(&self) -> Option<File> {
-        if let Some(ref stderr) = self.stderr {
-            stderr.take_read()
-        } else {
-            None
-        }
+        self.stderr.as_ref().map(|v| v.take_read()).flatten()
     }
 
-    /// Note that this internally use [`std::fs::File`]'s [`try_clone()`].
-    /// Thus, the files passed to commands will be not closed after command exit.
+    // Note that this internally use [`std::fs::File`]'s `try_clone()`.
+    // Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
         if let Some(ref p) = self.stdin {
             let m = p.rd.lock().unwrap();
@@ -224,10 +210,10 @@ impl Io for PipedIo {
                 cmd.stderr(f);
             }
         }
+
         Ok(())
     }
 
-    /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
         if let Some(ref p) = self.stdout {
             p.close_write();
@@ -246,7 +232,11 @@ pub struct NullIo {
 
 impl NullIo {
     pub fn new() -> std::io::Result<Self> {
-        let fd = nix::fcntl::open("/dev/null", OFlag::O_RDONLY, Mode::empty())?;
+        let fd = nix::fcntl::open(
+            "/dev/null",
+            nix::fcntl::OFlag::O_RDONLY,
+            nix::sys::stat::Mode::empty(),
+        )?;
         let dev_null = unsafe { Mutex::new(Some(std::fs::File::from_raw_fd(fd))) };
         Ok(Self { dev_null })
     }
@@ -261,7 +251,6 @@ impl Io for NullIo {
         Ok(())
     }
 
-    /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
         let mut m = self.dev_null.lock().unwrap();
         let _ = m.take();
