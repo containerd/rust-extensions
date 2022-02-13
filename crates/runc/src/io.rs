@@ -121,7 +121,7 @@ pub struct PipedIo {
 }
 
 impl PipedIo {
-    pub fn new(uid: u32, gid: u32, opts: IOOption) -> std::io::Result<Self> {
+    pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
             stdin: Self::create_pipe(uid, gid, opts.open_stdin, true)?,
             stdout: Self::create_pipe(uid, gid, opts.open_stdout, false)?,
@@ -239,5 +239,79 @@ impl Io for NullIo {
     fn close_after_start(&self) {
         let mut m = self.dev_null.lock().unwrap();
         let _ = m.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(not(target_os = "macos"))]
+    use std::io::{Read, Write};
+
+    #[test]
+    fn test_io_option() {
+        let opts = IOOption {
+            open_stdin: false,
+            open_stdout: false,
+            open_stderr: false,
+        };
+        let io = PipedIo::new(1000, 1000, &opts).unwrap();
+
+        assert!(io.stdin().is_none());
+        assert!(io.stdout().is_none());
+        assert!(io.stderr().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_create_piped_io() {
+        let opts = IOOption::default();
+        let uid = nix::unistd::getuid();
+        let gid = nix::unistd::getgid();
+        let io = PipedIo::new(uid.as_raw(), gid.as_raw(), &opts).unwrap();
+        let mut buf = [0xfau8];
+
+        let mut stdin = io.stdin().unwrap();
+        stdin.write_all(&buf).unwrap();
+        buf[0] = 0x0;
+        io.stdin.as_ref().map(|v| {
+            v.rd.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .read(&mut buf)
+                .unwrap()
+        });
+        assert_eq!(&buf, &[0xfau8]);
+
+        let mut stdout = io.stdout().unwrap();
+        buf[0] = 0xce;
+        io.stdout
+            .as_ref()
+            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+        buf[0] = 0x0;
+        stdout.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xceu8]);
+
+        let mut stderr = io.stderr().unwrap();
+        buf[0] = 0xa5;
+        io.stderr
+            .as_ref()
+            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+        buf[0] = 0x0;
+        stderr.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xa5u8]);
+
+        io.close_after_start();
+        stdout.read_exact(&mut buf).unwrap_err();
+        stderr.read_exact(&mut buf).unwrap_err();
+    }
+
+    #[test]
+    fn test_null_io() {
+        let io = NullIo::new().unwrap();
+        assert!(io.stdin().is_none());
+        assert!(io.stdout().is_none());
+        assert!(io.stderr().is_none());
     }
 }
