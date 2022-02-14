@@ -37,7 +37,7 @@
 
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
-use std::process::{ExitStatus, Output, Stdio};
+use std::process::ExitStatus;
 use std::time::Duration;
 
 use oci_spec::runtime::{Linux, Process};
@@ -48,13 +48,14 @@ pub mod container;
 pub mod error;
 pub mod events;
 pub mod io;
+#[cfg(feature = "async")]
 pub mod monitor;
 pub mod options;
 mod utils;
 
 use crate::container::Container;
 use crate::error::Error;
-use crate::events::{Event, Stats};
+#[cfg(feature = "async")]
 use crate::monitor::{DefaultMonitor, Exit, ProcessMonitor};
 use crate::options::*;
 use crate::utils::{JSON, TEXT};
@@ -264,16 +265,17 @@ impl ConfigBuilder {
         Ok(Runc { command, args })
     }
 
-    pub fn build(self) -> Result<Client> {
+    pub fn build(self) -> Result<Runc> {
         let runc = self.build_runc()?;
-        Ok(Client(runc))
-    }
-
-    pub fn build_async(self) -> Result<AsyncClient> {
-        let runc = self.build_runc()?;
-        Ok(AsyncClient(runc))
+        Ok(runc)
     }
 }
+
+#[cfg(not(feature = "async"))]
+pub type Command = std::process::Command;
+
+#[cfg(feature = "async")]
+pub type Command = tokio::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct Runc {
@@ -282,23 +284,18 @@ pub struct Runc {
 }
 
 impl Runc {
-    fn command(&self, args: &[String]) -> Result<std::process::Command> {
+    fn command(&self, args: &[String]) -> Result<Command> {
         let args = [&self.args, args].concat();
-        let mut cmd = std::process::Command::new(&self.command);
+        let mut cmd = Command::new(&self.command);
 
-        // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
-        cmd.args(&args).env_remove("NOTIFY_SOCKET");
+        #[cfg(feature = "async")]
+        {
+            use std::process::Stdio;
 
-        Ok(cmd)
-    }
-
-    fn command_async(&self, args: &[String]) -> Result<tokio::process::Command> {
-        let args = [&self.args, args].concat();
-        let mut cmd = tokio::process::Command::new(&self.command);
-
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        }
 
         // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
         cmd.args(&args).env_remove("NOTIFY_SOCKET");
@@ -307,14 +304,8 @@ impl Runc {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Client(Runc);
-
-impl Client {
-    fn command(&self, args: &[String]) -> Result<std::process::Command> {
-        self.0.command(args)
-    }
-
+#[cfg(not(feature = "async"))]
+impl Runc {
     pub fn checkpoint(&self) -> Result<()> {
         Err(Error::Unimplemented("checkpoint".to_string()))
     }
@@ -495,30 +486,21 @@ impl Client {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct AsyncClient(Runc);
-
-// As monitor instance never have to be mutable (it has only &self methods), declare it as const.
-const MONITOR: DefaultMonitor = DefaultMonitor::new();
-
-/// Async client for runc
+/// Async implementation for [Runc].
+///
 /// Note that you MUST use this client on tokio runtime, as this client internally use [`tokio::process::Command`]
 /// and some other utilities.
-impl AsyncClient {
-    fn command(&self, args: &[String]) -> Result<tokio::process::Command> {
-        self.0.command_async(args)
-    }
+#[cfg(feature = "async")]
+impl Runc {
+    // As monitor instance never have to be mutable (it has only &self methods), declare it as const.
+    const MONITOR: DefaultMonitor = DefaultMonitor::new();
 
-    pub async fn launch(
-        &self,
-        cmd: tokio::process::Command,
-        combined_output: bool,
-    ) -> Result<Response> {
+    pub async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-        let start = MONITOR.start(cmd, tx);
-        let wait = MONITOR.wait(rx);
+        let start = Self::MONITOR.start(cmd, tx);
+        let wait = Self::MONITOR.wait(rx);
         let (
-            Output {
+            std::process::Output {
                 status,
                 stdout,
                 stderr,
@@ -576,12 +558,12 @@ impl AsyncClient {
         let mut cmd = self.command(&args)?;
         match opts {
             Some(CreateOpts { io: Some(_io), .. }) => {
-                _io.set_tk(&mut cmd).map_err(Error::UnavailableIO)?;
+                _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
                 let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-                let start = MONITOR.start(cmd, tx);
-                let wait = MONITOR.wait(rx);
+                let start = Self::MONITOR.start(cmd, tx);
+                let wait = Self::MONITOR.wait(rx);
                 let (
-                    Output {
+                    std::process::Output {
                         status,
                         stdout,
                         stderr,
@@ -718,10 +700,10 @@ impl AsyncClient {
     }
 
     /// Return the latest statistics for a container
-    pub async fn stats(&self, id: &str) -> Result<Stats> {
+    pub async fn stats(&self, id: &str) -> Result<events::Stats> {
         let args = vec!["events".to_string(), "--stats".to_string(), id.to_string()];
         let res = self.launch(self.command(&args)?, true).await?;
-        let event: Event =
+        let event: events::Event =
             serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)?;
         if let Some(stats) = event.stats {
             Ok(stats)
@@ -748,39 +730,21 @@ impl AsyncClient {
 }
 
 #[cfg(test)]
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(feature = "async")))]
 mod tests {
     use super::*;
 
-    // following style of go-runc, use only true/false to test
-    const CMD_TRUE: &str = "/bin/true";
-    const CMD_FALSE: &str = "/bin/false";
-
-    fn ok_client() -> Client {
+    fn ok_client() -> Runc {
         ConfigBuilder::new()
-            .command(CMD_TRUE)
+            .command("/bin/true")
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn fail_client() -> Client {
+    fn fail_client() -> Runc {
         ConfigBuilder::new()
-            .command(CMD_FALSE)
+            .command("/bin/false")
             .build()
-            .expect("unable to create runc instance")
-    }
-
-    fn ok_async_client() -> AsyncClient {
-        ConfigBuilder::new()
-            .command(CMD_TRUE)
-            .build_async()
-            .expect("unable to create runc instance")
-    }
-
-    fn fail_async_client() -> AsyncClient {
-        ConfigBuilder::new()
-            .command(CMD_FALSE)
-            .build_async()
             .expect("unable to create runc instance")
     }
 
@@ -902,11 +866,32 @@ mod tests {
             Err(e) => panic!("unexpected error from fail_runc: {:?}", e),
         }
     }
+}
+
+/// Tokio tests
+#[cfg(test)]
+#[cfg(all(target_os = "linux", feature = "async"))]
+mod tests {
+    use super::*;
+
+    fn ok_client() -> Runc {
+        ConfigBuilder::new()
+            .command("/bin/true")
+            .build()
+            .expect("unable to create runc instance")
+    }
+
+    fn fail_client() -> Runc {
+        ConfigBuilder::new()
+            .command("/bin/false")
+            .build()
+            .expect("unable to create runc instance")
+    }
 
     #[tokio::test]
     async fn test_async_create() {
         let opts = CreateOpts::new();
-        let ok_runc = ok_async_client();
+        let ok_runc = ok_client();
         let ok_task = tokio::spawn(async move {
             ok_runc
                 .create("fake-id", "fake-bundle", Some(&opts))
@@ -916,7 +901,7 @@ mod tests {
         });
 
         let opts = CreateOpts::new();
-        let fail_runc = fail_async_client();
+        let fail_runc = fail_client();
         let fail_task = tokio::spawn(async move {
             match fail_runc
                 .create("fake-id", "fake-bundle", Some(&opts))
@@ -944,13 +929,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_start() {
-        let ok_runc = ok_async_client();
+        let ok_runc = ok_client();
         let ok_task = tokio::spawn(async move {
             ok_runc.start("fake-id").await.expect("true failed.");
             eprintln!("ok_runc succeeded.");
         });
 
-        let fail_runc = fail_async_client();
+        let fail_runc = fail_client();
         let fail_task = tokio::spawn(async move {
             match fail_runc.start("fake-id").await {
                 Ok(_) => panic!("fail_runc returned exit status 0."),
@@ -976,10 +961,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_run() {
         let opts = CreateOpts::new();
-        let ok_runc = ConfigBuilder::new()
-            .command(CMD_TRUE)
-            .build_async()
-            .expect("unable to create runc instance");
+        let ok_runc = ok_client();
         tokio::spawn(async move {
             ok_runc
                 .create("fake-id", "fake-bundle", Some(&opts))
@@ -989,10 +971,7 @@ mod tests {
         });
 
         let opts = CreateOpts::new();
-        let fail_runc = ConfigBuilder::new()
-            .command(CMD_FALSE)
-            .build_async()
-            .expect("unable to create runc instance");
+        let fail_runc = fail_client();
         tokio::spawn(async move {
             match fail_runc
                 .create("fake-id", "fake-bundle", Some(&opts))
@@ -1020,10 +999,7 @@ mod tests {
     #[tokio::test]
     async fn test_async_delete() {
         let opts = DeleteOpts::new();
-        let ok_runc = ConfigBuilder::new()
-            .command(CMD_TRUE)
-            .build_async()
-            .expect("unable to create runc instance");
+        let ok_runc = ok_client();
         tokio::spawn(async move {
             ok_runc
                 .delete("fake-id", Some(&opts))
@@ -1033,10 +1009,7 @@ mod tests {
         });
 
         let opts = DeleteOpts::new();
-        let fail_runc = ConfigBuilder::new()
-            .command(CMD_FALSE)
-            .build_async()
-            .expect("unable to create runc instance");
+        let fail_runc = fail_client();
         tokio::spawn(async move {
             match fail_runc.delete("fake-id", Some(&opts)).await {
                 Ok(_) => panic!("fail_runc returned exit status 0."),

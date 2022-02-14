@@ -69,6 +69,7 @@ pub enum Error {
     #[error("Runc IO unavailable: {0}")]
     UnavailableIO(io::Error),
 
+    #[cfg(feature = "async")]
     #[error("Runc command timed out: {0}")]
     CommandTimeout(tokio::time::error::Elapsed),
 

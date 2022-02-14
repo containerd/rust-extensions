@@ -15,14 +15,16 @@
 */
 use std::fmt::{self, Debug, Formatter};
 use std::fs::File;
+use std::io::Result;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::prelude::AsRawFd;
-use std::process::Command;
 use std::sync::Mutex;
 
 use nix::fcntl::OFlag;
 use nix::sys::stat::Mode;
 use nix::unistd::{Gid, Uid};
+
+use crate::Command;
 
 pub trait Io: Sync + Send {
     /// Return write side of stdin
@@ -42,10 +44,7 @@ pub trait Io: Sync + Send {
 
     /// Set IO for passed command.
     /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
-    fn set(&self, _cmd: &mut Command) -> std::io::Result<()>;
-
-    // tokio version of set()
-    fn set_tk(&self, _cmd: &mut tokio::process::Command) -> std::io::Result<()>;
+    fn set(&self, cmd: &mut Command) -> Result<()>;
 
     fn close_after_start(&self);
 }
@@ -228,33 +227,6 @@ impl Io for PipedIo {
         Ok(())
     }
 
-    fn set_tk(&self, cmd: &mut tokio::process::Command) -> std::io::Result<()> {
-        if let Some(ref p) = self.stdin {
-            let m = p.rd.lock().unwrap();
-            if let Some(stdin) = &*m {
-                let f = stdin.try_clone()?;
-                cmd.stdin(f);
-            }
-        }
-
-        if let Some(ref p) = self.stdout {
-            let m = p.wr.lock().unwrap();
-            if let Some(f) = &*m {
-                let f = f.try_clone()?;
-                cmd.stdout(f);
-            }
-        }
-
-        if let Some(ref p) = self.stderr {
-            let m = p.wr.lock().unwrap();
-            if let Some(f) = &*m {
-                let f = f.try_clone()?;
-                cmd.stderr(f);
-            }
-        }
-        Ok(())
-    }
-
     /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
         if let Some(ref p) = self.stdout {
@@ -282,14 +254,6 @@ impl NullIo {
 
 impl Io for NullIo {
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
-        if let Some(null) = self.dev_null.lock().unwrap().as_ref() {
-            cmd.stdout(null.try_clone()?);
-            cmd.stderr(null.try_clone()?);
-        }
-        Ok(())
-    }
-
-    fn set_tk(&self, cmd: &mut tokio::process::Command) -> std::io::Result<()> {
         if let Some(null) = self.dev_null.lock().unwrap().as_ref() {
             cmd.stdout(null.try_clone()?);
             cmd.stderr(null.try_clone()?);
