@@ -60,38 +60,38 @@ where
         .to_path_buf())
 }
 
+fn path_to_string(path: impl AsRef<Path>) -> Result<String, Error> {
+    path.as_ref()
+        .to_str()
+        .map(|v| v.to_string())
+        .ok_or_else(|| {
+            let e = std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("invalid UTF-8 string: {}", path.as_ref().to_string_lossy()),
+            );
+            Error::InvalidPath(e)
+        })
+}
+
 pub fn abs_string<P>(path: P) -> Result<String, Error>
 where
     P: AsRef<Path>,
 {
-    Ok(abs_path_buf(path)?
-        .to_string_lossy()
-        .parse::<String>()
-        .unwrap())
+    path_to_string(abs_path_buf(path)?)
 }
 
 pub fn temp_filename_in_runtime_dir() -> Result<String, Error> {
-    env::var_os("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| {
-            format!(
-                "{}/runc-process-{}",
-                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
-                Uuid::new_v4(),
-            )
-        })
-        .ok_or(Error::SpecFileNotFound)
+    match env::var_os("XDG_RUNTIME_DIR") {
+        Some(runtime_dir) => {
+            let path = path_to_string(runtime_dir)?;
+            Ok(format!("{}/runc-process-{}", path, Uuid::new_v4()))
+        }
+        None => Err(Error::SpecFileNotFound),
+    }
 }
 
 pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error> {
-    let file_name = env::var_os("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| {
-            format!(
-                "{}/runc-process-{}",
-                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
-                Uuid::new_v4(),
-            )
-        })
-        .ok_or(Error::SpecFileNotFound)?;
+    let file_name = temp_filename_in_runtime_dir()?;
     let temp_file = Builder::new()
         .prefix(&file_name)
         .tempfile()
@@ -99,6 +99,11 @@ pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error>
     Ok((temp_file, file_name))
 }
 
+/// Resolve a binary path according to the `PATH` environment variable.
+///
+/// Note, the case that `path` is already an absolute path is implicitly handled by
+/// `dir.join(path.as_ref())`. `Path::join(parent_path, path)` directly returns `path` when `path`
+/// is an absolute path.
 pub fn binary_path<P>(path: P) -> Option<PathBuf>
 where
     P: AsRef<Path>,
