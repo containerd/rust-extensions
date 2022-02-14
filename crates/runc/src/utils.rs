@@ -25,29 +25,6 @@ use uuid::Uuid;
 
 use crate::error::Error;
 
-// constants for flags
-pub const ALL: &str = "--all";
-pub const CONSOLE_SOCKET: &str = "--console-socket";
-// pub const CRIU: &str = "--criu";
-pub const DEBUG: &str = "--debug";
-pub const DETACH: &str = "--detach";
-pub const FORCE: &str = "--force";
-pub const LOG: &str = "--log";
-pub const LOG_FORMAT: &str = "--log-format";
-pub const NO_NEW_KEYRING: &str = "--no-new-keyring";
-pub const NO_PIVOT: &str = "--no-pivot";
-pub const PID_FILE: &str = "--pid-file";
-pub const ROOT: &str = "--root";
-pub const ROOTLESS: &str = "--rootless";
-pub const SYSTEMD_CGROUP: &str = "--systemd-cgroup";
-
-// constants for log format
-pub const JSON: &str = "json";
-pub const TEXT: &str = "text";
-
-// constant for command
-pub const DEFAULT_COMMAND: &str = "runc";
-
 // helper to resolve path (such as path for runc binary, pid files, etc. )
 pub fn abs_path_buf<P>(path: P) -> Result<PathBuf, Error>
 where
@@ -60,38 +37,38 @@ where
         .to_path_buf())
 }
 
+fn path_to_string(path: impl AsRef<Path>) -> Result<String, Error> {
+    path.as_ref()
+        .to_str()
+        .map(|v| v.to_string())
+        .ok_or_else(|| {
+            let e = std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("invalid UTF-8 string: {}", path.as_ref().to_string_lossy()),
+            );
+            Error::InvalidPath(e)
+        })
+}
+
 pub fn abs_string<P>(path: P) -> Result<String, Error>
 where
     P: AsRef<Path>,
 {
-    Ok(abs_path_buf(path)?
-        .to_string_lossy()
-        .parse::<String>()
-        .unwrap())
+    path_to_string(abs_path_buf(path)?)
 }
 
 pub fn temp_filename_in_runtime_dir() -> Result<String, Error> {
-    env::var_os("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| {
-            format!(
-                "{}/runc-process-{}",
-                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
-                Uuid::new_v4(),
-            )
-        })
-        .ok_or(Error::SpecFileNotFound)
+    match env::var_os("XDG_RUNTIME_DIR") {
+        Some(runtime_dir) => {
+            let path = path_to_string(runtime_dir)?;
+            Ok(format!("{}/runc-process-{}", path, Uuid::new_v4()))
+        }
+        None => Err(Error::SpecFileNotFound),
+    }
 }
 
 pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error> {
-    let file_name = env::var_os("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| {
-            format!(
-                "{}/runc-process-{}",
-                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
-                Uuid::new_v4(),
-            )
-        })
-        .ok_or(Error::SpecFileNotFound)?;
+    let file_name = temp_filename_in_runtime_dir()?;
     let temp_file = Builder::new()
         .prefix(&file_name)
         .tempfile()
@@ -99,6 +76,11 @@ pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error>
     Ok((temp_file, file_name))
 }
 
+/// Resolve a binary path according to the `PATH` environment variable.
+///
+/// Note, the case that `path` is already an absolute path is implicitly handled by
+/// `dir.join(path.as_ref())`. `Path::join(parent_path, path)` directly returns `path` when `path`
+/// is an absolute path.
 pub fn binary_path<P>(path: P) -> Option<PathBuf>
 where
     P: AsRef<Path>,

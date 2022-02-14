@@ -35,14 +35,216 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::error::Error;
 use crate::io::Io;
-use crate::utils::{self, ALL, CONSOLE_SOCKET, DETACH, FORCE, NO_NEW_KEYRING, NO_PIVOT, PID_FILE};
+use crate::utils;
+use crate::{LogFormat, Runc};
+
+// constants for log format
+pub const JSON: &str = "json";
+pub const TEXT: &str = "text";
+
+// constants for runc global flags
+const DEBUG: &str = "--debug";
+const LOG: &str = "--log";
+const LOG_FORMAT: &str = "--log-format";
+const ROOT: &str = "--root";
+const ROOTLESS: &str = "--rootless";
+const SYSTEMD_CGROUP: &str = "--systemd-cgroup";
+
+// constants for runc-create/runc-exec flags
+const CONSOLE_SOCKET: &str = "--console-socket";
+const DETACH: &str = "--detach";
+const NO_NEW_KEYRING: &str = "--no-new-keyring";
+const NO_PIVOT: &str = "--no-pivot";
+const PID_FILE: &str = "--pid-file";
+
+// constants for runc-kill flags
+const ALL: &str = "--all";
+
+// constants for runc-delete flags
+const FORCE: &str = "--force";
+
+// constant for command
+pub const DEFAULT_COMMAND: &str = "runc";
 
 pub trait Args {
     type Output;
+
     fn args(&self) -> Self::Output;
+}
+
+/// Global options builder for the runc binary.
+///
+/// These options will be passed for all subsequent runc calls.
+/// See <https://github.com/opencontainers/runc/blob/main/man/runc.8.md#global-options>
+#[derive(Debug, Default)]
+pub struct GlobalOpts {
+    /// Override the name of the runc binary. If [`None`], `runc` is used.
+    command: Option<PathBuf>,
+    /// Debug logging.
+    ///
+    /// If true, debug level logs are emitted.
+    debug: bool,
+    /// Path to log file.
+    log: Option<PathBuf>,
+    /// Log format to use.
+    log_format: LogFormat,
+    /// Path to root directory of container rootfs.
+    root: Option<PathBuf>,
+    /// Whether to use rootless mode.
+    ///
+    /// If [`None`], `auto` settings is used.
+    /// Note that "auto" is different from explicit "true" or "false".
+    rootless: Option<bool>,
+    /// Set process group ID (gpid).
+    set_pgid: bool,
+    /// Use systemd cgroup.
+    systemd_cgroup: bool,
+    /// Timeout settings for runc command.
+    ///
+    /// Default is 5 seconds.
+    /// This will be used only in AsyncClient.
+    timeout: Duration,
+}
+
+impl GlobalOpts {
+    /// Create new config builder with no options.
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn command(mut self, command: impl AsRef<Path>) -> Self {
+        self.command = Some(command.as_ref().to_path_buf());
+        self
+    }
+
+    /// Set the root directory to store containers' state.
+    ///
+    /// The path should be located on tmpfs.
+    /// Default is `/run/runc`, or `$XDG_RUNTIME_DIR/runc` for rootless containers.
+    pub fn root(mut self, root: impl AsRef<Path>) -> Self {
+        self.root = Some(root.as_ref().to_path_buf());
+        self
+    }
+
+    /// Enable debug logging.
+    pub fn debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
+        self
+    }
+
+    /// Set the log destination to path.
+    ///
+    /// The default is to log to stderr.
+    pub fn log(mut self, log: impl AsRef<Path>) -> Self {
+        self.log = Some(log.as_ref().to_path_buf());
+        self
+    }
+
+    /// Set the log format (default is text).
+    pub fn log_format(mut self, log_format: LogFormat) -> Self {
+        self.log_format = log_format;
+        self
+    }
+
+    /// Set the log format to JSON.
+    pub fn log_json(self) -> Self {
+        self.log_format(LogFormat::Json)
+    }
+
+    /// Set the log format to TEXT.
+    pub fn log_text(self) -> Self {
+        self.log_format(LogFormat::Text)
+    }
+
+    /// Enable systemd cgroup support.
+    ///
+    /// If this is set, the container spec (`config.json`) is expected to have `cgroupsPath` value in
+    // the `slice:prefix:name` form (e.g. `system.slice:runc:434234`).
+    pub fn systemd_cgroup(mut self, systemd_cgroup: bool) -> Self {
+        self.systemd_cgroup = systemd_cgroup;
+        self
+    }
+
+    /// Enable or disable rootless mode.
+    ///
+    // Default is auto, meaning to auto-detect whether rootless should be enabled.
+    pub fn rootless(mut self, rootless: bool) -> Self {
+        self.rootless = Some(rootless);
+        self
+    }
+
+    /// Set rootless mode to auto.
+    pub fn rootless_auto(mut self) -> Self {
+        self.rootless = None;
+        self
+    }
+
+    pub fn set_pgid(mut self, set_pgid: bool) -> Self {
+        self.set_pgid = set_pgid;
+        self
+    }
+
+    pub fn timeout(&mut self, millis: u64) -> &mut Self {
+        self.timeout = Duration::from_millis(millis);
+        self
+    }
+
+    pub fn build(self) -> Result<Runc, Error> {
+        self.args()
+    }
+}
+
+impl Args for GlobalOpts {
+    type Output = Result<Runc, Error>;
+
+    fn args(&self) -> Self::Output {
+        let path = self
+            .command
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("runc"));
+
+        let command = utils::binary_path(path).ok_or(Error::NotFound)?;
+
+        let mut args = Vec::new();
+
+        // --root path : Set the root directory to store containers' state.
+        if let Some(root) = &self.root {
+            args.push(ROOT.into());
+            args.push(utils::abs_string(root)?);
+        }
+
+        // --debug : Enable debug logging.
+        if self.debug {
+            args.push(DEBUG.into());
+        }
+
+        // --log path : Set the log destination to path. The default is to log to stderr.
+        if let Some(log_path) = &self.log {
+            args.push(LOG.into());
+            args.push(utils::abs_string(log_path)?);
+        }
+
+        // --log-format text|json : Set the log format (default is text).
+        args.push(LOG_FORMAT.into());
+        args.push(self.log_format.to_string());
+
+        // --systemd-cgroup : Enable systemd cgroup support.
+        if self.systemd_cgroup {
+            args.push(SYSTEMD_CGROUP.into());
+        }
+
+        // --rootless true|false|auto : Enable or disable rootless mode.
+        if let Some(mode) = self.rootless {
+            let arg = format!("{}={}", ROOTLESS, mode);
+            args.push(arg);
+        }
+
+        Ok(Runc { command, args })
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +264,7 @@ pub struct CreateOpts {
 
 impl Args for CreateOpts {
     type Output = Result<Vec<String>, Error>;
+
     fn args(&self) -> Self::Output {
         let mut args: Vec<String> = vec![];
         if let Some(pid_file) = &self.pid_file {
@@ -141,6 +344,7 @@ pub struct ExecOpts {
 
 impl Args for ExecOpts {
     type Output = Result<Vec<String>, Error>;
+
     fn args(&self) -> Self::Output {
         let mut args: Vec<String> = vec![];
         if let Some(pid_file) = &self.pid_file {
@@ -199,6 +403,7 @@ pub struct DeleteOpts {
 
 impl Args for DeleteOpts {
     type Output = Vec<String>;
+
     fn args(&self) -> Self::Output {
         let mut args: Vec<String> = vec![];
         if self.force {
@@ -228,6 +433,7 @@ pub struct KillOpts {
 
 impl Args for KillOpts {
     type Output = Vec<String>;
+
     fn args(&self) -> Self::Output {
         let mut args: Vec<String> = vec![];
         if self.all {
@@ -367,5 +573,41 @@ mod tests {
         assert_eq!(KillOpts::new().all(false).args(), vec![String::new(); 0]);
 
         assert_eq!(KillOpts::new().all(true).args(), vec!["--all".to_string()],);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn global_opts_test() {
+        let cfg = GlobalOpts::default().command("true");
+        let runc = cfg.build().unwrap();
+        let args = &runc.args;
+        assert_eq!(args.len(), 2);
+        assert!(args.contains(&LOG_FORMAT.to_string()));
+        assert!(args.contains(&TEXT.to_string()));
+
+        let cfg = GlobalOpts::default().command("/bin/true");
+        let runc = cfg.build().unwrap();
+        assert_eq!(runc.args.len(), 2);
+
+        let cfg = GlobalOpts::default()
+            .command("true")
+            .root("/tmp")
+            .debug(true)
+            .log("/tmp/runc.log")
+            .log_json()
+            .systemd_cgroup(true)
+            .rootless(true);
+        let runc = cfg.build().unwrap();
+        let args = &runc.args;
+        assert!(args.contains(&ROOT.to_string()));
+        assert!(args.contains(&DEBUG.to_string()));
+        assert!(args.contains(&"/tmp".to_string()));
+        assert!(args.contains(&LOG.to_string()));
+        assert!(args.contains(&"/tmp/runc.log".to_string()));
+        assert!(args.contains(&LOG_FORMAT.to_string()));
+        assert!(args.contains(&JSON.to_string()));
+        assert!(args.contains(&"--rootless=true".to_string()));
+        assert!(args.contains(&SYSTEMD_CGROUP.to_string()));
+        assert_eq!(args.len(), 9);
     }
 }
