@@ -36,13 +36,14 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/events/namespace.proto",
             "vendor/github.com/containerd/containerd/api/events/snapshot.proto",
             "vendor/github.com/containerd/containerd/api/events/task.proto",
-            "vendor/github.com/containerd/containerd/api/types/mount.proto",
         ],
+        false,
     );
 
     codegen(
         "src/cgroups",
         &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
+        true,
     );
 
     codegen(
@@ -54,6 +55,7 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             "vendor/google/protobuf/empty.proto",
         ],
+        true,
     );
 
     // TODO: shim_ttrpc is not included in mod.rs, file a bug upstream.
@@ -66,7 +68,11 @@ fn main() {
 }
 
 #[cfg(feature = "generate_bindings")]
-fn codegen(path: impl AsRef<Path>, inputs: impl IntoIterator<Item = impl AsRef<Path>>) {
+fn codegen(
+    path: impl AsRef<Path>,
+    inputs: impl IntoIterator<Item = impl AsRef<Path>>,
+    gen_mod_rs: bool,
+) {
     let path = path.as_ref();
 
     fs::create_dir_all(&path).unwrap();
@@ -76,7 +82,7 @@ fn codegen(path: impl AsRef<Path>, inputs: impl IntoIterator<Item = impl AsRef<P
         .include("vendor/")
         .rust_protobuf()
         .rust_protobuf_customize(ProtobufCustomize {
-            gen_mod_rs: Some(true),
+            gen_mod_rs: Some(gen_mod_rs),
             ..Default::default()
         })
         .out_dir(path)
