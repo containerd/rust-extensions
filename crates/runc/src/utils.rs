@@ -25,29 +25,6 @@ use uuid::Uuid;
 
 use crate::error::Error;
 
-// constants for flags
-pub const ALL: &str = "--all";
-pub const CONSOLE_SOCKET: &str = "--console-socket";
-// pub const CRIU: &str = "--criu";
-pub const DEBUG: &str = "--debug";
-pub const DETACH: &str = "--detach";
-pub const FORCE: &str = "--force";
-pub const LOG: &str = "--log";
-pub const LOG_FORMAT: &str = "--log-format";
-pub const NO_NEW_KEYRING: &str = "--no-new-keyring";
-pub const NO_PIVOT: &str = "--no-pivot";
-pub const PID_FILE: &str = "--pid-file";
-pub const ROOT: &str = "--root";
-pub const ROOTLESS: &str = "--rootless";
-pub const SYSTEMD_CGROUP: &str = "--systemd-cgroup";
-
-// constants for log format
-pub const JSON: &str = "json";
-pub const TEXT: &str = "text";
-
-// constant for command
-pub const DEFAULT_COMMAND: &str = "runc";
-
 // helper to resolve path (such as path for runc binary, pid files, etc. )
 pub fn abs_path_buf<P>(path: P) -> Result<PathBuf, Error>
 where

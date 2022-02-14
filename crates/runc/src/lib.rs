@@ -57,7 +57,6 @@ use crate::error::Error;
 #[cfg(feature = "async")]
 use crate::monitor::{DefaultMonitor, Exit, ProcessMonitor};
 use crate::options::*;
-use crate::utils::{JSON, TEXT};
 
 type Result<T> = std::result::Result<T, crate::error::Error>;
 

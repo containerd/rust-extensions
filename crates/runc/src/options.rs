@@ -39,8 +39,36 @@ use std::time::Duration;
 
 use crate::error::Error;
 use crate::io::Io;
-use crate::utils::{self, ALL, CONSOLE_SOCKET, DETACH, FORCE, NO_NEW_KEYRING, NO_PIVOT, PID_FILE};
+use crate::utils;
 use crate::{LogFormat, Runc};
+
+// constants for log format
+pub const JSON: &str = "json";
+pub const TEXT: &str = "text";
+
+// constants for runc global flags
+const DEBUG: &str = "--debug";
+const LOG: &str = "--log";
+const LOG_FORMAT: &str = "--log-format";
+const ROOT: &str = "--root";
+const ROOTLESS: &str = "--rootless";
+const SYSTEMD_CGROUP: &str = "--systemd-cgroup";
+
+// constants for runc-create/runc-exec flags
+const CONSOLE_SOCKET: &str = "--console-socket";
+const DETACH: &str = "--detach";
+const NO_NEW_KEYRING: &str = "--no-new-keyring";
+const NO_PIVOT: &str = "--no-pivot";
+const PID_FILE: &str = "--pid-file";
+
+// constants for runc-kill flags
+const ALL: &str = "--all";
+
+// constants for runc-delete flags
+const FORCE: &str = "--force";
+
+// constant for command
+pub const DEFAULT_COMMAND: &str = "runc";
 
 pub trait Args {
     type Output;
@@ -185,33 +213,33 @@ impl Args for GlobalOpts {
 
         // --root path : Set the root directory to store containers' state.
         if let Some(root) = &self.root {
-            args.push("--root".into());
+            args.push(ROOT.into());
             args.push(utils::abs_string(root)?);
         }
 
         // --debug : Enable debug logging.
         if self.debug {
-            args.push("--debug".into());
+            args.push(DEBUG.into());
         }
 
         // --log path : Set the log destination to path. The default is to log to stderr.
         if let Some(log_path) = &self.log {
-            args.push("--log".into());
+            args.push(LOG.into());
             args.push(utils::abs_string(log_path)?);
         }
 
         // --log-format text|json : Set the log format (default is text).
-        args.push("--log-format".into());
+        args.push(LOG_FORMAT.into());
         args.push(self.log_format.to_string());
 
         // --systemd-cgroup : Enable systemd cgroup support.
         if self.systemd_cgroup {
-            args.push("--systemd-cgroup".into());
+            args.push(SYSTEMD_CGROUP.into());
         }
 
         // --rootless true|false|auto : Enable or disable rootless mode.
         if let Some(mode) = self.rootless {
-            let arg = format!("--rootless={}", mode);
+            let arg = format!("{}={}", ROOTLESS, mode);
             args.push(arg);
         }
 
