@@ -14,9 +14,9 @@
    limitations under the License.
 */
 
-use go_flag::{self, FlagError};
 use std::ffi::OsStr;
-use thiserror::Error;
+
+use crate::error::{Error, Result};
 
 /// Flags to be passed from containerd daemon to a shim binary.
 /// Reflects https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L100
@@ -41,22 +41,9 @@ pub struct Flags {
     pub action: String,
 }
 
-#[derive(Debug, Error, PartialEq)]
-pub enum Error {
-    /// Either bad or unknown flag.
-    #[error("Invalid arg: {0}")]
-    InvalidArg(String),
-    /// Required flag is missing.
-    #[error("Missing arg: {0}")]
-    MissingArg(String),
-    /// Syntax error.
-    #[error("Parse failed: {0}")]
-    ParseFailed(String),
-}
-
 /// Parses command line arguments passed to the shim.
 /// This func replicates https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L110
-pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags, Error> {
+pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     let mut flags = Flags::default();
 
     let args: Vec<String> = go_flag::parse_args(args, |f| {
@@ -68,19 +55,14 @@ pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags, Error> {
         f.add_flag("address", &mut flags.address);
         f.add_flag("publish-binary", &mut flags.publish_binary);
     })
-    .map_err(|e| match e {
-        FlagError::BadFlag { flag } => Error::InvalidArg(flag),
-        FlagError::UnknownFlag { name } => Error::InvalidArg(name),
-        FlagError::ArgumentNeeded { name } => Error::MissingArg(name),
-        FlagError::ParseError { error } => Error::ParseFailed(format!("{:?}", error)),
-    })?;
+    .map_err(|e| Error::InvalidArgument(e.to_string()))?;
 
     if let Some(action) = args.get(0) {
         flags.action = action.into();
     }
 
     if flags.namespace.is_empty() {
-        return Err(Error::MissingArg(String::from(
+        return Err(Error::InvalidArgument(String::from(
             "Shim namespace cannot be empty",
         )));
     }
@@ -148,11 +130,6 @@ mod tests {
     fn no_namespace() {
         let empty: [String; 0] = [];
         let result = parse(&empty).err();
-        assert_eq!(
-            result,
-            Some(Error::MissingArg(
-                "Shim namespace cannot be empty".to_owned()
-            ))
-        )
+        assert!(result.is_some())
     }
 }

@@ -22,7 +22,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use log::{Metadata, Record};
-use thiserror::Error;
+
+use crate::error::Error;
 
 pub struct FifoLogger {
     file: Mutex<File>,
@@ -71,23 +72,15 @@ impl log::Log for FifoLogger {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("IO error: {0}")]
-    Io(#[from] io::Error),
-    #[error("Failed to setup logger: {0}")]
-    Setup(#[from] log::SetLoggerError),
-}
-
 pub fn init(debug: bool) -> Result<(), Error> {
-    let logger = FifoLogger::new().map_err(Error::Io)?;
+    let logger = FifoLogger::new().map_err(io_error!(e, "failed to init logger"))?;
     let level = if debug {
         log::LevelFilter::Debug
     } else {
         log::LevelFilter::Info
     };
 
-    log::set_boxed_logger(Box::new(logger)).map_err(Error::Setup)?;
+    log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
 
     Ok(())

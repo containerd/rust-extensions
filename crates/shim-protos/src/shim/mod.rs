@@ -1,5 +1,6 @@
 // @generated
 
+pub mod oci;
 pub mod shim;
 pub mod mount;
 pub mod task;

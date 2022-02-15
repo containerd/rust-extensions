@@ -28,7 +28,7 @@ use client::{Client, Events, EventsClient};
 use protobuf::well_known_types::{Any, Timestamp};
 use protobuf::Message;
 
-use thiserror::Error;
+use crate::error::Result;
 
 /// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -39,7 +39,7 @@ impl RemotePublisher {
     /// Connect to containerd's TTRPC endpoint.
     ///
     /// containerd uses `/run/containerd/containerd.sock.ttrpc` by default
-    pub fn new(address: impl AsRef<str>) -> Result<RemotePublisher, Error> {
+    pub fn new(address: impl AsRef<str>) -> Result<RemotePublisher> {
         let client = Self::connect(address)?;
 
         Ok(RemotePublisher {
@@ -47,7 +47,7 @@ impl RemotePublisher {
         })
     }
 
-    fn connect(address: impl AsRef<str>) -> Result<Client, nix::Error> {
+    fn connect(address: impl AsRef<str>) -> Result<Client> {
         use nix::sys::socket::*;
         use nix::unistd::close;
 
@@ -92,7 +92,7 @@ impl RemotePublisher {
         topic: &str,
         namespace: &str,
         event: impl Message,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let mut envelope = events::Envelope::new();
         envelope.set_topic(topic.to_owned());
         envelope.set_namespace(namespace.to_owned());
@@ -107,7 +107,7 @@ impl RemotePublisher {
         Ok(())
     }
 
-    fn timestamp() -> Result<Timestamp, Error> {
+    fn timestamp() -> Result<Timestamp> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
         let mut ts = Timestamp::default();
@@ -117,7 +117,7 @@ impl RemotePublisher {
         Ok(ts)
     }
 
-    fn any(event: impl Message) -> Result<Any, Error> {
+    fn any(event: impl Message) -> Result<Any> {
         let data = event.write_to_bytes()?;
         let mut any = Any::new();
         any.merge_from_bytes(&data)?;
@@ -134,19 +134,6 @@ impl Events for RemotePublisher {
     ) -> ttrpc::Result<empty::Empty> {
         self.client.forward(Context::default(), &req)
     }
-}
-
-/// Errors returned from client if something went wrong.
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Publisher TTRPC error: {0}")]
-    Ttrpc(#[from] client::ttrpc::Error),
-    #[error("Failed to get envelope timestamp: {0}")]
-    Timestamp(#[from] std::time::SystemTimeError),
-    #[error("Failed to serialize event: {0}")]
-    Any(#[from] protobuf::ProtobufError),
-    #[error("Nix error: {0}")]
-    Nix(#[from] nix::Error),
 }
 
 #[cfg(test)]

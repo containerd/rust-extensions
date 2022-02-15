@@ -37,8 +37,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use containerd_shim as shim;
+use shim::io::IO;
+
 use crate::error::Error;
-use crate::io::Io;
 use crate::utils;
 use crate::{LogFormat, Runc};
 
@@ -247,9 +249,9 @@ impl Args for GlobalOpts {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct CreateOpts {
-    pub io: Option<Arc<dyn Io>>,
+    pub io: Option<Arc<dyn IO>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -293,7 +295,7 @@ impl CreateOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
+    pub fn io(mut self, io: Arc<dyn IO>) -> Self {
         self.io = Some(io);
         self
     }
@@ -331,9 +333,9 @@ impl CreateOpts {
 }
 
 /// Container execution options
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ExecOpts {
-    pub io: Option<Arc<dyn Io>>,
+    pub io: Option<Arc<dyn IO>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -367,7 +369,7 @@ impl ExecOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
+    pub fn io(mut self, io: Arc<dyn IO>) -> Self {
         self.io = Some(io);
         self
     }

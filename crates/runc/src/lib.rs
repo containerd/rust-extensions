@@ -34,7 +34,6 @@
  */
 
 //! A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
-
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
@@ -42,15 +41,13 @@ use std::process::ExitStatus;
 use oci_spec::runtime::{Linux, Process};
 
 // suspended for difficulties
-// pub mod console;
 pub mod container;
 pub mod error;
 pub mod events;
-pub mod io;
 #[cfg(feature = "async")]
 pub mod monitor;
 pub mod options;
-mod utils;
+pub mod utils;
 
 use crate::container::Container;
 use crate::error::Error;
@@ -134,7 +131,6 @@ impl Runc {
     }
 }
 
-//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 #[cfg(not(feature = "async"))]
 impl Runc {
     pub fn checkpoint(&self) -> Result<()> {
@@ -187,10 +183,10 @@ impl Runc {
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
         match opts {
-            Some(CreateOpts { io: Some(_io), .. }) => {
-                _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+            Some(CreateOpts { io: Some(io), .. }) => {
+                io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
                 let res = self.launch(cmd, true)?;
-                _io.close_after_start();
+                io.close_after_start();
                 Ok(res)
             }
             _ => self.launch(cmd, true),
@@ -213,14 +209,14 @@ impl Runc {
         let filename = utils::temp_filename_in_runtime_dir()?;
         let spec_json = serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
         std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
-        let mut args = vec!["exec".to_string(), "process".to_string(), filename];
+        let mut args = vec!["exec".to_string(), "--process".to_string(), filename];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);
         }
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
-        if let Some(ExecOpts { io: Some(_io), .. }) = opts {
-            _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+        if let Some(ExecOpts { io: Some(io), .. }) = opts {
+            io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
         }
         let _ = self.launch(cmd, true)?;
         Ok(())
@@ -282,7 +278,7 @@ impl Runc {
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
         if let Some(CreateOpts { io: Some(_io), .. }) = opts {
-            _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+            _io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
         };
         self.launch(self.command(&args)?, true)
     }
@@ -381,7 +377,6 @@ impl Runc {
                 _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
                 let result = execute(&Self::MONITOR, cmd).await?;
                 _io.close_after_start();
-
                 if !result.status.success() {
                     return Err(Error::CommandFailed {
                         status: result.status,

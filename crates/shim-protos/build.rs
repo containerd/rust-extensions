@@ -49,6 +49,7 @@ fn main() {
     codegen(
         "src/shim",
         &[
+            "vendor/github.com/containerd/containerd/runtime/v2/runc/options/oci.proto",
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",

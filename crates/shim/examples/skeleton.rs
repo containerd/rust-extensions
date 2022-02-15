@@ -17,7 +17,7 @@
 use containerd_shim as shim;
 
 use log::info;
-use shim::{api, ExitSignal, TtrpcContext, TtrpcResult};
+use shim::{api, Config, DeleteResponse, ExitSignal, RemotePublisher, TtrpcContext, TtrpcResult};
 
 #[derive(Clone)]
 struct Service {
@@ -25,15 +25,14 @@ struct Service {
 }
 
 impl shim::Shim for Service {
-    type Error = shim::Error;
     type T = Service;
 
     fn new(
         _runtime_id: &str,
         _id: &str,
         _namespace: &str,
-        _publisher: shim::RemotePublisher,
-        _config: &mut shim::Config,
+        _publisher: RemotePublisher,
+        _config: &mut Config,
     ) -> Self {
         Service {
             exit: ExitSignal::default(),
@@ -41,8 +40,13 @@ impl shim::Shim for Service {
     }
 
     fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
-        let address = shim::spawn(opts, Vec::new())?;
+        let grouping = opts.id.clone();
+        let address = shim::spawn(opts, &grouping, Vec::new())?;
         Ok(address)
+    }
+
+    fn delete_shim(&mut self) -> Result<DeleteResponse, shim::Error> {
+        Ok(DeleteResponse::new())
     }
 
     fn wait(&mut self) {
@@ -75,5 +79,5 @@ impl shim::Task for Service {
 }
 
 fn main() {
-    shim::run::<Service>("io.containerd.empty.v1")
+    shim::run::<Service>("io.containerd.empty.v1", Vec::new())
 }

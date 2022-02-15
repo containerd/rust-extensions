@@ -16,8 +16,18 @@ log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
 nix = "0.23.1"
 command-fds = "0.2.1"
+lazy_static = "1.4.0"
+time = { version = "0.3.7", features = ["serde", "std"] }
+serde_json = "1.0.78"
+serde_derive = "1.0.136"
+serde = "1.0.136"
+crossbeam = "0.8.1"
+uuid = { version = "0.8.2", features = ["v4"] }
+signal-hook = "0.3.13"
+oci-spec = "0.5.4"
 
 containerd-shim-protos = { path = "../shim-protos", version = "0.1.2" }
+runc = { path = "../runc"}
 
 [dev-dependencies]
 tempfile = "3.0"
