@@ -16,8 +16,9 @@
 use std::fmt::{self, Debug, Formatter};
 use std::fs::File;
 use std::io::Result;
+use std::ops::Deref;
 use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use nix::unistd::{Gid, Uid};
 
@@ -50,6 +51,28 @@ pub trait Io: Sync + Send {
 impl Debug for dyn Io {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Io",)
+    }
+}
+
+impl<T: Io> Io for Arc<T> {
+    fn stdin(&self) -> Option<File> {
+        self.deref().stdin()
+    }
+
+    fn stdout(&self) -> Option<File> {
+        self.deref().stdout()
+    }
+
+    fn stderr(&self) -> Option<File> {
+        self.deref().stderr()
+    }
+
+    fn set(&self, cmd: &mut Command) -> Result<()> {
+        self.deref().set(cmd)
+    }
+
+    fn close_after_start(&self) {
+        self.deref().close_after_start()
     }
 }
 
