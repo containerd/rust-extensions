@@ -13,18 +13,16 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-use std::fmt::{self, Debug, Formatter};
+use nix::unistd::{Gid, Uid};
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::Result;
-use std::ops::Deref;
 use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::sync::{Arc, Mutex};
-
-use nix::unistd::{Gid, Uid};
+use std::sync::Mutex;
 
 use crate::Command;
 
-pub trait Io: Sync + Send {
+pub trait Io: Debug + Sync + Send {
     /// Return write side of stdin
     fn stdin(&self) -> Option<File> {
         None
@@ -46,34 +44,6 @@ pub trait Io: Sync + Send {
 
     /// Only close write side (should be stdout/err "from" runc process)
     fn close_after_start(&self);
-}
-
-impl Debug for dyn Io {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Io",)
-    }
-}
-
-impl<T: Io> Io for Arc<T> {
-    fn stdin(&self) -> Option<File> {
-        self.deref().stdin()
-    }
-
-    fn stdout(&self) -> Option<File> {
-        self.deref().stdout()
-    }
-
-    fn stderr(&self) -> Option<File> {
-        self.deref().stderr()
-    }
-
-    fn set(&self, cmd: &mut Command) -> Result<()> {
-        self.deref().set(cmd)
-    }
-
-    fn close_after_start(&self) {
-        self.deref().close_after_start()
-    }
 }
 
 #[derive(Debug, Clone)]
