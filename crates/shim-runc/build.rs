@@ -18,7 +18,6 @@ use std::fs;
 use std::path::Path;
 use ttrpc_codegen::{Codegen, ProtobufCustomize};
 
-// TODO: it is really correct to use oci.proto that defines containerd.runc.v1?
 fn main() {
     codegen(
         "src/options",
