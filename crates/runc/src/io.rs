@@ -16,12 +16,10 @@
 use std::fmt::{self, Debug, Formatter};
 use std::fs::File;
 use std::io::Result;
-use std::os::unix::io::FromRawFd;
-use std::os::unix::prelude::AsRawFd;
-use std::sync::Mutex;
+use std::ops::Deref;
+use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::sync::{Arc, Mutex};
 
-use nix::fcntl::OFlag;
-use nix::sys::stat::Mode;
 use nix::unistd::{Gid, Uid};
 
 use crate::Command;
@@ -46,12 +44,35 @@ pub trait Io: Sync + Send {
     /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
     fn set(&self, cmd: &mut Command) -> Result<()>;
 
+    /// Only close write side (should be stdout/err "from" runc process)
     fn close_after_start(&self);
 }
 
 impl Debug for dyn Io {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Io",)
+    }
+}
+
+impl<T: Io> Io for Arc<T> {
+    fn stdin(&self) -> Option<File> {
+        self.deref().stdin()
+    }
+
+    fn stdout(&self) -> Option<File> {
+        self.deref().stdout()
+    }
+
+    fn stderr(&self) -> Option<File> {
+        self.deref().stderr()
+    }
+
+    fn set(&self, cmd: &mut Command) -> Result<()> {
+        self.deref().set(cmd)
+    }
+
+    fn close_after_start(&self) {
+        self.deref().close_after_start()
     }
 }
 
@@ -72,9 +93,9 @@ impl Default for IOOption {
     }
 }
 
-/// This struct represents pipe that can be used to transfer
-/// stdio inputs and outputs
-/// when one side of closed, this struct represent it with [`None`]
+/// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
+///
+/// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
     // Might be ugly hack: using mutex in order to take rd/wr under immutable [`Pipe`]
@@ -123,83 +144,56 @@ pub struct PipedIo {
 }
 
 impl PipedIo {
-    pub fn new(uid: u32, gid: u32, opts: IOOption) -> std::io::Result<Self> {
-        let uid = Some(Uid::from_raw(uid));
-        let gid = Some(Gid::from_raw(gid));
-        let stdin = if opts.open_stdin {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.rd.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
-        let stdout = if opts.open_stdout {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.wr.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
-        let stderr = if opts.open_stderr {
-            let pipe = Pipe::new()?;
-            {
-                let m = pipe.wr.lock().unwrap();
-                if let Some(f) = m.as_ref() {
-                    nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
-                }
-            }
-            Some(pipe)
-        } else {
-            None
-        };
-
+    pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
-            stdin,
-            stdout,
-            stderr,
+            stdin: Self::create_pipe(uid, gid, opts.open_stdin, true)?,
+            stdout: Self::create_pipe(uid, gid, opts.open_stdout, false)?,
+            stderr: Self::create_pipe(uid, gid, opts.open_stderr, false)?,
         })
+    }
+
+    fn create_pipe(
+        uid: u32,
+        gid: u32,
+        enabled: bool,
+        stdin: bool,
+    ) -> std::io::Result<Option<Pipe>> {
+        if !enabled {
+            return Ok(None);
+        }
+
+        let pipe = Pipe::new()?;
+        let guard = if stdin {
+            pipe.rd.lock().unwrap()
+        } else {
+            pipe.wr.lock().unwrap()
+        };
+        if let Some(f) = guard.as_ref() {
+            let uid = Some(Uid::from_raw(uid));
+            let gid = Some(Gid::from_raw(gid));
+            nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
+        }
+        drop(guard);
+
+        Ok(Some(pipe))
     }
 }
 
 impl Io for PipedIo {
     fn stdin(&self) -> Option<File> {
-        if let Some(ref stdin) = self.stdin {
-            stdin.take_write()
-        } else {
-            None
-        }
+        self.stdin.as_ref().map(|v| v.take_write()).flatten()
     }
 
     fn stdout(&self) -> Option<File> {
-        if let Some(ref stdout) = self.stdout {
-            stdout.take_read()
-        } else {
-            None
-        }
+        self.stdout.as_ref().map(|v| v.take_read()).flatten()
     }
 
     fn stderr(&self) -> Option<File> {
-        if let Some(ref stderr) = self.stderr {
-            stderr.take_read()
-        } else {
-            None
-        }
+        self.stderr.as_ref().map(|v| v.take_read()).flatten()
     }
 
-    /// Note that this internally use [`std::fs::File`]'s [`try_clone()`].
-    /// Thus, the files passed to commands will be not closed after command exit.
+    // Note that this internally use [`std::fs::File`]'s `try_clone()`.
+    // Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
         if let Some(ref p) = self.stdin {
             let m = p.rd.lock().unwrap();
@@ -224,10 +218,10 @@ impl Io for PipedIo {
                 cmd.stderr(f);
             }
         }
+
         Ok(())
     }
 
-    /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
         if let Some(ref p) = self.stdout {
             p.close_write();
@@ -246,7 +240,11 @@ pub struct NullIo {
 
 impl NullIo {
     pub fn new() -> std::io::Result<Self> {
-        let fd = nix::fcntl::open("/dev/null", OFlag::O_RDONLY, Mode::empty())?;
+        let fd = nix::fcntl::open(
+            "/dev/null",
+            nix::fcntl::OFlag::O_RDONLY,
+            nix::sys::stat::Mode::empty(),
+        )?;
         let dev_null = unsafe { Mutex::new(Some(std::fs::File::from_raw_fd(fd))) };
         Ok(Self { dev_null })
     }
@@ -261,9 +259,82 @@ impl Io for NullIo {
         Ok(())
     }
 
-    /// closing only write side (should be stdout/err "from" runc process)
     fn close_after_start(&self) {
         let mut m = self.dev_null.lock().unwrap();
         let _ = m.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(not(target_os = "macos"))]
+    use std::io::{Read, Write};
+
+    #[test]
+    fn test_io_option() {
+        let opts = IOOption {
+            open_stdin: false,
+            open_stdout: false,
+            open_stderr: false,
+        };
+        let io = PipedIo::new(1000, 1000, &opts).unwrap();
+
+        assert!(io.stdin().is_none());
+        assert!(io.stdout().is_none());
+        assert!(io.stderr().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_create_piped_io() {
+        let opts = IOOption::default();
+        let uid = nix::unistd::getuid();
+        let gid = nix::unistd::getgid();
+        let io = PipedIo::new(uid.as_raw(), gid.as_raw(), &opts).unwrap();
+        let mut buf = [0xfau8];
+
+        let mut stdin = io.stdin().unwrap();
+        stdin.write_all(&buf).unwrap();
+        buf[0] = 0x0;
+        io.stdin.as_ref().map(|v| {
+            v.rd.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .read(&mut buf)
+                .unwrap()
+        });
+        assert_eq!(&buf, &[0xfau8]);
+
+        let mut stdout = io.stdout().unwrap();
+        buf[0] = 0xce;
+        io.stdout
+            .as_ref()
+            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+        buf[0] = 0x0;
+        stdout.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xceu8]);
+
+        let mut stderr = io.stderr().unwrap();
+        buf[0] = 0xa5;
+        io.stderr
+            .as_ref()
+            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+        buf[0] = 0x0;
+        stderr.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xa5u8]);
+
+        io.close_after_start();
+        stdout.read_exact(&mut buf).unwrap_err();
+        stderr.read_exact(&mut buf).unwrap_err();
+    }
+
+    #[test]
+    fn test_null_io() {
+        let io = NullIo::new().unwrap();
+        assert!(io.stdin().is_none());
+        assert!(io.stdout().is_none());
+        assert!(io.stderr().is_none());
     }
 }

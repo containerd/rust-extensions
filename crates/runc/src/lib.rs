@@ -55,7 +55,7 @@ mod utils;
 use crate::container::Container;
 use crate::error::Error;
 #[cfg(feature = "async")]
-use crate::monitor::{DefaultMonitor, Exit, ProcessMonitor};
+use crate::monitor::{execute, DefaultMonitor, ExecuteResult};
 use crate::options::*;
 
 type Result<T> = std::result::Result<T, crate::error::Error>;
@@ -327,34 +327,23 @@ impl Runc {
     const MONITOR: DefaultMonitor = DefaultMonitor::new();
 
     pub async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-        let start = Self::MONITOR.start(cmd, tx);
-        let wait = Self::MONITOR.wait(rx);
-        let (
-            std::process::Output {
-                status,
-                stdout,
-                stderr,
-            },
-            Exit { pid, .. },
-        ) = tokio::try_join!(start, wait).map_err(Error::InvalidCommand)?;
-
-        // ugly hack to work around
-        let stdout = String::from_utf8(stdout)
-            .expect("returned non-utf8 characters from container process.");
-        let stderr = String::from_utf8(stderr)
-            .expect("returned non-utf8 characters from container process.");
+        let ExecuteResult {
+            exit,
+            status,
+            stdout,
+            stderr,
+        } = execute(&Self::MONITOR, cmd).await?;
 
         if status.success() {
             if combined_output {
                 Ok(Response {
-                    pid,
+                    pid: exit.pid,
                     status,
                     output: stdout + stderr.as_str(),
                 })
             } else {
                 Ok(Response {
-                    pid,
+                    pid: exit.pid,
                     status,
                     output: stdout,
                 })
@@ -390,26 +379,14 @@ impl Runc {
         match opts {
             Some(CreateOpts { io: Some(_io), .. }) => {
                 _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
-                let (tx, rx) = tokio::sync::oneshot::channel::<Exit>();
-                let start = Self::MONITOR.start(cmd, tx);
-                let wait = Self::MONITOR.wait(rx);
-                let (
-                    std::process::Output {
-                        status,
-                        stdout,
-                        stderr,
-                    },
-                    _,
-                ) = tokio::try_join!(start, wait).map_err(Error::InvalidCommand)?;
+                let result = execute(&Self::MONITOR, cmd).await?;
                 _io.close_after_start();
 
-                let stdout = String::from_utf8(stdout).unwrap();
-                let stderr = String::from_utf8(stderr).unwrap();
-                if !status.success() {
+                if !result.status.success() {
                     return Err(Error::CommandFailed {
-                        status,
-                        stdout,
-                        stderr,
+                        status: result.status,
+                        stdout: result.stdout,
+                        stderr: result.stderr,
                     });
                 }
             }
