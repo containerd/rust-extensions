@@ -40,10 +40,11 @@ use std::process::ExitStatus;
 
 use oci_spec::runtime::{Linux, Process};
 
-// suspended for difficulties
+pub mod console;
 pub mod container;
 pub mod error;
 pub mod events;
+pub mod io;
 #[cfg(feature = "async")]
 pub mod monitor;
 pub mod options;

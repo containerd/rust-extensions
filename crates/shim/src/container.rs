@@ -18,8 +18,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
 use log::{debug, warn};
@@ -27,11 +26,12 @@ use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
 use nix::sys::termios::tcgetattr;
 use nix::sys::uio::IoVec;
 use nix::{cmsg_space, ioctl_write_ptr_bad};
+use runc::console::{Console, ConsoleSocket};
 use time::OffsetDateTime;
 
 use crate::api::*;
 use crate::error::{Error, Result};
-use crate::io::{spawn_copy, Console, ProcessIO, Stdio};
+use crate::io::{spawn_copy, ProcessIO, Stdio};
 use crate::protos::protobuf::well_known_types::Timestamp;
 use crate::util::read_pid_from_file;
 
@@ -243,7 +243,9 @@ impl Process for CommonProcess {
 
     fn copy_console(&self, console_socket: &ConsoleSocket) -> Result<Console> {
         debug!("copy_console: waiting for runtime to send console fd");
-        let stream = console_socket.accept()?;
+        let stream = console_socket
+            .accept()
+            .map_err(io_error!(e, "accept console socket"))?;
         let mut buf = [0u8; 4096];
         let iovec = [IoVec::from_mut_slice(&mut buf)];
         let mut space = cmsg_space!([RawFd; 2]);
@@ -344,37 +346,6 @@ impl Process for CommonProcess {
                     .map_err(Into::into)
             },
             None => Err(other!("there is no console")),
-        }
-    }
-}
-
-pub struct ConsoleSocket {
-    pub listener: UnixListener,
-    pub path: PathBuf,
-    pub rmdir: bool,
-}
-
-impl ConsoleSocket {
-    pub fn accept(&self) -> Result<UnixStream> {
-        let (stream, _addr) = self
-            .listener
-            .accept()
-            .map_err(io_error!(e, "accept console socket"))?;
-        Ok(stream)
-    }
-}
-
-impl Drop for ConsoleSocket {
-    fn drop(&mut self) {
-        if self.rmdir {
-            let tmp_socket_dir = self.path.parent().unwrap();
-            std::fs::remove_dir_all(tmp_socket_dir).unwrap_or_else(|e| {
-                warn!(
-                    "remove tmp console socket path {} : {}",
-                    tmp_socket_dir.to_str().unwrap(),
-                    e
-                )
-            })
         }
     }
 }

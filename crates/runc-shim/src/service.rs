@@ -112,7 +112,7 @@ impl Shim for Service {
             let root = Path::new(if root.is_empty() {
                 DEFAULT_RUNC_ROOT
             } else {
-                root.as_ref()
+                root
             })
             .join(namespace);
             let log_buf = Path::new(bundle).join("log.json");

@@ -20,14 +20,13 @@ use std::env;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
-use containerd_shim as shim;
 use nix::sys::stat::Mode;
 use nix::unistd::mkdir;
 use path_absolutize::*;
-use shim::container::ConsoleSocket;
 use tempfile::{Builder, NamedTempFile};
 use uuid::Uuid;
 
+use crate::console::ConsoleSocket;
 use crate::error::Error;
 
 // helper to resolve path (such as path for runc binary, pid files, etc. )

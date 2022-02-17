@@ -27,7 +27,7 @@ signal-hook = "0.3.13"
 oci-spec = "0.5.4"
 
 containerd-shim-protos = { path = "../shim-protos", version = "0.1.2" }
-runc = { path = "../runc"}
+runc = { path = "../runc" }
 
 [dev-dependencies]
 tempfile = "3.0"

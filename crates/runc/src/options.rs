@@ -37,10 +37,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use containerd_shim as shim;
-use shim::io::Io;
-
 use crate::error::Error;
+use crate::io::Io;
 use crate::utils;
 use crate::{LogFormat, Runc};
 

@@ -186,7 +186,7 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-pub fn run<T>(runtime_id: &str, opts:Option<Config>)
+pub fn run<T>(runtime_id: &str, opts: Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
 {

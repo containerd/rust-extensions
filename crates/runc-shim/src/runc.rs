@@ -24,14 +24,13 @@ use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
 use oci_spec::runtime::LinuxNamespaceType;
+use runc::console::{Console, ConsoleSocket};
 use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
 use runc::utils::new_temp_console_socket;
 use shim::api::*;
-use shim::container::{
-    CommonContainer, CommonProcess, ConsoleSocket, Container, ContainerFactory, Process,
-};
+use shim::container::{CommonContainer, CommonProcess, Container, ContainerFactory, Process};
 use shim::error::{Error, Result};
-use shim::io::{create_io, Console, Stdio};
+use shim::io::{create_io, Stdio};
 use shim::mount::mount_rootfs;
 use shim::protos::protobuf::{well_known_types::Timestamp, CodedInputStream, Message};
 use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
@@ -155,7 +154,7 @@ impl Container for RuncContainer {
                     .common
                     .processes
                     .get_mut(exec_id)
-                    .ok_or(other!("can not find the exec by id"))?;
+                    .ok_or_else(|| other!("can not find the exec by id"))?;
                 let pid_path = Path::new(self.common.bundle.as_str())
                     .join(format!("{}.pid", &process.common.id));
 
@@ -165,7 +164,7 @@ impl Container for RuncContainer {
                     console_socket: None,
                     detach: true,
                 };
-                let socket: Option<ConsoleSocket> = if process.common.stdio.terminal {
+                let socket = if process.common.stdio.terminal {
                     let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
                     exec_opts.console_socket = Some(s.path.to_owned());
                     Some(s)
@@ -194,7 +193,8 @@ impl Container for RuncContainer {
                     .exec(&self.common.id, &process.spec, Some(&exec_opts))
                     .map_err(other_error!(e, "failed exec"))?;
                 if process.common.stdio.terminal {
-                    let console_socket = socket.ok_or(other!("failed to get console socket"))?;
+                    let console_socket =
+                        socket.ok_or_else(|| other!("failed to get console socket"))?;
                     let console = process.common.copy_console(&console_socket)?;
                     process.common.console = Some(console);
                 } else {
@@ -414,7 +414,7 @@ impl InitProcess {
             .no_pivot(self.no_pivot_root)
             .no_new_keyring(self.no_new_key_ring)
             .detach(false);
-        let socket: Option<ConsoleSocket> = if terminal {
+        let socket = if terminal {
             let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
             create_opts.console_socket = Some(s.path.to_owned());
             Some(s)
@@ -435,7 +435,7 @@ impl InitProcess {
             .create(&id, &bundle, Some(&create_opts))
             .map_err(other_error!(e, "failed create"))?;
         if terminal {
-            let console_socket = socket.ok_or(other!("failed to get console socket"))?;
+            let console_socket = socket.ok_or_else(|| other!("failed to get console socket"))?;
             let console = self.common.copy_console(&console_socket)?;
             self.common.console = Some(console);
         } else {

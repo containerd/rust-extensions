@@ -16,113 +16,16 @@
 use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
-use std::process::Command;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crossbeam::sync::WaitGroup;
 use log::debug;
 use nix::sys::termios::Termios;
+use runc::io::{Io, NullIo, FIFO};
 
 use crate::error::{Error, Result};
 use crate::util::IntoOption;
-
-pub trait WriteCloser: Write {
-    fn close(&self);
-}
-
-pub trait Io: Sync + Send {
-    /// Return write side of stdin
-    fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>>;
-
-    /// Return read side of stdout
-    fn stdout(&self) -> Option<Box<dyn Read + Send>>;
-
-    /// Return read side of stderr
-    fn stderr(&self) -> Option<Box<dyn Read + Send>>;
-
-    /// Set IO for passed command.
-    /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
-    fn set(&self, cmd: &mut Command) -> Result<()>;
-
-    /// Only close write side (should be stdout/err "from" runc process)
-    fn close_after_start(&self);
-}
-
-pub struct NullIo {}
-
-impl Io for NullIo {
-    fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>> {
-        None
-    }
-
-    fn stdout(&self) -> Option<Box<dyn Read + Send>> {
-        None
-    }
-
-    fn stderr(&self) -> Option<Box<dyn Read + Send>> {
-        None
-    }
-
-    fn set(&self, cmd: &mut Command) -> Result<()> {
-        cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
-        Ok(())
-    }
-
-    fn close_after_start(&self) {}
-}
-
-pub struct FIFO {
-    pub stdin: Option<String>,
-    pub stdout: Option<String>,
-    pub stderr: Option<String>,
-}
-
-impl Io for FIFO {
-    fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>> {
-        None
-    }
-
-    fn stdout(&self) -> Option<Box<dyn Read + Send>> {
-        None
-    }
-
-    fn stderr(&self) -> Option<Box<dyn Read + Send>> {
-        None
-    }
-
-    fn set(&self, cmd: &mut Command) -> Result<()> {
-        let r: Option<std::io::Result<()>> = self.stdin.as_ref().map(|path| {
-            let stdin = OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(path)?;
-            cmd.stdin(stdin);
-            Ok(())
-        });
-        r.unwrap_or(Ok(())).map_err(io_error!(e, "open stdin"))?;
-
-        let r: Option<std::io::Result<()>> = self.stdout.as_ref().map(|path| {
-            let stdout = OpenOptions::new().write(true).open(path)?;
-            cmd.stdout(stdout);
-            Ok(())
-        });
-        r.unwrap_or(Ok(())).map_err(io_error!(e, "open stdout"))?;
-
-        let r: Option<std::io::Result<()>> = self.stderr.as_ref().map(|path| {
-            let stderr = OpenOptions::new().write(true).open(path)?;
-            cmd.stderr(stderr);
-            Ok(())
-        });
-        r.unwrap_or(Ok(())).map_err(io_error!(e, "open stderr"))?;
-
-        Ok(())
-    }
-
-    fn close_after_start(&self) {}
-}
 
 pub struct Console {
     pub file: File,
@@ -189,7 +92,7 @@ impl ProcessIO {
                         w,
                         None,
                         Some(Box::new(move || {
-                            closer.close();
+                            drop(closer);
                         })),
                     );
                 }
@@ -250,9 +153,10 @@ impl ProcessIO {
 
 pub fn create_io(id: &str, _io_uid: u32, _io_gid: u32, stdio: &Stdio) -> Result<ProcessIO> {
     if stdio.is_null() {
+        let nio = NullIo::new().map_err(io_error!(e, "new Null Io"))?;
         let pio = ProcessIO {
             uri: None,
-            io: Some(Arc::new(NullIo {})),
+            io: Some(Arc::new(nio)),
             copy: false,
         };
         return Ok(pio);

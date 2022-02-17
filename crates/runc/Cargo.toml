@@ -26,7 +26,7 @@ tempfile = "3.3.0"
 thiserror = "1.0.30"
 time = { version = "0.3.7", features = ["serde", "std"] }
 uuid = { version = "0.8.2", features = ["v4"] }
-containerd-shim = { path = "../shim", version = "0.2.0" }
+os_pipe = "1.0.0"
 
 # Async dependencies
 tokio = { version = "1.15.0", features = ["full"], optional = true }
