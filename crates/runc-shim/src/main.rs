@@ -19,5 +19,5 @@ mod service;
 use crate::service::Service;
 
 fn main() {
-    containerd_shim::run::<Service>("io.containerd.runc.v2", Vec::new())
+    containerd_shim::run::<Service>("io.containerd.runc.v2", None)
 }

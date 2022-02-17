@@ -79,5 +79,5 @@ impl shim::Task for Service {
 }
 
 fn main() {
-    shim::run::<Service>("io.containerd.empty.v1", Vec::new())
+    shim::run::<Service>("io.containerd.empty.v1", None)
 }

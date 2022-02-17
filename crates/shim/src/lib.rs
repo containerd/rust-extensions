@@ -186,7 +186,7 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-pub fn run<T>(runtime_id: &str, opts: Vec<fn(&mut Config)>)
+pub fn run<T>(runtime_id: &str, opts:Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
 {
@@ -196,7 +196,7 @@ where
     }
 }
 
-fn bootstrap<T>(runtime_id: &str, opts: Vec<fn(&mut Config)>) -> Result<()>
+fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
     T: Shim + Send + Sync + 'static,
 {
@@ -208,8 +208,7 @@ where
     let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
 
     // Create shim instance
-    let mut config = Config::default();
-    opts.iter().for_each(|f| f(&mut config));
+    let mut config = opts.unwrap_or_else(Config::default);
 
     // Setup signals
     let signals = setup_signals(&config);
