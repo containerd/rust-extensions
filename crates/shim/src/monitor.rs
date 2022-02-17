@@ -19,6 +19,9 @@ use std::fmt;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 
+use lazy_static::lazy_static;
+use log::{error, warn};
+
 use crate::error::Result;
 
 lazy_static! {
@@ -61,9 +64,9 @@ pub(crate) struct Subscriber {
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Topic {
-    PID(i32),
-    EXEC(String, String),
-    ALL,
+    Pid(i32),
+    Exec(String, String),
+    All,
 }
 
 pub struct Subscription {
@@ -81,10 +84,10 @@ pub struct ExitEvent {
 impl fmt::Display for ExitEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.subject {
-            Subject::PID(pid) => {
+            Subject::Pid(pid) => {
                 write!(f, "PID {} exit with code {}", pid, self.exit_code)
             }
-            Subject::EXEC(cid, eid) => {
+            Subject::Exec(cid, eid) => {
                 write!(
                     f,
                     "EXEC process {} inside {} exit with code {}",
@@ -98,10 +101,10 @@ impl fmt::Display for ExitEvent {
 #[derive(Clone, Debug)]
 pub enum Subject {
     // process pid
-    PID(i32),
+    Pid(i32),
     // exec with containerd id and exec id for vm container,
     // if exec is empty, then the event is for the container
-    EXEC(String, String),
+    Exec(String, String),
 }
 
 impl Monitor {
@@ -122,18 +125,18 @@ impl Monitor {
     }
 
     pub fn notify_by_pid(&self, pid: i32, exit_code: i32) -> Result<()> {
-        let topic = Topic::PID(pid);
-        let subject = Subject::PID(pid);
+        let topic = Topic::Pid(pid);
+        let subject = Subject::Pid(pid);
         self.notify_topic(&topic, &subject, exit_code);
-        self.notify_topic(&Topic::ALL, &subject, exit_code);
+        self.notify_topic(&Topic::All, &subject, exit_code);
         Ok(())
     }
 
     pub fn notify_by_exec(&self, cid: &str, exec_id: &str, exit_code: i32) -> Result<()> {
-        let topic = Topic::EXEC(cid.into(), exec_id.into());
-        let subject = Subject::EXEC(cid.into(), exec_id.into());
+        let topic = Topic::Exec(cid.into(), exec_id.into());
+        let subject = Subject::Exec(cid.into(), exec_id.into());
         self.notify_topic(&topic, &subject, exit_code);
-        self.notify_topic(&Topic::ALL, &subject, exit_code);
+        self.notify_topic(&Topic::All, &subject, exit_code);
         Ok(())
     }
 

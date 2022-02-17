@@ -29,6 +29,7 @@ use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
 use shim::protos::protobuf::SingularPtrField;
 use shim::task::ShimTask;
 use shim::util::{get_timestamp, read_options, read_runtime, read_spec_from_file, write_address};
+use shim::{debug, error, io_error, other_error, warn};
 use shim::{spawn, Config, ExitSignal, RemotePublisher, Shim, StartOpts};
 
 use crate::runc::{RuncContainer, RuncFactory, DEFAULT_RUNC_ROOT};
@@ -67,7 +68,7 @@ impl Shim for Service {
             task,
         };
 
-        let s = monitor_subscribe(Topic::ALL).expect("monitor subscribe failed");
+        let s = monitor_subscribe(Topic::All).expect("monitor subscribe failed");
         service.process_exits(s);
 
         // TODO: add publisher
@@ -153,7 +154,7 @@ impl Service {
         let containers = self.task.containers.clone();
         std::thread::spawn(move || {
             for e in s.rx.iter() {
-                if let Subject::PID(pid) = e.subject {
+                if let Subject::Pid(pid) = e.subject {
                     debug!("receive exit event: {}", &e);
                     let exit_code = e.exit_code;
                     for (_k, cont) in containers.lock().unwrap().iter_mut() {

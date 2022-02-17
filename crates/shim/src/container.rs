@@ -22,9 +22,11 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
+use log::{debug, warn};
 use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
 use nix::sys::termios::tcgetattr;
 use nix::sys::uio::IoVec;
+use nix::{cmsg_space, ioctl_write_ptr_bad};
 use time::OffsetDateTime;
 
 use crate::api::*;

@@ -35,6 +35,7 @@ use shim::io::{create_io, Console, Stdio};
 use shim::mount::mount_rootfs;
 use shim::protos::protobuf::{well_known_types::Timestamp, CodedInputStream, Message};
 use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
+use shim::{debug, error, other, other_error};
 use time::OffsetDateTime;
 
 pub const DEFAULT_RUNC_ROOT: &str = "/run/containerd/runc";

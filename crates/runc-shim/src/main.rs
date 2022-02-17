@@ -13,13 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-#[macro_use]
-extern crate containerd_shim;
-
-#[macro_use]
-extern crate log;
-
 mod runc;
 mod service;
 

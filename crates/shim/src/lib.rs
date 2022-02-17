@@ -32,18 +32,6 @@
 //! ```
 //!
 
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate nix;
-
-#[macro_use]
-extern crate serde_derive;
-
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
@@ -59,7 +47,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use command_fds::{CommandFdExt, FdMapping};
 pub use containerd_shim_protos as protos;
 use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
-use log::{debug, error, info, warn};
+pub use log::{debug, error, info, warn};
 use protos::protobuf::Message;
 pub use protos::shim::shim::DeleteResponse;
 pub use protos::shim::shim_ttrpc::{create_task, Task};

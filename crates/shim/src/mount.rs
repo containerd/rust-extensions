@@ -15,10 +15,12 @@
 */
 #![allow(unused)]
 
-#[cfg(target_os = "linux")]
-use nix::mount::{mount, MsFlags};
 use std::collections::HashMap;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+
+use lazy_static::lazy_static;
+#[cfg(target_os = "linux")]
+use nix::mount::{mount, MsFlags};
 
 use crate::error::{Error, Result};
 

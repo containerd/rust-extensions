@@ -13,9 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-extern crate libc;
-
 use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -25,6 +22,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crossbeam::sync::WaitGroup;
+use log::debug;
 use nix::sys::termios::Termios;
 
 use crate::error::{Error, Result};
@@ -34,7 +32,7 @@ pub trait WriteCloser: Write {
     fn close(&self);
 }
 
-pub trait IO: Sync + Send {
+pub trait Io: Sync + Send {
     /// Return write side of stdin
     fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>>;
 
@@ -52,9 +50,9 @@ pub trait IO: Sync + Send {
     fn close_after_start(&self);
 }
 
-pub struct NullIO {}
+pub struct NullIo {}
 
-impl IO for NullIO {
+impl Io for NullIo {
     fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>> {
         None
     }
@@ -82,7 +80,7 @@ pub struct FIFO {
     pub stderr: Option<String>,
 }
 
-impl IO for FIFO {
+impl Io for FIFO {
     fn stdin(&self) -> Option<Box<dyn WriteCloser + Send + Sync>> {
         None
     }
@@ -167,7 +165,7 @@ impl Stdio {
 
 pub struct ProcessIO {
     pub uri: Option<String>,
-    pub io: Option<Arc<dyn IO>>,
+    pub io: Option<Arc<dyn Io>>,
     pub copy: bool,
 }
 
@@ -254,7 +252,7 @@ pub fn create_io(id: &str, _io_uid: u32, _io_gid: u32, stdio: &Stdio) -> Result<
     if stdio.is_null() {
         let pio = ProcessIO {
             uri: None,
-            io: Some(Arc::new(NullIO {})),
+            io: Some(Arc::new(NullIo {})),
             copy: false,
         };
         return Ok(pio);

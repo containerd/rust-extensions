@@ -17,6 +17,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use log::{debug, info};
+
 use crate::api::*;
 use crate::container::{Container, ContainerFactory};
 use crate::error::Error;

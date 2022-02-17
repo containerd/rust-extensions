@@ -38,7 +38,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use containerd_shim as shim;
-use shim::io::IO;
+use shim::io::Io;
 
 use crate::error::Error;
 use crate::utils;
@@ -251,7 +251,7 @@ impl Args for GlobalOpts {
 
 #[derive(Clone, Default)]
 pub struct CreateOpts {
-    pub io: Option<Arc<dyn IO>>,
+    pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -295,7 +295,7 @@ impl CreateOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn IO>) -> Self {
+    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
         self.io = Some(io);
         self
     }
@@ -335,7 +335,7 @@ impl CreateOpts {
 /// Container execution options
 #[derive(Clone, Default)]
 pub struct ExecOpts {
-    pub io: Option<Arc<dyn IO>>,
+    pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
     /// Path to where a console socket should be created.
@@ -369,7 +369,7 @@ impl ExecOpts {
         Self::default()
     }
 
-    pub fn io(mut self, io: Arc<dyn IO>) -> Self {
+    pub fn io(mut self, io: Arc<dyn Io>) -> Self {
         self.io = Some(io);
         self
     }
