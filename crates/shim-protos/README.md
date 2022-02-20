@@ -50,8 +50,16 @@ let resp = task_client.connect(context, &req)?;
 - [TTRPC shim server](./examples/ttrpc-server.rs)
 - [TTRPC client connect](./examples/connect.rs).
 
-The way to build the [TTRPC client connect](./examples/connect.rs) example:
+The way to build the example:
 ```bash
-$ cargo build --example connect
-$ sudo ./connect unix:///containerd-shim/shim_socket_path.sock
+# build sync connect, client and server
+$ cargo build --example shim-proto-connect
+$ sudo ./shim-proto-connect unix:///containerd-shim/shim_socket_path.sock
+$ cargo build --example shim-proto-client
+$ cargo build --example shim-proto-server
+
+# build async connect, client and server
+$ cargo build --example shim-proto-connect-async --features async
+$ cargo build --example shim-proto-client-async --features async
+$ cargo build --example shim-proto-server-async --features async
 ```
