@@ -20,7 +20,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 #[cfg(feature = "generate_bindings")]
-use ttrpc_codegen::{Codegen, ProtobufCustomize};
+use ttrpc_codegen::{Codegen, Customize, ProtobufCustomize};
 
 #[cfg(not(feature = "generate_bindings"))]
 fn main() {}
@@ -38,13 +38,30 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/events/task.proto",
         ],
         false,
+        false,
     );
 
     codegen(
         "src/cgroups",
         &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
         true,
+        false,
     );
+
+    // generate async service
+    codegen(
+        "src/shim",
+        &[
+            "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+            "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
+        ],
+        true,
+        true,
+    );
+
+    //  rename to async
+    fs::rename("src/shim/shim_ttrpc.rs", "src/shim/shim_ttrpc_async.rs").unwrap();
+    fs::rename("src/shim/events_ttrpc.rs", "src/shim/events_ttrpc_async.rs").unwrap();
 
     codegen(
         "src/shim",
@@ -57,6 +74,7 @@ fn main() {
             "vendor/google/protobuf/empty.proto",
         ],
         true,
+        false,
     );
 
     // TODO: shim_ttrpc is not included in mod.rs, file a bug upstream.
@@ -64,8 +82,16 @@ fn main() {
         .append(true)
         .open("src/shim/mod.rs")
         .unwrap();
+
+    // export sync mod
     writeln!(f, "pub mod shim_ttrpc;").unwrap();
     writeln!(f, "pub mod events_ttrpc;").unwrap();
+
+    // export async mod by feature
+    writeln!(f, r##"#[cfg(feature = "async")]"##).unwrap();
+    writeln!(f, "pub mod shim_ttrpc_async;").unwrap();
+    writeln!(f, r##"#[cfg(feature = "async")]"##).unwrap();
+    writeln!(f, "pub mod events_ttrpc_async;").unwrap();
 }
 
 #[cfg(feature = "generate_bindings")]
@@ -73,6 +99,7 @@ fn codegen(
     path: impl AsRef<Path>,
     inputs: impl IntoIterator<Item = impl AsRef<Path>>,
     gen_mod_rs: bool,
+    async_all: bool,
 ) {
     let path = path.as_ref();
 
@@ -84,6 +111,10 @@ fn codegen(
         .rust_protobuf()
         .rust_protobuf_customize(ProtobufCustomize {
             gen_mod_rs: Some(gen_mod_rs),
+            ..Default::default()
+        })
+        .customize(Customize {
+            async_all,
             ..Default::default()
         })
         .out_dir(path)
