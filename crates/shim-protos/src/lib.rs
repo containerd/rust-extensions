@@ -77,14 +77,30 @@ pub mod shim;
 /// Includes event names shims can publish to containerd.
 pub mod topics;
 
-/// TTRPC client reexport for easier access.
-pub use ttrpc::Client;
+pub mod shim_sync {
+    /// TTRPC client reexport for easier access.
+    pub use ttrpc::Client;
 
-/// Shim task service.
-pub use shim::shim_ttrpc::{create_task, Task, TaskClient};
+    /// Shim task service.
+    pub use crate::shim::shim_ttrpc::{create_task, Task, TaskClient};
 
-/// Shim events service.
-pub use shim::events_ttrpc::{create_events, Events, EventsClient};
+    /// Shim events service.
+    pub use crate::shim::events_ttrpc::{create_events, Events, EventsClient};
+}
+
+pub use shim_sync::*;
+
+#[cfg(feature = "async")]
+pub mod shim_async {
+    /// TTRPC client reexport for easier access.
+    pub use ttrpc::asynchronous::Client;
+
+    /// Shim task service.
+    pub use crate::shim::shim_ttrpc_async::{create_task, Task, TaskClient};
+
+    /// Shim events service.
+    pub use crate::shim::events_ttrpc_async::{create_events, Events, EventsClient};
+}
 
 /// Reexport auto-generated public data structures.
 pub mod api {
