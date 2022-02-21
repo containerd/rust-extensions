@@ -117,4 +117,10 @@ pub enum Error {
 
     #[error("Error occured in runc client: {0}")]
     Other(Box<dyn std::error::Error + Send>),
+
+    #[error("Failed to set cmd io: {0}")]
+    IoSet(String),
+
+    #[error("Failed to create dir: {0}")]
+    CreateDir(nix::Error),
 }

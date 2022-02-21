@@ -13,28 +13,32 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-use nix::unistd::{Gid, Uid};
 use std::fmt::Debug;
-use std::fs::File;
-use std::io::Result;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Result, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::sync::Mutex;
 
+use log::debug;
+use nix::unistd::{Gid, Uid};
+use os_pipe::{PipeReader, PipeWriter};
+
 use crate::Command;
 
-pub trait Io: Debug + Sync + Send {
+pub trait Io: Debug + Send + Sync {
     /// Return write side of stdin
-    fn stdin(&self) -> Option<File> {
+    fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
         None
     }
 
     /// Return read side of stdout
-    fn stdout(&self) -> Option<File> {
+    fn stdout(&self) -> Option<Box<dyn Read + Send>> {
         None
     }
 
     /// Return read side of stderr
-    fn stderr(&self) -> Option<File> {
+    fn stderr(&self) -> Option<Box<dyn Read + Send>> {
         None
     }
 
@@ -68,42 +72,8 @@ impl Default for IOOption {
 /// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
-    // Might be ugly hack: using mutex in order to take rd/wr under immutable [`Pipe`]
-    rd: Mutex<Option<File>>,
-    wr: Mutex<Option<File>>,
-}
-
-impl Pipe {
-    pub fn new() -> std::io::Result<Self> {
-        let (r, w) = nix::unistd::pipe()?;
-        let (rd, wr) = unsafe {
-            (
-                Mutex::new(Some(File::from_raw_fd(r))),
-                Mutex::new(Some(File::from_raw_fd(w))),
-            )
-        };
-        Ok(Self { rd, wr })
-    }
-
-    pub fn take_read(&self) -> Option<File> {
-        let mut m = self.rd.lock().unwrap();
-        m.take()
-    }
-
-    pub fn take_write(&self) -> Option<File> {
-        let mut m = self.wr.lock().unwrap();
-        m.take()
-    }
-
-    pub fn close_read(&self) {
-        let mut m = self.rd.lock().unwrap();
-        let _ = m.take();
-    }
-
-    pub fn close_write(&self) {
-        let mut m = self.wr.lock().unwrap();
-        let _ = m.take();
-    }
+    rd: PipeReader,
+    wr: PipeWriter,
 }
 
 #[derive(Debug)]
@@ -113,6 +83,12 @@ pub struct PipedIo {
     stderr: Option<Pipe>,
 }
 
+impl Pipe {
+    fn new() -> std::io::Result<Self> {
+        let (rd, wr) = os_pipe::pipe()?;
+        Ok(Self { rd, wr })
+    }
+}
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
@@ -133,71 +109,75 @@ impl PipedIo {
         }
 
         let pipe = Pipe::new()?;
-        let guard = if stdin {
-            pipe.rd.lock().unwrap()
+        let uid = Some(Uid::from_raw(uid));
+        let gid = Some(Gid::from_raw(gid));
+        if stdin {
+            let rd = pipe.rd.try_clone()?;
+            nix::unistd::fchown(rd.as_raw_fd(), uid, gid)?;
         } else {
-            pipe.wr.lock().unwrap()
-        };
-        if let Some(f) = guard.as_ref() {
-            let uid = Some(Uid::from_raw(uid));
-            let gid = Some(Gid::from_raw(gid));
-            nix::unistd::fchown(f.as_raw_fd(), uid, gid)?;
+            let wr = pipe.wr.try_clone()?;
+            nix::unistd::fchown(wr.as_raw_fd(), uid, gid)?;
         }
-        drop(guard);
-
         Ok(Some(pipe))
     }
 }
 
 impl Io for PipedIo {
-    fn stdin(&self) -> Option<File> {
-        self.stdin.as_ref().map(|v| v.take_write()).flatten()
+    fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
+        self.stdin.as_ref().and_then(|pipe| {
+            pipe.wr
+                .try_clone()
+                .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
+                .ok()
+        })
     }
 
-    fn stdout(&self) -> Option<File> {
-        self.stdout.as_ref().map(|v| v.take_read()).flatten()
+    fn stdout(&self) -> Option<Box<dyn Read + Send>> {
+        self.stdout.as_ref().and_then(|pipe| {
+            pipe.rd
+                .try_clone()
+                .map(|x| Box::new(x) as Box<dyn Read + Send>)
+                .ok()
+        })
     }
 
-    fn stderr(&self) -> Option<File> {
-        self.stderr.as_ref().map(|v| v.take_read()).flatten()
+    fn stderr(&self) -> Option<Box<dyn Read + Send>> {
+        self.stderr.as_ref().and_then(|pipe| {
+            pipe.rd
+                .try_clone()
+                .map(|x| Box::new(x) as Box<dyn Read + Send>)
+                .ok()
+        })
     }
 
     // Note that this internally use [`std::fs::File`]'s `try_clone()`.
     // Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
-        if let Some(ref p) = self.stdin {
-            let m = p.rd.lock().unwrap();
-            if let Some(stdin) = &*m {
-                let f = stdin.try_clone()?;
-                cmd.stdin(f);
-            }
+        if let Some(p) = self.stdin.as_ref() {
+            let pr = p.rd.try_clone()?;
+            cmd.stdin(pr);
         }
 
-        if let Some(ref p) = self.stdout {
-            let m = p.wr.lock().unwrap();
-            if let Some(f) = &*m {
-                let f = f.try_clone()?;
-                cmd.stdout(f);
-            }
+        if let Some(p) = self.stdout.as_ref() {
+            let pw = p.wr.try_clone()?;
+            cmd.stdout(pw);
         }
 
-        if let Some(ref p) = self.stderr {
-            let m = p.wr.lock().unwrap();
-            if let Some(f) = &*m {
-                let f = f.try_clone()?;
-                cmd.stderr(f);
-            }
+        if let Some(p) = self.stderr.as_ref() {
+            let pw = p.wr.try_clone()?;
+            cmd.stdout(pw);
         }
 
         Ok(())
     }
 
     fn close_after_start(&self) {
-        if let Some(ref p) = self.stdout {
-            p.close_write();
+        if let Some(p) = self.stdout.as_ref() {
+            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
         }
-        if let Some(ref p) = self.stderr {
-            p.close_write();
+
+        if let Some(p) = self.stderr.as_ref() {
+            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
         }
     }
 }
@@ -235,6 +215,40 @@ impl Io for NullIo {
     }
 }
 
+/// FIFO for the scenario that set FIFO for command Io.
+#[derive(Debug)]
+pub struct FIFO {
+    pub stdin: Option<String>,
+    pub stdout: Option<String>,
+    pub stderr: Option<String>,
+}
+
+impl Io for FIFO {
+    fn set(&self, cmd: &mut Command) -> Result<()> {
+        if let Some(path) = self.stdin.as_ref() {
+            let stdin = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(path)?;
+            cmd.stdin(stdin);
+        }
+
+        if let Some(path) = self.stdout.as_ref() {
+            let stdout = OpenOptions::new().write(true).open(path)?;
+            cmd.stdout(stdout);
+        }
+
+        if let Some(path) = self.stderr.as_ref() {
+            let stderr = OpenOptions::new().write(true).open(path)?;
+            cmd.stderr(stderr);
+        }
+
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,21 +281,17 @@ mod tests {
         let mut stdin = io.stdin().unwrap();
         stdin.write_all(&buf).unwrap();
         buf[0] = 0x0;
-        io.stdin.as_ref().map(|v| {
-            v.rd.lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .read(&mut buf)
-                .unwrap()
-        });
+
+        io.stdin
+            .as_ref()
+            .map(|v| v.rd.try_clone().unwrap().read(&mut buf).unwrap());
         assert_eq!(&buf, &[0xfau8]);
 
         let mut stdout = io.stdout().unwrap();
         buf[0] = 0xce;
         io.stdout
             .as_ref()
-            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+            .map(|v| v.wr.try_clone().unwrap().write(&buf).unwrap());
         buf[0] = 0x0;
         stdout.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, &[0xceu8]);
@@ -290,7 +300,7 @@ mod tests {
         buf[0] = 0xa5;
         io.stderr
             .as_ref()
-            .map(|v| v.wr.lock().unwrap().as_ref().unwrap().write(&buf).unwrap());
+            .map(|v| v.wr.try_clone().unwrap().write(&buf).unwrap());
         buf[0] = 0x0;
         stderr.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, &[0xa5u8]);

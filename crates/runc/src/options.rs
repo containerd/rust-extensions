@@ -247,7 +247,7 @@ impl Args for GlobalOpts {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct CreateOpts {
     pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
@@ -331,7 +331,7 @@ impl CreateOpts {
 }
 
 /// Container execution options
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ExecOpts {
     pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.

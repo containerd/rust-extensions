@@ -17,12 +17,16 @@
 #![allow(unused)]
 
 use std::env;
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
+use nix::sys::stat::Mode;
+use nix::unistd::mkdir;
 use path_absolutize::*;
 use tempfile::{Builder, NamedTempFile};
 use uuid::Uuid;
 
+use crate::console::ConsoleSocket;
 use crate::error::Error;
 
 // helper to resolve path (such as path for runc binary, pid files, etc. )
@@ -55,6 +59,26 @@ where
     P: AsRef<Path>,
 {
     path_to_string(abs_path_buf(path)?)
+}
+
+pub fn new_temp_console_socket() -> Result<ConsoleSocket, Error> {
+    let dir = env::var_os("XDG_RUNTIME_DIR")
+        .map(|runtime_dir| {
+            format!(
+                "{}/pty{}",
+                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
+                Uuid::new_v4(),
+            )
+        })
+        .ok_or(Error::SpecFileNotFound)?;
+    mkdir(Path::new(&dir), Mode::from_bits(0o711).unwrap()).map_err(Error::CreateDir)?;
+    let file_name = Path::new(&dir).join("pty.sock");
+    let listener = UnixListener::bind(file_name.as_path()).map_err(Error::UnixSocketBindFailed)?;
+    Ok(ConsoleSocket {
+        listener,
+        path: file_name,
+        rmdir: true,
+    })
 }
 
 pub fn temp_filename_in_runtime_dir() -> Result<String, Error> {

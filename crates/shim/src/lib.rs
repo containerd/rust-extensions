@@ -34,53 +34,62 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::env;
-use std::error;
 use std::fs;
 use std::hash::Hasher;
-use std::io::{self, Write};
+use std::io::Write;
 use std::os::unix::fs::FileTypeExt;
-use std::os::unix::io::AsRawFd;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 
-pub use containerd_shim_protos as protos;
-
-use protos::protobuf::Message;
-use protos::shim::{shim::DeleteResponse, shim_ttrpc::create_task};
-use protos::ttrpc::Server;
-
 use command_fds::{CommandFdExt, FdMapping};
-use log::info;
-use nix::errno::Errno;
-use thiserror::Error;
+pub use containerd_shim_protos as protos;
+use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
+pub use log::{debug, error, info, warn};
+use protos::protobuf::Message;
+pub use protos::shim::shim::DeleteResponse;
+pub use protos::shim::shim_ttrpc::{create_task, Task};
+pub use protos::ttrpc::{context::Context, Result as TtrpcResult, TtrpcContext};
+use protos::ttrpc::{Client, Server};
+use signal_hook::iterator::Signals;
 
-mod args;
-mod logger;
-mod publisher;
-mod reap;
+pub use crate::error::{Error, Result};
+use crate::monitor::monitor_notify_by_pid;
+pub use crate::publisher::RemotePublisher;
+use crate::util::{read_address, write_address};
 
-pub use publisher::RemotePublisher;
+#[macro_use]
+pub mod error;
 
 /// Generated request/response structures.
 pub mod api {
+    pub use super::protos::api::Status;
     pub use super::protos::shim::empty::Empty;
+    pub use super::protos::shim::oci::Options;
     pub use super::protos::shim::shim::*;
 }
+mod args;
+pub mod container;
+pub mod io;
+mod logger;
+pub mod monitor;
+pub mod mount;
+mod publisher;
+mod reap;
+pub mod task;
+pub mod util;
 
-pub use protos::shim::shim_ttrpc::Task;
-
-pub use protos::ttrpc;
-pub use protos::ttrpc::Result as TtrpcResult;
-pub use protos::ttrpc::TtrpcContext;
+const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
 
 /// Config of shim binary options provided by shim implementations
 #[derive(Debug, Default)]
 pub struct Config {
     /// Disables automatic configuration of logrus to use the shim FIFO
     pub no_setup_logger: bool,
+    /// Disables the shim binary from reaping any child process implicitly
+    pub no_reaper: bool,
     /// Disables setting the shim as a child subreaper.
     pub no_sub_reaper: bool,
 }
@@ -100,6 +109,8 @@ pub struct StartOpts {
     pub ttrpc_address: String,
     /// Namespace for the container.
     pub namespace: String,
+
+    pub debug: bool,
 }
 
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
@@ -138,9 +149,6 @@ impl ExitSignal {
 ///
 /// Start and delete routines will be called to handle containerd's shim lifecycle requests.
 pub trait Shim {
-    /// Error type to be returned when starting/deleting shim.
-    type Error: error::Error;
-
     /// Type to provide task service for the shim.
     type T: Task + Send + Sync;
 
@@ -165,12 +173,10 @@ pub trait Shim {
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
     /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
-    fn start_shim(&mut self, opts: StartOpts) -> Result<String, Self::Error>;
+    fn start_shim(&mut self, opts: StartOpts) -> Result<String>;
 
     /// Delete shim will be called by containerd after shim shutdown to cleanup any leftovers.
-    fn delete_shim(&mut self) -> Result<DeleteResponse, Self::Error> {
-        Ok(DeleteResponse::default())
-    }
+    fn delete_shim(&mut self) -> Result<DeleteResponse>;
 
     /// Wait for the shim to exit.
     fn wait(&mut self);
@@ -180,17 +186,17 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-pub fn run<T>(runtime_id: &str)
+pub fn run<T>(runtime_id: &str, opts: Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
 {
-    if let Some(err) = bootstrap::<T>(runtime_id).err() {
+    if let Some(err) = bootstrap::<T>(runtime_id, opts).err() {
         eprintln!("{}: {:?}", runtime_id, err);
         process::exit(1);
     }
 }
 
-fn bootstrap<T>(runtime_id: &str) -> Result<(), Error>
+fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
     T: Shim + Send + Sync + 'static,
 {
@@ -198,11 +204,19 @@ where
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
 
-    let ttrpc_address = env::var("TTRPC_ADDRESS")?;
+    let ttrpc_address = env::var(TTRPC_ADDRESS)?;
     let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
 
     // Create shim instance
-    let mut config = Config::default();
+    let mut config = opts.unwrap_or_else(Config::default);
+
+    // Setup signals
+    let signals = setup_signals(&config);
+
+    if !config.no_sub_reaper {
+        reap::set_subreaper().map_err(io_error!(e, "set subreaper"))?;
+    }
+
     let mut shim = T::new(
         runtime_id,
         &flags.id,
@@ -210,10 +224,6 @@ where
         publisher,
         &mut config,
     );
-
-    if !config.no_sub_reaper {
-        reap::set_subreaper()?;
-    }
 
     match flags.action.as_str() {
         "start" => {
@@ -223,22 +233,22 @@ where
                 address: flags.address,
                 ttrpc_address,
                 namespace: flags.namespace,
+                debug: flags.debug,
             };
 
-            let address = shim
-                .start_shim(args)
-                .map_err(|err| Error::Start(err.to_string()))?;
+            let address = shim.start_shim(args)?;
 
-            io::stdout().lock().write_fmt(format_args!("{}", address))?;
+            std::io::stdout()
+                .lock()
+                .write_fmt(format_args!("{}", address))
+                .map_err(io_error!(e, "write stdout"))?;
 
             Ok(())
         }
         "delete" => {
-            let response = shim
-                .delete_shim()
-                .map_err(|err| Error::Delete(err.to_string()))?;
-
-            let stdout = io::stdout();
+            std::thread::spawn(move || handle_signals(signals));
+            let response = shim.delete_shim()?;
+            let stdout = std::io::stdout();
             let mut locked = stdout.lock();
             response.write_to_writer(&mut locked)?;
 
@@ -252,59 +262,63 @@ where
             let task = shim.get_task_service();
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
-
             server = server.add_listener(SOCKET_FD)?;
-
             server.start()?;
 
             info!("Shim successfully started, waiting for exit signal...");
+            std::thread::spawn(move || handle_signals(signals));
             shim.wait();
 
             info!("Shutting down shim instance");
             server.shutdown();
 
+            // NOTE: If the shim server is down(like oom killer), the address
+            // socket might be leaking.
+            let address = read_address()?;
+            remove_socket_silently(&address);
             Ok(())
         }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum Error {
-    /// Invalid command line arguments.
-    #[error("Failed to parse command line: {0}")]
-    Flags(#[from] args::Error),
+fn setup_signals(config: &Config) -> Signals {
+    let signals = Signals::new(&[SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
+    if !config.no_reaper {
+        signals.add_signal(SIGCHLD).expect("add signal failed");
+    }
+    signals
+}
 
-    /// TTRPC specific error.
-    #[error("TTRPC error: {0}")]
-    Ttrpc(#[from] protos::ttrpc::Error),
-
-    #[error("Protobuf error: {0}")]
-    Protobuf(#[from] protos::protobuf::error::ProtobufError),
-
-    #[error("Failed to setup logger: {0}")]
-    Logger(#[from] logger::Error),
-
-    #[error("IO error: {0}")]
-    Io(#[from] io::Error),
-
-    #[error("Env error: {0}")]
-    Env(#[from] env::VarError),
-
-    #[error("Failed to start shim: {0}")]
-    Start(String),
-
-    #[error("Failed to delete shim: {0}")]
-    Delete(String),
-
-    #[error("Publisher error: {0}")]
-    Publisher(#[from] publisher::Error),
-
-    /// Unable to pass fd to child process (we rely on `command_fds` crate for this).
-    #[error("Failed to pass socket fd to child: {0}")]
-    FdMap(#[from] command_fds::FdMappingCollision),
-
-    #[error("Error code: {0}")]
-    Errno(#[from] Errno),
+fn handle_signals(mut signals: Signals) {
+    loop {
+        for sig in signals.wait() {
+            match sig {
+                SIGTERM | SIGINT => {
+                    debug!("received {}", sig);
+                    return;
+                }
+                SIGCHLD => loop {
+                    unsafe {
+                        let pid: pid_t = -1;
+                        let mut status: c_int = 0;
+                        let options: c_int = libc::WNOHANG;
+                        let res_pid = libc::waitpid(pid, &mut status, options);
+                        let status = libc::WEXITSTATUS(status);
+                        if res_pid <= 0 {
+                            break;
+                        } else {
+                            monitor_notify_by_pid(res_pid, status).unwrap_or_else(|e| {
+                                error!("failed to send exit event {}", e);
+                            });
+                        }
+                    }
+                },
+                _ => {
+                    debug!("received {}", sig);
+                }
+            }
+        }
+    }
 }
 
 /// The shim process communicates with the containerd server through a communication channel
@@ -332,38 +346,85 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finish()
     };
 
-    format!("{}/{:x}.sock", SOCKET_ROOT, hash)
+    format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
 }
 
-fn start_listener(address: &str) -> Result<UnixListener, Error> {
-    // Try to create the needed directory hierarchy.
-    if let Some(parent) = Path::new(address).parent() {
-        fs::create_dir_all(parent)?;
+fn parse_sockaddr(addr: &str) -> &str {
+    if let Some(addr) = addr.strip_prefix("unix://") {
+        return addr;
     }
 
-    UnixListener::bind(address).or_else(|e| {
-        if e.kind() == io::ErrorKind::AddrInUse {
-            if let Ok(md) = Path::new(address).metadata() {
-                if md.file_type().is_socket() {
-                    fs::remove_file(address)?;
-                    return UnixListener::bind(address).map_err(|e| e.into());
-                }
+    if let Some(addr) = addr.strip_prefix("vsock://") {
+        return addr;
+    }
+
+    addr
+}
+
+fn start_listener(address: &str) -> std::io::Result<UnixListener> {
+    let path = parse_sockaddr(address);
+    // Try to create the needed directory hierarchy.
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent)?;
+    }
+    UnixListener::bind(path)
+}
+
+fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
+    for _i in 0..count {
+        match Client::connect(address) {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(_) => {
+                std::thread::sleep(std::time::Duration::from_millis(interval_in_ms));
             }
         }
-        Err(e.into())
-    })
+    }
+    Err(other!(address, "time out waiting for socket"))
+}
+
+fn remove_socket_silently(address: &str) {
+    remove_socket(address).unwrap_or_else(|e| warn!("failed to remove file {} {:?}", address, e))
+}
+
+fn remove_socket(address: &str) -> Result<()> {
+    let path = parse_sockaddr(address);
+    if let Ok(md) = Path::new(path).metadata() {
+        if md.file_type().is_socket() {
+            fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
-pub fn spawn(opts: StartOpts, vars: Vec<(&str, &str)>) -> Result<String, Error> {
-    let cmd = env::current_exe()?;
-    let cwd = env::current_dir()?;
-    let address = socket_address(&opts.address, &opts.namespace, &opts.id);
+pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<String> {
+    let cmd = env::current_exe().map_err(io_error!(e, ""))?;
+    let cwd = env::current_dir().map_err(io_error!(e, ""))?;
+    let address = socket_address(&opts.address, &opts.namespace, grouping);
 
     // Create socket and prepare listener.
     // We'll use `add_listener` when creating TTRPC server.
-    let listener = start_listener(&address)?;
+    let listener = match start_listener(&address) {
+        Ok(l) => l,
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::AddrInUse {
+                return Err(error::Error::IoError {
+                    context: "".to_string(),
+                    err: e,
+                });
+            };
+            if let Ok(()) = wait_socket_working(&address, 5, 200) {
+                write_address(&address)?;
+                return Ok(address);
+            }
+            remove_socket(&address)?;
+            start_listener(&address).map_err(io_error!(e, ""))?
+        }
+    };
+
     let mut command = Command::new(cmd);
 
     command
@@ -382,14 +443,20 @@ pub fn spawn(opts: StartOpts, vars: Vec<(&str, &str)>) -> Result<String, Error> 
             &opts.id,
             "-address",
             &opts.address,
-        ])
-        .envs(vars);
+        ]);
+    if opts.debug {
+        command.arg("-debug");
+    }
+    command.envs(vars);
 
-    command.spawn().map_err(Into::into).map(|_| {
-        // Ownership of `listener` has been passed to child.
-        std::mem::forget(listener);
-        format!("unix://{}", address)
-    })
+    command
+        .spawn()
+        .map_err(io_error!(e, "spawn shim"))
+        .map(|_| {
+            // Ownership of `listener` has been passed to child.
+            std::mem::forget(listener);
+            address
+        })
 }
 
 #[cfg(test)]
@@ -424,7 +491,7 @@ mod tests {
 
         let socket = path + "/ns1/id1/socket";
         let _listener = start_listener(&socket).unwrap();
-        let _listener2 = start_listener(&socket).unwrap();
+        let _listener2 = start_listener(&socket).expect_err("socket should already in use");
 
         let socket2 = socket + "/socket";
         assert!(start_listener(&socket2).is_err());
