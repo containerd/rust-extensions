@@ -14,23 +14,20 @@
    limitations under the License.
 */
 use std::fmt::Debug;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crossbeam::sync::WaitGroup;
 use log::debug;
-use nix::sys::termios::Termios;
+
+use containerd_shim::util::IntoOption;
+use containerd_shim::{
+    error::{Error, Result},
+    io_error,
+};
 use runc::io::{Io, NullIo, FIFO};
-
-use crate::error::{Error, Result};
-use crate::util::IntoOption;
-
-pub struct Console {
-    pub file: File,
-    pub termios: Termios,
-}
 
 pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
     mut from: R,

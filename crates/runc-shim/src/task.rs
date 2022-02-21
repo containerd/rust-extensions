@@ -19,14 +19,17 @@ use std::sync::{Arc, Mutex};
 
 use log::{debug, info};
 
-use crate::api::*;
+use containerd_shim as shim;
+
+use shim::api::*;
+use shim::protos::protobuf::well_known_types::Timestamp;
+use shim::protos::protobuf::SingularPtrField;
+use shim::util::IntoOption;
+use shim::Error;
+use shim::Task;
+use shim::{TtrpcContext, TtrpcResult};
+
 use crate::container::{Container, ContainerFactory};
-use crate::error::Error;
-use crate::protos::protobuf::well_known_types::Timestamp;
-use crate::protos::protobuf::SingularPtrField;
-use crate::protos::Task;
-use crate::util::IntoOption;
-use crate::{TtrpcContext, TtrpcResult};
 
 type ShutdownType = Box<dyn FnOnce() + Send + Sync>;
 

@@ -29,11 +29,15 @@ use nix::{cmsg_space, ioctl_write_ptr_bad};
 use runc::console::{Console, ConsoleSocket};
 use time::OffsetDateTime;
 
-use crate::api::*;
-use crate::error::{Error, Result};
+use containerd_shim as shim;
+
+use shim::api::*;
+use shim::error::{Error, Result};
+use shim::protos::protobuf::well_known_types::Timestamp;
+use shim::util::read_pid_from_file;
+use shim::{io_error, other, other_error};
+
 use crate::io::{spawn_copy, ProcessIO, Stdio};
-use crate::protos::protobuf::well_known_types::Timestamp;
-use crate::util::read_pid_from_file;
 
 ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
 
@@ -64,7 +68,12 @@ pub trait Process {
 pub trait Container {
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32>;
     fn state(&self, exec_id: Option<&str>) -> Result<StateResponse>;
-    fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> crate::error::Result<()>;
+    fn kill(
+        &mut self,
+        exec_id: Option<&str>,
+        signal: u32,
+        all: bool,
+    ) -> containerd_shim::Result<()>;
     fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>>;
     fn get_exit_info(&self, exec_id: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)>;
     fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)>;
@@ -119,6 +128,7 @@ where
         Ok(resp)
     }
 
+    #[allow(unused)]
     pub fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
         let exec_id = req.exec_id.to_string();
         let exec_process = E::try_from(req).map_err(other_error!(e, "convert ExecProcess"))?;

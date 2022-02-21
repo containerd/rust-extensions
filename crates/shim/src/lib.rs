@@ -71,14 +71,11 @@ pub mod api {
     pub use super::protos::shim::shim::*;
 }
 mod args;
-pub mod container;
-pub mod io;
 mod logger;
 pub mod monitor;
 pub mod mount;
 mod publisher;
 mod reap;
-pub mod task;
 pub mod util;
 
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
