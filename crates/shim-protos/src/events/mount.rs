@@ -1,3 +1,3 @@
-/// Reexport shim::mount::* to keep backward compatibility.
+/// Reexport types::mount::* to avoid manually editing other auto-generated source files.
 
-pub use crate::shim::mount::*;
+pub use crate::types::mount::*;

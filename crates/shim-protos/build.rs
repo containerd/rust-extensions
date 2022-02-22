@@ -28,6 +28,13 @@ fn main() {}
 #[cfg(feature = "generate_bindings")]
 fn main() {
     codegen(
+        "src/cgroups",
+        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
+        true,
+        false,
+    );
+
+    codegen(
         "src/events",
         &[
             "vendor/github.com/containerd/containerd/api/events/container.proto",
@@ -41,13 +48,6 @@ fn main() {
         false,
     );
 
-    codegen(
-        "src/cgroups",
-        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
-        true,
-        false,
-    );
-
     // generate async service
     codegen(
         "src/shim",
@@ -55,11 +55,9 @@ fn main() {
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
-        true,
+        false,
         true,
     );
-
-    //  rename to async
     fs::rename("src/shim/shim_ttrpc.rs", "src/shim/shim_ttrpc_async.rs").unwrap();
     fs::rename("src/shim/events_ttrpc.rs", "src/shim/events_ttrpc_async.rs").unwrap();
 
@@ -68,30 +66,22 @@ fn main() {
         &[
             "vendor/github.com/containerd/containerd/runtime/v2/runc/options/oci.proto",
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+            "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
+        ],
+        false,
+        false,
+    );
+
+    codegen(
+        "src/types",
+        &[
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
-            "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             "vendor/google/protobuf/empty.proto",
         ],
         true,
         false,
     );
-
-    // TODO: shim_ttrpc is not included in mod.rs, file a bug upstream.
-    let mut f = fs::OpenOptions::new()
-        .append(true)
-        .open("src/shim/mod.rs")
-        .unwrap();
-
-    // export sync mod
-    writeln!(f, "pub mod shim_ttrpc;").unwrap();
-    writeln!(f, "pub mod events_ttrpc;").unwrap();
-
-    // export async mod by feature
-    writeln!(f, r##"#[cfg(feature = "async")]"##).unwrap();
-    writeln!(f, "pub mod shim_ttrpc_async;").unwrap();
-    writeln!(f, r##"#[cfg(feature = "async")]"##).unwrap();
-    writeln!(f, "pub mod events_ttrpc_async;").unwrap();
 }
 
 #[cfg(feature = "generate_bindings")]

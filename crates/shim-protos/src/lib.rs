@@ -73,6 +73,8 @@ pub mod events;
 pub mod cgroups;
 #[rustfmt::skip]
 pub mod shim;
+#[rustfmt::skip]
+pub mod types;
 
 /// Includes event names shims can publish to containerd.
 pub mod topics;
