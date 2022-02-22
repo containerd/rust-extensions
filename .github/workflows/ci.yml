@@ -48,3 +48,62 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: EmbarkStudios/cargo-deny-action@v1
+
+  integration:
+    name: Integration
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        containerd: [v1.5.9, v1.6.0]
+
+    steps:
+      - name: Checkout extensions
+        uses: actions/checkout@v2
+
+      - name: Install shim
+        run: |
+          cargo build --release --bin containerd-shim-runc-v2
+          sudo install -D ./target/release/containerd-shim-runc-v2 /usr/local/bin/
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.5'
+
+      # This step is required for containerd v1.5.x and below
+      - name: Setup GOPATH
+        shell: bash
+        run: |
+          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
+          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+
+      - name: Checkout containerd
+        uses: actions/checkout@v2
+        with:
+          repository: containerd/containerd
+          path: src/github.com/containerd/containerd
+          ref: ${{ matrix.containerd }}
+
+      - name: Install containerd
+        env:
+          GOFLAGS: -modcacherw
+          CGO_ENABLED: 1
+        run: |
+          # Install containerd dependencies first
+          sudo apt-get install -y gperf
+          sudo -E PATH=$PATH script/setup/install-seccomp
+          sudo -E PATH=$PATH script/setup/install-runc
+          sudo -E PATH=$PATH script/setup/install-cni $(grep containernetworking/plugins go.mod | awk '{print $2}')
+          # Install containerd
+          make bin/containerd GO_BUILD_FLAGS="-mod=vendor" BUILDTAGS="no_btrfs"
+          sudo -E PATH=$PATH install bin/containerd /usr/local/bin/
+        working-directory: src/github.com/containerd/containerd
+
+      - name: Integration
+        env:
+          GOPROXY: direct
+          TEST_RUNTIME: "io.containerd.runc.v2"
+        run: sudo -E PATH=$PATH TESTFLAGS_PARALLEL=1 make integration TESTFLAGS_RACE=-race EXTRA_TESTFLAGS=-no-criu
+        working-directory: src/github.com/containerd/containerd
