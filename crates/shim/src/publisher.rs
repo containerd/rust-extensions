@@ -21,8 +21,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use containerd_shim_protos as client;
 
 use client::protobuf;
-use client::shim::{empty, events};
+use client::shim::events;
 use client::ttrpc::{self, context::Context};
+use client::types::empty;
 use client::{Client, Events, EventsClient};
 
 use protobuf::well_known_types::{Any, Timestamp};

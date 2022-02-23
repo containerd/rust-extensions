@@ -66,9 +66,9 @@ pub mod error;
 /// Generated request/response structures.
 pub mod api {
     pub use super::protos::api::Status;
-    pub use super::protos::shim::empty::Empty;
     pub use super::protos::shim::oci::Options;
     pub use super::protos::shim::shim::*;
+    pub use super::protos::types::empty::Empty;
 }
 mod args;
 mod logger;
