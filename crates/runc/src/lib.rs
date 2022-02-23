@@ -34,7 +34,10 @@
  */
 
 //! A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
+#![allow(unused)]
+
 use std::fmt::{self, Display};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 
@@ -207,9 +210,16 @@ impl Runc {
 
     /// Execute an additional process inside the container
     pub fn exec(&self, id: &str, spec: &Process, opts: Option<&ExecOpts>) -> Result<()> {
-        let filename = utils::temp_filename_in_runtime_dir()?;
-        let spec_json = serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
-        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
+        let (mut temp_file, filename) = utils::make_temp_file_in_runtime_dir()?;
+        {
+            let f = temp_file.as_file_mut();
+            let spec_json =
+                serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
+            f.write(spec_json.as_bytes())
+                .map_err(Error::SpecFileCreationFailed)?;
+            f.flush().map_err(Error::SpecFileCreationFailed)?;
+        }
+
         let mut args = vec!["exec".to_string(), "--process".to_string(), filename];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);

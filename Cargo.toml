@@ -8,3 +8,8 @@ members = [
     "crates/runc",
     "crates/runc-shim",
 ]
+
+[profile.release]
+# Keep binary as small as possible
+# https://doc.rust-lang.org/book/ch09-01-unrecoverable-errors-with-panic.html
+panic = 'abort'

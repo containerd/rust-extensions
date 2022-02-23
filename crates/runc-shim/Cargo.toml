@@ -25,7 +25,3 @@ crossbeam = "0.8.1"
 containerd-shim = { path = "../shim", version = "0.2.0" }
 runc = { path = "../runc", version = "0.1.0" }
 
-[profile.release]
-# Keep binary as small as possible
-# https://doc.rust-lang.org/book/ch09-01-unrecoverable-errors-with-panic.html
-panic = 'abort'
