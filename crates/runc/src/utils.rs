@@ -95,6 +95,7 @@ pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error>
     let file_name = temp_filename_in_runtime_dir()?;
     let temp_file = Builder::new()
         .prefix(&file_name)
+        .rand_bytes(0)
         .tempfile()
         .map_err(Error::SpecFileCreationFailed)?;
     Ok((temp_file, file_name))
