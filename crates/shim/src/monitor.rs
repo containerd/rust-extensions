@@ -64,8 +64,8 @@ pub(crate) struct Subscriber {
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Topic {
-    Pid(i32),
-    Exec(String, String),
+    Pid,
+    Exec,
     All,
 }
 
@@ -125,17 +125,15 @@ impl Monitor {
     }
 
     pub fn notify_by_pid(&self, pid: i32, exit_code: i32) -> Result<()> {
-        let topic = Topic::Pid(pid);
         let subject = Subject::Pid(pid);
-        self.notify_topic(&topic, &subject, exit_code);
+        self.notify_topic(&Topic::Pid, &subject, exit_code);
         self.notify_topic(&Topic::All, &subject, exit_code);
         Ok(())
     }
 
     pub fn notify_by_exec(&self, cid: &str, exec_id: &str, exit_code: i32) -> Result<()> {
-        let topic = Topic::Exec(cid.into(), exec_id.into());
         let subject = Subject::Exec(cid.into(), exec_id.into());
-        self.notify_topic(&topic, &subject, exit_code);
+        self.notify_topic(&Topic::Exec, &subject, exit_code);
         self.notify_topic(&Topic::All, &subject, exit_code);
         Ok(())
     }
@@ -164,12 +162,6 @@ impl Monitor {
                     v.remove(i);
                 })
             });
-            let subs = self.topic_subs.get(&s.topic);
-            if let Some(v) = subs {
-                if v.is_empty() {
-                    self.topic_subs.remove(&s.topic);
-                }
-            }
         }
         Ok(())
     }
