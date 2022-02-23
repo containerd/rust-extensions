@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: cargo check --examples --tests --all-targets
+      - run: cargo check --examples --tests --all-targets --all-features
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings

@@ -78,6 +78,9 @@ mod publisher;
 mod reap;
 pub mod util;
 
+#[cfg(feature = "async")]
+pub mod asynchronous;
+
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
 
 /// Config of shim binary options provided by shim implementations

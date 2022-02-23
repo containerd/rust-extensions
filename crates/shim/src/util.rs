@@ -17,11 +17,14 @@
 use oci_spec::runtime::Spec;
 use std::fs::{rename, File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::warn;
 
+use containerd_shim_protos::protobuf::well_known_types::Any;
+use containerd_shim_protos::protobuf::Message;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Options;
@@ -165,6 +168,59 @@ pub fn get_timestamp() -> Result<Timestamp> {
     timestamp.set_seconds(now.as_secs() as i64);
     timestamp.set_nanos(now.subsec_nanos() as i32);
     Ok(timestamp)
+}
+
+pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
+    use nix::sys::socket::*;
+    use nix::unistd::close;
+
+    let unix_addr = UnixAddr::new(address.as_ref())?;
+    let sock_addr = SockAddr::Unix(unix_addr);
+
+    // SOCK_CLOEXEC flag is Linux specific
+    #[cfg(target_os = "linux")]
+    const SOCK_CLOEXEC: SockFlag = SockFlag::SOCK_CLOEXEC;
+
+    #[cfg(not(target_os = "linux"))]
+    const SOCK_CLOEXEC: SockFlag = SockFlag::empty();
+
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?;
+
+    // MacOS doesn't support atomic creation of a socket descriptor with `SOCK_CLOEXEC` flag,
+    // so there is a chance of leak if fork + exec happens in between of these calls.
+    #[cfg(not(target_os = "linux"))]
+    {
+        use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+        fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(|e| {
+            let _ = close(fd);
+            e
+        })?;
+    }
+
+    connect(fd, &sock_addr).map_err(|e| {
+        let _ = close(fd);
+        e
+    })?;
+
+    Ok(fd)
+}
+
+pub fn timestamp() -> Result<Timestamp> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+
+    let mut ts = Timestamp::default();
+    ts.set_seconds(now.as_secs() as _);
+    ts.set_nanos(now.subsec_nanos() as _);
+
+    Ok(ts)
+}
+
+pub fn any(event: impl Message) -> Result<Any> {
+    let data = event.write_to_bytes()?;
+    let mut any = Any::new();
+    any.merge_from_bytes(&data)?;
+
+    Ok(any)
 }
 
 pub trait IntoOption
