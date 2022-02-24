@@ -334,7 +334,7 @@ impl Runc {
     // As monitor instance never have to be mutable (it has only &self methods), declare it as const.
     const MONITOR: DefaultMonitor = DefaultMonitor::new();
 
-    pub async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
+    async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
         let ExecuteResult {
             exit,
             status,
@@ -370,7 +370,12 @@ impl Runc {
     }
 
     /// Create a new container
-    pub async fn create<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<()>
+    pub async fn create<P>(
+        &self,
+        id: &str,
+        bundle: P,
+        opts: Option<&CreateOpts>,
+    ) -> Result<Response>
     where
         P: AsRef<Path>,
     {
@@ -385,23 +390,14 @@ impl Runc {
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
         match opts {
-            Some(CreateOpts { io: Some(_io), .. }) => {
-                _io.set(&mut cmd).map_err(Error::UnavailableIO)?;
-                let result = execute(&Self::MONITOR, cmd).await?;
-                _io.close_after_start();
-                if !result.status.success() {
-                    return Err(Error::CommandFailed {
-                        status: result.status,
-                        stdout: result.stdout,
-                        stderr: result.stderr,
-                    });
-                }
+            Some(CreateOpts { io: Some(io), .. }) => {
+                io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+                let res = self.launch(cmd, true).await?;
+                io.close_after_start();
+                Ok(res)
             }
-            _ => {
-                let _ = self.launch(cmd, true).await?;
-            }
+            _ => self.launch(cmd, true).await,
         }
-        Ok(())
     }
 
     /// Delete a container
@@ -582,10 +578,13 @@ mod tests {
     fn test_create() {
         let opts = CreateOpts::new();
         let ok_runc = ok_client();
-        ok_runc
+        let response = ok_runc
             .create("fake-id", "fake-bundle", Some(&opts))
             .expect("true failed.");
-        eprintln!("ok_runc succeeded.");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(response.output.is_empty());
+
         let fail_runc = fail_client();
         match fail_runc.create("fake-id", "fake-bundle", Some(&opts)) {
             Ok(_) => panic!("fail_runc returned exit status 0."),
@@ -709,11 +708,13 @@ mod tests {
         let opts = CreateOpts::new();
         let ok_runc = ok_client();
         let ok_task = tokio::spawn(async move {
-            ok_runc
+            let response = ok_runc
                 .create("fake-id", "fake-bundle", Some(&opts))
                 .await
                 .expect("true failed.");
-            eprintln!("ok_runc succeeded.");
+            assert_ne!(response.pid, 0);
+            assert!(response.status.success());
+            assert!(response.output.is_empty());
         });
 
         let opts = CreateOpts::new();
