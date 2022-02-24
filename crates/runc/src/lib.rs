@@ -33,9 +33,8 @@
  * limitations under the License.
  */
 
-//! A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
-#![allow(unused)]
-
+//! A crate for consuming the runc binary in your Rust applications, similar to
+//! [go-runc](https://github.com/containerd/go-runc) for Go.
 use std::fmt::{self, Display};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -247,6 +246,7 @@ impl Runc {
         let args = ["list".to_string(), "--format-json".to_string()];
         let res = self.launch(self.command(&args)?, true)?;
         let output = res.output.trim();
+
         // Ugly hack to work around golang
         Ok(if output == "null" {
             Vec::new()
@@ -468,6 +468,7 @@ impl Runc {
         let args = ["list".to_string(), "--format-json".to_string()];
         let res = self.launch(self.command(&args)?, true).await?;
         let output = res.output.trim();
+
         // Ugly hack to work around golang
         Ok(if output == "null" {
             Vec::new()
@@ -507,6 +508,7 @@ impl Runc {
         ];
         let res = self.launch(self.command(&args)?, true).await?;
         let output = res.output.trim();
+
         // Ugly hack to work around golang
         Ok(if output == "null" {
             Vec::new()
@@ -580,7 +582,6 @@ impl Runc {
         Ok(())
     }
 }
-//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 #[cfg(test)]
 #[cfg(all(target_os = "linux", not(feature = "async")))]
@@ -648,10 +649,13 @@ mod tests {
     fn test_run() {
         let opts = CreateOpts::new();
         let ok_runc = ok_client();
-        ok_runc
+        let response = ok_runc
             .run("fake-id", "fake-bundle", Some(&opts))
             .expect("true failed.");
-        eprintln!("ok_runc succeeded.");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(response.output.is_empty());
+
         let fail_runc = fail_client();
         match fail_runc.run("fake-id", "fake-bundle", Some(&opts)) {
             Ok(_) => panic!("fail_runc returned exit status 0."),

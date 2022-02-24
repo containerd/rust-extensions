@@ -89,6 +89,7 @@ impl Pipe {
         Ok(Self { rd, wr })
     }
 }
+
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
