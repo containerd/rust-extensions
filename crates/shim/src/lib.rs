@@ -113,20 +113,13 @@ pub struct StartOpts {
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
 ///
 /// Shim implementations are responsible for calling [`Self::signal`].
-#[derive(Clone)]
-pub struct ExitSignal(Arc<(Mutex<bool>, Condvar)>);
-
-impl Default for ExitSignal {
-    #[allow(clippy::mutex_atomic)]
-    fn default() -> Self {
-        ExitSignal(Arc::new((Mutex::new(false), Condvar::new())))
-    }
-}
+#[derive(Default)]
+pub struct ExitSignal(Mutex<bool>, Condvar);
 
 impl ExitSignal {
     /// Set exit signal to shutdown shim server.
     pub fn signal(&self) {
-        let (lock, cvar) = &*self.0;
+        let (lock, cvar) = (&self.0, &self.1);
         let mut exit = lock.lock().unwrap();
         *exit = true;
         cvar.notify_all();
@@ -134,7 +127,7 @@ impl ExitSignal {
 
     /// Wait for the exit signal to be set.
     pub fn wait(&self) {
-        let (lock, cvar) = &*self.0;
+        let (lock, cvar) = (&self.0, &self.1);
         let mut started = lock.lock().unwrap();
         while !*started {
             started = cvar.wait(started).unwrap();
@@ -169,6 +162,7 @@ pub trait Shim {
     ///
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
+    ///
     /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
     fn start_shim(&mut self, opts: StartOpts) -> Result<String>;
 
@@ -178,8 +172,8 @@ pub trait Shim {
     /// Wait for the shim to exit.
     fn wait(&mut self);
 
-    /// Get the task service object.
-    fn get_task_service(&self) -> Self::T;
+    /// Create the task service object.
+    fn create_task_service(&self) -> Self::T;
 }
 
 /// Shim entry point that must be invoked from `main`.
@@ -256,7 +250,7 @@ where
                 logger::init(flags.debug)?;
             }
 
-            let task = shim.get_task_service();
+            let task = shim.create_task_service();
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;
@@ -463,9 +457,9 @@ mod tests {
 
     #[test]
     fn exit_signal() {
-        let signal = ExitSignal::default();
+        let signal = Arc::new(ExitSignal::default());
 
-        let cloned = signal.clone();
+        let cloned = Arc::clone(&signal);
         let handle = thread::spawn(move || {
             cloned.signal();
         });

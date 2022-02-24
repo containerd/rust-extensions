@@ -42,9 +42,9 @@ const GROUP_LABELS: [&str; 2] = [
 ];
 
 pub(crate) struct Service {
-    exit: ExitSignal,
+    exit: Arc<ExitSignal>,
     id: String,
-    task: ShimTask<RuncFactory, RuncContainer>,
+    namespace: String,
 }
 
 impl Shim for Service {
@@ -57,21 +57,11 @@ impl Shim for Service {
         _publisher: RemotePublisher,
         _config: &mut Config,
     ) -> Self {
-        let exit = ExitSignal::default();
-        let exit_clone = exit.clone();
-        let shutdown_cb = Box::new(move || exit_clone.signal());
-
-        let mut task = ShimTask::new(namespace);
-        task.shutdown_cb = Arc::new(Mutex::new(Some(shutdown_cb)));
-
         let mut service = Service {
-            exit,
+            exit: Arc::new(ExitSignal::default()),
             id: id.to_string(),
-            task,
+            namespace: namespace.to_string(),
         };
-
-        let s = monitor_subscribe(Topic::All).expect("monitor subscribe failed");
-        service.process_exits(s);
 
         // TODO: add publisher
 
@@ -100,7 +90,7 @@ impl Shim for Service {
 
     #[cfg(not(feature = "async"))]
     fn delete_shim(&mut self) -> Result<DeleteResponse> {
-        let namespace = self.task.namespace.as_str();
+        let namespace = self.namespace.as_str();
         let bundle_buf = current_dir().map_err(io_error!(e, "get current dir"))?;
         let bundle = bundle_buf.as_path().to_str().unwrap();
         let opts = read_options(bundle)?;
@@ -146,14 +136,19 @@ impl Shim for Service {
         self.exit.wait();
     }
 
-    fn get_task_service(&self) -> Self::T {
-        self.task.clone()
+    fn create_task_service(&self) -> Self::T {
+        let task = ShimTask::new(&self.namespace, Arc::clone(&self.exit));
+
+        let s = monitor_subscribe(Topic::All).expect("monitor subscribe failed");
+        self.process_exits(s, &task);
+
+        task
     }
 }
 
 impl Service {
-    pub fn process_exits(&mut self, s: Subscription) {
-        let containers = self.task.containers.clone();
+    pub fn process_exits(&self, s: Subscription, task: &ShimTask<RuncFactory, RuncContainer>) {
+        let containers = task.containers.clone();
         std::thread::spawn(move || {
             for e in s.rx.iter() {
                 if let Subject::Pid(pid) = e.subject {

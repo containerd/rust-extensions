@@ -15,55 +15,42 @@
 */
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use log::{debug, info};
 
 use containerd_shim as shim;
 
-use shim::api::*;
 use shim::protos::protobuf::well_known_types::Timestamp;
 use shim::protos::protobuf::SingularPtrField;
 use shim::util::IntoOption;
 use shim::Error;
 use shim::Task;
+use shim::{api::*, ExitSignal};
 use shim::{TtrpcContext, TtrpcResult};
 
 use crate::container::{Container, ContainerFactory};
 
-type ShutdownType = Box<dyn FnOnce() + Send + Sync>;
-
 pub struct ShimTask<F, C> {
-    pub factory: F,
     pub containers: Arc<Mutex<HashMap<String, C>>>,
-    pub namespace: String,
-    pub shutdown_cb: Arc<Mutex<Option<ShutdownType>>>,
+    factory: F,
+    namespace: String,
+    exit: Arc<ExitSignal>,
+    /// Prevent multiple shutdown
+    shutdown: Once,
 }
 
 impl<F, C> ShimTask<F, C>
 where
     F: Default,
 {
-    pub fn new(ns: &str) -> Self {
+    pub fn new(ns: &str, exit: Arc<ExitSignal>) -> Self {
         Self {
             factory: Default::default(),
             containers: Arc::new(Mutex::new(Default::default())),
             namespace: ns.to_string(),
-            shutdown_cb: Arc::new(Mutex::new(None)),
-        }
-    }
-}
-
-impl<F, C> Clone for ShimTask<F, C>
-where
-    F: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            factory: self.factory.clone(),
-            containers: self.containers.clone(),
-            namespace: self.namespace.clone(),
-            shutdown_cb: self.shutdown_cb.clone(),
+            exit,
+            shutdown: Once::new(),
         }
     }
 }
@@ -230,10 +217,11 @@ where
         if containers.len() > 0 {
             return Ok(Empty::new());
         }
-        let mut shutdown = self.shutdown_cb.lock().unwrap();
-        if let Some(shutdown) = shutdown.take() {
-            shutdown();
-        }
+
+        self.shutdown.call_once(|| {
+            self.exit.signal();
+        });
+
         Ok(Empty::default())
     }
 }
