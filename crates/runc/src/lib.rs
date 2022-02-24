@@ -36,9 +36,10 @@
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.
 use std::fmt::{self, Display};
+#[cfg(not(feature = "async"))]
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
+use std::process::{ExitStatus, Stdio};
 
 use oci_spec::runtime::{Linux, Process};
 
@@ -118,14 +119,10 @@ impl Runc {
         let args = [&self.args, args].concat();
         let mut cmd = Command::new(&self.command);
 
-        #[cfg(feature = "async")]
-        {
-            use std::process::Stdio;
-
-            cmd.stdin(Stdio::null())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit());
-        }
+        // Default to inherited stdio, and they may be override by command options.
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
 
         // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
         cmd.args(&args).env_remove("NOTIFY_SOCKET");
@@ -586,7 +583,9 @@ impl Runc {
 #[cfg(test)]
 #[cfg(all(target_os = "linux", not(feature = "async")))]
 mod tests {
+    use super::io::PipedStdIo;
     use super::*;
+    use std::sync::Arc;
 
     fn ok_client() -> Runc {
         GlobalOpts::new()
@@ -598,6 +597,13 @@ mod tests {
     fn fail_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/false")
+            .build()
+            .expect("unable to create runc instance")
+    }
+
+    fn echo_client() -> Runc {
+        GlobalOpts::new()
+            .command("/bin/echo")
             .build()
             .expect("unable to create runc instance")
     }
@@ -683,6 +689,7 @@ mod tests {
             .exec("fake-id", &proc, Some(&opts))
             .expect("true failed.");
         eprintln!("ok_runc succeeded.");
+
         let fail_runc = fail_client();
         match fail_runc.exec("fake-id", &proc, Some(&opts)) {
             Ok(_) => panic!("fail_runc returned exit status 0."),
@@ -709,6 +716,7 @@ mod tests {
             .delete("fake-id", Some(&opts))
             .expect("true failed.");
         eprintln!("ok_runc succeeded.");
+
         let fail_runc = fail_client();
         match fail_runc.delete("fake-id", Some(&opts)) {
             Ok(_) => panic!("fail_runc returned exit status 0."),
@@ -726,13 +734,37 @@ mod tests {
             Err(e) => panic!("unexpected error from fail_runc: {:?}", e),
         }
     }
+
+    #[test]
+    fn test_output() {
+        let opts = CreateOpts::new();
+        let echo_runc = echo_client();
+        let response = echo_runc
+            .create("fake-id", "fake-bundle", Some(&opts))
+            .expect("echo failed.");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(response.output.is_empty());
+
+        let mut opts = CreateOpts::new();
+        opts.io = Some(Arc::new(PipedStdIo::new().unwrap()));
+        let echo_runc = echo_client();
+        let response = echo_runc
+            .create("fake-id", "fake-bundle", Some(&opts))
+            .expect("echo failed.");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(!response.output.is_empty());
+    }
 }
 
 /// Tokio tests
 #[cfg(test)]
 #[cfg(all(target_os = "linux", feature = "async"))]
 mod tests {
+    use super::io::PipedStdIo;
     use super::*;
+    use std::sync::Arc;
 
     fn ok_client() -> Runc {
         GlobalOpts::new()
@@ -744,6 +776,13 @@ mod tests {
     fn fail_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/false")
+            .build()
+            .expect("unable to create runc instance")
+    }
+
+    fn echo_client() -> Runc {
+        GlobalOpts::new()
+            .command("/bin/echo")
             .build()
             .expect("unable to create runc instance")
     }
@@ -891,5 +930,28 @@ mod tests {
         })
         .await
         .expect("tokio spawn falied.");
+    }
+
+    #[tokio::test]
+    async fn test_async_output() {
+        let opts = CreateOpts::new();
+        let echo_runc = echo_client();
+        let response = echo_runc
+            .create("fake-id", "fake-bundle", Some(&opts))
+            .await
+            .expect("echo failed:");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(response.output.is_empty());
+
+        let mut opts = CreateOpts::new();
+        opts.io = Some(Arc::new(PipedStdIo::new().unwrap()));
+        let response = echo_runc
+            .create("fake-id", "fake-bundle", Some(&opts))
+            .await
+            .expect("echo failed:");
+        assert_ne!(response.pid, 0);
+        assert!(response.status.success());
+        assert!(!response.output.is_empty());
     }
 }
