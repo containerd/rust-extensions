@@ -146,8 +146,9 @@ impl Runc {
         let pid = child.id();
         let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
         let status = result.status;
-        let stdout = String::from_utf8(result.stdout).unwrap();
-        let stderr = String::from_utf8(result.stderr).unwrap();
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+
         if status.success() {
             if combined_output {
                 Ok(Response {
