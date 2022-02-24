@@ -57,15 +57,13 @@ impl Shim for Service {
         _publisher: RemotePublisher,
         _config: &mut Config,
     ) -> Self {
-        let mut service = Service {
+        // TODO: add publisher
+
+        Service {
             exit: Arc::new(ExitSignal::default()),
             id: id.to_string(),
             namespace: namespace.to_string(),
-        };
-
-        // TODO: add publisher
-
-        service
+        }
     }
 
     fn start_shim(&mut self, opts: StartOpts) -> Result<String> {

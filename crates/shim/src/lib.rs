@@ -113,9 +113,11 @@ pub struct StartOpts {
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
 ///
 /// Shim implementations are responsible for calling [`Self::signal`].
+#[allow(clippy::mutex_atomic)] // Condvar expected to be used with Mutex, not AtomicBool.
 #[derive(Default)]
 pub struct ExitSignal(Mutex<bool>, Condvar);
 
+#[allow(clippy::mutex_atomic)]
 impl ExitSignal {
     /// Set exit signal to shutdown shim server.
     pub fn signal(&self) {
