@@ -137,10 +137,6 @@ impl Runc {
 
 #[cfg(not(feature = "async"))]
 impl Runc {
-    pub fn checkpoint(&self) -> Result<()> {
-        Err(Error::Unimplemented("checkpoint".to_string()))
-    }
-
     fn launch(&self, mut cmd: std::process::Command, combined_output: bool) -> Result<Response> {
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
         let pid = child.id();
@@ -266,15 +262,19 @@ impl Runc {
         Ok(())
     }
 
-    pub fn restore(&self) -> Result<()> {
-        Err(Error::Unimplemented("restore".to_string()))
-    }
-
     /// Resume a container
     pub fn resume(&self, id: &str) -> Result<()> {
-        let args = ["pause".to_string(), id.to_string()];
+        let args = ["resume".to_string(), id.to_string()];
         let _ = self.launch(self.command(&args)?, true)?;
         Ok(())
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        Err(Error::Unimplemented("checkpoint".to_string()))
+    }
+
+    pub fn restore(&self) -> Result<()> {
+        Err(Error::Unimplemented("restore".to_string()))
     }
 
     /// Run the create, start, delete lifecycle of the container and return its exit status
@@ -282,17 +282,20 @@ impl Runc {
     where
         P: AsRef<Path>,
     {
-        let mut args = vec!["run".to_string(), "--bundle".to_string()];
+        let mut args = vec![
+            "run".to_string(),
+            "--bundle".to_string(),
+            utils::abs_string(bundle)?,
+        ];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);
         }
-        args.push(utils::abs_string(bundle)?);
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
-        if let Some(CreateOpts { io: Some(_io), .. }) = opts {
-            _io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
+        if let Some(CreateOpts { io: Some(io), .. }) = opts {
+            io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
         };
-        self.launch(self.command(&args)?, true)
+        self.launch(cmd, true)
     }
 
     /// Start an already created container
@@ -363,10 +366,6 @@ impl Runc {
                 stderr,
             })
         }
-    }
-
-    pub async fn checkpoint(&self) -> Result<()> {
-        Err(Error::Unimplemented("checkpoint".to_string()))
     }
 
     /// Create a new container
@@ -453,6 +452,21 @@ impl Runc {
         Ok(())
     }
 
+    /// Resume a container
+    pub async fn resume(&self, id: &str) -> Result<()> {
+        let args = ["resume".to_string(), id.to_string()];
+        let _ = self.launch(self.command(&args)?, true).await?;
+        Ok(())
+    }
+
+    pub async fn checkpoint(&self) -> Result<()> {
+        Err(Error::Unimplemented("checkpoint".to_string()))
+    }
+
+    pub async fn restore(&self) -> Result<()> {
+        Err(Error::Unimplemented("restore".to_string()))
+    }
+
     /// List all the processes inside the container, returning their pids
     pub async fn ps(&self, id: &str) -> Result<Vec<usize>> {
         let args = [
@@ -470,29 +484,25 @@ impl Runc {
         })
     }
 
-    pub async fn restore(&self) -> Result<()> {
-        Err(Error::Unimplemented("restore".to_string()))
-    }
-
-    /// Resume a container
-    pub async fn resume(&self, id: &str) -> Result<()> {
-        let args = ["pause".to_string(), id.to_string()];
-        let _ = self.launch(self.command(&args)?, true).await?;
-        Ok(())
-    }
-
     /// Run the create, start, delete lifecycle of the container and return its exit status
     pub async fn run<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<()>
     where
         P: AsRef<Path>,
     {
-        let mut args = vec!["run".to_string(), "--bundle".to_string()];
+        let mut args = vec![
+            "run".to_string(),
+            "--bundle".to_string(),
+            utils::abs_string(bundle)?,
+        ];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);
         }
-        args.push(utils::abs_string(bundle)?);
         args.push(id.to_string());
-        let _ = self.launch(self.command(&args)?, true).await?;
+        let mut cmd = self.command(&args)?;
+        if let Some(CreateOpts { io: Some(io), .. }) = opts {
+            io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
+        };
+        let _ = self.launch(cmd, true).await?;
         Ok(())
     }
 
