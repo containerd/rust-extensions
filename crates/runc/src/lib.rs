@@ -277,6 +277,24 @@ impl Runc {
         Err(Error::Unimplemented("restore".to_string()))
     }
 
+    /// List all the processes inside the container, returning their pids
+    pub fn ps(&self, id: &str) -> Result<Vec<usize>> {
+        let args = [
+            "ps".to_string(),
+            "--format-json".to_string(),
+            id.to_string(),
+        ];
+        let res = self.launch(self.command(&args)?, false)?;
+        let output = res.output.trim();
+
+        // Ugly hack to work around golang
+        Ok(if output == "null" {
+            Vec::new()
+        } else {
+            serde_json::from_str(output).map_err(Error::JsonDeserializationFailed)?
+        })
+    }
+
     /// Run the create, start, delete lifecycle of the container and return its exit status
     pub fn run<P>(&self, id: &str, bundle: P, opts: Option<&CreateOpts>) -> Result<Response>
     where
@@ -309,6 +327,19 @@ impl Runc {
         let args = ["state".to_string(), id.to_string()];
         let res = self.launch(self.command(&args)?, true)?;
         serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
+    }
+
+    /// Return the latest statistics for a container
+    pub fn stats(&self, id: &str) -> Result<events::Stats> {
+        let args = vec!["events".to_string(), "--stats".to_string(), id.to_string()];
+        let res = self.launch(self.command(&args)?, true)?;
+        let event: events::Event =
+            serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)?;
+        if let Some(stats) = event.stats {
+            Ok(stats)
+        } else {
+            Err(Error::MissingContainerStats)
+        }
     }
 
     /// Update a container with the provided resource spec
