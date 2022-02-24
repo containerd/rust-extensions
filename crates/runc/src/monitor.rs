@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use std::process::{ExitStatus, Output, Stdio};
+use std::process::{ExitStatus, Output};
 
 use async_trait::async_trait;
 use log::error;
@@ -100,17 +100,13 @@ pub struct ExecuteResult {
 /// Execute a `Command` and collect exit status, output and error messages.
 ///
 /// To collect output and error messages, pipes must be used for Command's stdout and stderr.
-/// This method will create pipes and overwrite stdout/stderr of `cmd`.
 ///
 /// Note: invalid UTF-8 characters in output and error messages will be replaced with the `�` char.
 pub async fn execute<T: ProcessMonitor + Send + Sync>(
     monitor: &T,
-    mut cmd: Command,
+    cmd: Command,
 ) -> Result<ExecuteResult, Error> {
     let (tx, rx) = channel::<Exit>();
-
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
     let start = monitor.start(cmd, tx);
     let wait = monitor.wait(rx);
     let (
@@ -142,7 +138,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_wait_without_output() {
         let monitor = DefaultMonitor::new();
-        let cmd = Command::new("ls");
+        let cmd = Command::new("/bin/ls");
         let (tx, rx) = channel();
 
         let output = monitor.start(cmd, tx).await.unwrap();
@@ -155,7 +151,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_wait_with_output() {
         let monitor = DefaultMonitor::new();
-        let mut cmd = Command::new("ls");
+        let mut cmd = Command::new("/bin/ls");
         cmd.stdout(Stdio::piped());
         let (tx, rx) = channel();
 
@@ -168,7 +164,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute() {
-        let cmd = Command::new("ls");
+        let mut cmd = Command::new("/bin/ls");
+        cmd.stdout(Stdio::piped());
         let monitor = DefaultMonitor::new();
         let result = execute(&monitor, cmd).await.unwrap();
 

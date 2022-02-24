@@ -18,6 +18,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Result, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::process::Stdio;
 use std::sync::Mutex;
 
 use log::debug;
@@ -69,6 +70,7 @@ impl Default for IOOption {
 
 /// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
 ///
+/// With this Io driver, methods of [crate::Runc] may capture the output/error messages.
 /// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
@@ -89,6 +91,7 @@ impl Pipe {
         Ok(Self { rd, wr })
     }
 }
+
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
@@ -182,7 +185,9 @@ impl Io for PipedIo {
     }
 }
 
-// IO setup for /dev/null use with runc
+/// IO driver to direct output/error messages to /dev/null.
+///
+/// With this Io driver, all methods of [crate::Runc] can't capture the output/error messages.
 #[derive(Debug)]
 pub struct NullIo {
     dev_null: Mutex<Option<File>>,
@@ -213,6 +218,52 @@ impl Io for NullIo {
         let mut m = self.dev_null.lock().unwrap();
         let _ = m.take();
     }
+}
+
+/// Io driver based on Stdio::inherited(), to direct outputs/errors to stdio.
+///
+/// With this Io driver, all methods of [crate::Runc] can't capture the output/error messages.
+#[derive(Debug)]
+pub struct InheritedStdIo {}
+
+impl InheritedStdIo {
+    pub fn new() -> std::io::Result<Self> {
+        Ok(InheritedStdIo {})
+    }
+}
+
+impl Io for InheritedStdIo {
+    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
+/// Io driver based on Stdio::piped(), to capture outputs/errors from runC.
+///
+/// With this Io driver, methods of [crate::Runc] may capture the output/error messages.
+#[derive(Debug)]
+pub struct PipedStdIo {}
+
+impl PipedStdIo {
+    pub fn new() -> std::io::Result<Self> {
+        Ok(PipedStdIo {})
+    }
+}
+
+impl Io for PipedStdIo {
+    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
 }
 
 /// FIFO for the scenario that set FIFO for command Io.
