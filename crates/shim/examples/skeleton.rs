@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+use std::sync::Arc;
+
 use containerd_shim as shim;
 
 use log::info;
@@ -21,7 +23,7 @@ use shim::{api, Config, DeleteResponse, ExitSignal, RemotePublisher, TtrpcContex
 
 #[derive(Clone)]
 struct Service {
-    exit: ExitSignal,
+    exit: Arc<ExitSignal>,
 }
 
 impl shim::Shim for Service {
@@ -35,7 +37,7 @@ impl shim::Shim for Service {
         _config: &mut Config,
     ) -> Self {
         Service {
-            exit: ExitSignal::default(),
+            exit: Arc::new(ExitSignal::default()),
         }
     }
 
@@ -53,7 +55,7 @@ impl shim::Shim for Service {
         self.exit.wait();
     }
 
-    fn get_task_service(&self) -> Self::T {
+    fn create_task_service(&self) -> Self::T {
         self.clone()
     }
 }
