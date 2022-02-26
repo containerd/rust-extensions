@@ -15,22 +15,27 @@
 */
 #![allow(unused)]
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use containerd_shim as shim;
 
+#[cfg(target_os = "linux")]
+use cgroups_rs::{cgroup, hierarchies, Cgroup, Subsystem};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
-use oci_spec::runtime::LinuxNamespaceType;
+use oci_spec::runtime::{Linux, LinuxNamespaceType, LinuxResources, Spec};
 use runc::console::{Console, ConsoleSocket};
 use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
 use runc::utils::new_temp_console_socket;
 use shim::api::*;
 use shim::error::{Error, Result};
+use shim::io_error;
 use shim::mount::mount_rootfs;
+use shim::protos::cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics};
 use shim::protos::protobuf::{well_known_types::Timestamp, CodedInputStream, Message};
 use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
 use shim::{debug, error, other, other_error};
@@ -322,6 +327,43 @@ impl Container for RuncContainer {
 
     fn pid(&self) -> i32 {
         self.common.init.pid()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn stats(&self) -> Result<Metrics> {
+        let mut metrics = Metrics::new();
+        // get container main process cgroup
+        let path = get_cgroups_relative_paths_by_pid(self.common.init.pid() as u32)?;
+        let cgroup = Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path);
+
+        // to make it easy, fill the necessary metrics only.
+        for sub_system in Cgroup::subsystems(&cgroup) {
+            match sub_system {
+                Subsystem::CpuAcct(cpuacct_ctr) => {
+                    let mut cpu_usage = CPUUsage::new();
+                    cpu_usage.set_total(cpuacct_ctr.cpuacct().usage);
+                    let mut cpu_stat = CPUStat::new();
+                    cpu_stat.set_usage(cpu_usage);
+                    metrics.set_cpu(cpu_stat);
+                }
+                Subsystem::Mem(mem_ctr) => {
+                    let mem = mem_ctr.memory_stat();
+                    let mut mem_entry = MemoryEntry::new();
+                    mem_entry.set_usage(mem.usage_in_bytes);
+                    let mut mem_stat = MemoryStat::new();
+                    mem_stat.set_usage(mem_entry);
+                    mem_stat.set_total_inactive_file(mem.stat.total_inactive_file);
+                    metrics.set_memory(mem_stat);
+                }
+                _ => {}
+            }
+        }
+        Ok(metrics)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn stats(&self) -> Result<Metrics> {
+        Err(Error::Unimplemented("stats".to_string()))
     }
 }
 
@@ -650,4 +692,23 @@ fn check_kill_error(emsg: String) -> Error {
     } else {
         other!(emsg, "unknown error after kill")
     }
+}
+
+#[cfg(target_os = "linux")]
+fn get_cgroups_relative_paths_by_pid(pid: u32) -> Result<HashMap<String, String>> {
+    let path = format!("/proc/{}/cgroup", pid);
+    let mut m = HashMap::new();
+    let content = std::fs::read_to_string(path).map_err(io_error!(e, "read process cgroup"))?;
+    for l in content.lines() {
+        let fl: Vec<&str> = l.split(':').collect();
+        if fl.len() != 3 {
+            continue;
+        }
+
+        let keys: Vec<&str> = fl[1].split(',').collect();
+        for key in &keys {
+            m.insert(key.to_string(), fl[2].to_string());
+        }
+    }
+    Ok(m)
 }
