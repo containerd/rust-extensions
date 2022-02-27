@@ -23,7 +23,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use containerd_shim as shim;
 
 #[cfg(target_os = "linux")]
-use cgroups_rs::{cgroup, hierarchies, Cgroup, Subsystem};
+use cgroups_rs::{cgroup, hierarchies, Cgroup, MaxValue, Subsystem};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
@@ -364,6 +364,104 @@ impl Container for RuncContainer {
     #[cfg(not(target_os = "linux"))]
     fn stats(&self) -> Result<Metrics> {
         Err(Error::Unimplemented("stats".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+        // get container main process cgroup
+        let path = get_cgroups_relative_paths_by_pid(self.common.init.pid() as u32)?;
+        let cgroup = Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path);
+
+        for sub_system in Cgroup::subsystems(&cgroup) {
+            match sub_system {
+                Subsystem::Pid(pid_ctr) => {
+                    // set maximum number of PIDs
+                    if let Some(pids) = resources.pids() {
+                        pid_ctr
+                            .set_pid_max(MaxValue::Value(pids.limit()))
+                            .map_err(other_error!(e, "set pid max"))?;
+                    }
+                }
+                Subsystem::Mem(mem_ctr) => {
+                    if let Some(memory) = resources.memory() {
+                        // set memory limit in bytes
+                        if let Some(limit) = memory.limit() {
+                            mem_ctr
+                                .set_limit(limit)
+                                .map_err(other_error!(e, "set mem limit"))?;
+                        }
+
+                        // set memory swap limit in bytes
+                        if let Some(swap) = memory.swap() {
+                            mem_ctr
+                                .set_memswap_limit(swap)
+                                .map_err(other_error!(e, "set memsw limit"))?;
+                        }
+                    }
+                }
+                Subsystem::CpuSet(cpuset_ctr) => {
+                    if let Some(cpu) = resources.cpu() {
+                        // set CPUs to use within the cpuset
+                        if let Some(cpus) = cpu.cpus() {
+                            cpuset_ctr
+                                .set_cpus(cpus)
+                                .map_err(other_error!(e, "set CPU sets"))?;
+                        }
+
+                        // set list of memory nodes in the cpuset
+                        if let Some(mems) = cpu.mems() {
+                            cpuset_ctr
+                                .set_mems(mems)
+                                .map_err(other_error!(e, "set CPU memes"))?;
+                        }
+                    }
+                }
+                Subsystem::Cpu(cpu_ctr) => {
+                    if let Some(cpu) = resources.cpu() {
+                        // set CPU shares
+                        if let Some(shares) = cpu.shares() {
+                            cpu_ctr
+                                .set_shares(shares)
+                                .map_err(other_error!(e, "set CPU share"))?;
+                        }
+
+                        // set CPU hardcap limit
+                        if let Some(quota) = cpu.quota() {
+                            cpu_ctr
+                                .set_cfs_quota(quota)
+                                .map_err(other_error!(e, "set CPU quota"))?;
+                        }
+
+                        // set CPU hardcap period
+                        if let Some(period) = cpu.period() {
+                            cpu_ctr
+                                .set_cfs_period(period)
+                                .map_err(other_error!(e, "set CPU period"))?;
+                        }
+                    }
+                }
+                Subsystem::HugeTlb(ht_ctr) => {
+                    // set the limit if "pagesize" hugetlb usage
+                    if let Some(hp_limits) = resources.hugepage_limits() {
+                        for limit in hp_limits {
+                            ht_ctr
+                                .set_limit_in_bytes(
+                                    limit.page_size().as_str(),
+                                    limit.limit() as u64,
+                                )
+                                .map_err(other_error!(e, "set huge page limit"))?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+        Err(Error::Unimplemented("update".to_string()))
     }
 }
 

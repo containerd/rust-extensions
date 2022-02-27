@@ -14,15 +14,15 @@
    limitations under the License.
 */
 
-#![allow(unused)]
-
 use std::env;
+use std::io::Write;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
 use nix::sys::stat::Mode;
 use nix::unistd::mkdir;
 use path_absolutize::*;
+use serde::Serialize;
 use tempfile::{Builder, NamedTempFile};
 use uuid::Uuid;
 
@@ -61,16 +61,32 @@ where
     path_to_string(abs_path_buf(path)?)
 }
 
+/// Fetches the value of environment variable "XDG_RUNTIME_DIR", returning a temporary directory
+/// if the variable isn't set
+fn xdg_runtime_dir() -> String {
+    env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| abs_string(env::temp_dir()).unwrap_or_else(|_| ".".to_string()))
+}
+
+/// Write the serialized 'value' to a temp file
+pub fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<(NamedTempFile, String), Error> {
+    let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
+    let mut temp_file = Builder::new()
+        .prefix(&filename)
+        .rand_bytes(0)
+        .tempfile()
+        .map_err(Error::SpecFileCreationFailed)?;
+    let f = temp_file.as_file_mut();
+    let spec_json = serde_json::to_string(value).map_err(Error::JsonDeserializationFailed)?;
+    f.write(spec_json.as_bytes())
+        .map_err(Error::SpecFileCreationFailed)?;
+    f.flush().map_err(Error::SpecFileCreationFailed)?;
+    Ok((temp_file, filename))
+}
+
+/// Crate and return a temp socket file
 pub fn new_temp_console_socket() -> Result<ConsoleSocket, Error> {
-    let dir = env::var_os("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| {
-            format!(
-                "{}/pty{}",
-                runtime_dir.to_string_lossy().parse::<String>().unwrap(),
-                Uuid::new_v4(),
-            )
-        })
-        .ok_or(Error::SpecFileNotFound)?;
+    let dir = format!("{}/pty{}", xdg_runtime_dir(), Uuid::new_v4(),);
     mkdir(Path::new(&dir), Mode::from_bits(0o711).unwrap()).map_err(Error::CreateDir)?;
     let file_name = Path::new(&dir).join("pty.sock");
     let listener = UnixListener::bind(file_name.as_path()).map_err(Error::UnixSocketBindFailed)?;
@@ -79,26 +95,6 @@ pub fn new_temp_console_socket() -> Result<ConsoleSocket, Error> {
         path: file_name,
         rmdir: true,
     })
-}
-
-pub fn temp_filename_in_runtime_dir() -> Result<String, Error> {
-    match env::var_os("XDG_RUNTIME_DIR") {
-        Some(runtime_dir) => {
-            let path = path_to_string(runtime_dir)?;
-            Ok(format!("{}/runc-process-{}", path, Uuid::new_v4()))
-        }
-        None => Err(Error::SpecFileNotFound),
-    }
-}
-
-pub fn make_temp_file_in_runtime_dir() -> Result<(NamedTempFile, String), Error> {
-    let file_name = temp_filename_in_runtime_dir()?;
-    let temp_file = Builder::new()
-        .prefix(&file_name)
-        .rand_bytes(0)
-        .tempfile()
-        .map_err(Error::SpecFileCreationFailed)?;
-    Ok((temp_file, file_name))
 }
 
 /// Resolve a binary path according to the `PATH` environment variable.

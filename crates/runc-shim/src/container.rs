@@ -26,6 +26,7 @@ use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
 use nix::sys::termios::tcgetattr;
 use nix::sys::uio::IoVec;
 use nix::{cmsg_space, ioctl_write_ptr_bad};
+use oci_spec::runtime::LinuxResources;
 use runc::console::{Console, ConsoleSocket};
 use time::OffsetDateTime;
 
@@ -82,6 +83,7 @@ pub trait Container {
     fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
     fn pid(&self) -> i32;
     fn stats(&self) -> Result<Metrics>;
+    fn update(&mut self, resources: &LinuxResources) -> Result<()>;
 }
 
 pub struct CommonContainer<T, E> {

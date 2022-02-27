@@ -18,8 +18,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Once};
 
 use log::{debug, info};
+use oci_spec::runtime::LinuxResources;
 
 use containerd_shim as shim;
+
 use shim::other_error;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{Message, SingularPtrField};
@@ -146,7 +148,11 @@ where
     }
 
     fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
-        info!("Exec request for {:?}", req);
+        info!(
+            "Exec request for id: {} exec_id: {}",
+            req.get_id(),
+            req.get_exec_id()
+        );
         let mut containers = self.containers.lock().unwrap();
         let container = containers.get_mut(req.get_id()).ok_or_else(|| {
             Error::Other(format!("can not find container by id {}", req.get_id()))
@@ -169,6 +175,19 @@ where
             req.height,
             req.width,
         )?;
+        Ok(Empty::new())
+    }
+
+    fn update(&self, _ctx: &TtrpcContext, req: UpdateTaskRequest) -> TtrpcResult<Empty> {
+        debug!("Update request for {:?}", req);
+        let mut containers = self.containers.lock().unwrap();
+        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
+            Error::Other(format!("can not find container by id {}", req.get_id()))
+        })?;
+
+        let resources: LinuxResources = serde_json::from_slice(req.get_resources().get_value())
+            .map_err(other_error!(e, "failed to parse spec"))?;
+        container.update(&resources)?;
         Ok(Empty::new())
     }
 
