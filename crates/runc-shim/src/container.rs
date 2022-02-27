@@ -26,6 +26,7 @@ use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
 use nix::sys::termios::tcgetattr;
 use nix::sys::uio::IoVec;
 use nix::{cmsg_space, ioctl_write_ptr_bad};
+use oci_spec::runtime::LinuxResources;
 use runc::console::{Console, ConsoleSocket};
 use time::OffsetDateTime;
 
@@ -33,6 +34,7 @@ use containerd_shim as shim;
 
 use shim::api::*;
 use shim::error::{Error, Result};
+use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::Timestamp;
 use shim::util::read_pid_from_file;
 use shim::{io_error, other, other_error};
@@ -80,6 +82,8 @@ pub trait Container {
     fn exec(&mut self, req: ExecProcessRequest) -> Result<()>;
     fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
     fn pid(&self) -> i32;
+    fn stats(&self) -> Result<Metrics>;
+    fn update(&mut self, resources: &LinuxResources) -> Result<()>;
 }
 
 pub struct CommonContainer<T, E> {

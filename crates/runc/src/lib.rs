@@ -36,12 +36,10 @@
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.
 use std::fmt::{self, Display};
-#[cfg(not(feature = "async"))]
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 
-use oci_spec::runtime::{Linux, Process};
+use oci_spec::runtime::{LinuxResources, Process};
 
 pub mod console;
 pub mod container;
@@ -58,6 +56,7 @@ use crate::error::Error;
 #[cfg(feature = "async")]
 use crate::monitor::{execute, DefaultMonitor, ExecuteResult};
 use crate::options::*;
+use crate::utils::write_value_to_temp_file;
 
 type Result<T> = std::result::Result<T, crate::error::Error>;
 
@@ -203,16 +202,7 @@ impl Runc {
 
     /// Execute an additional process inside the container
     pub fn exec(&self, id: &str, spec: &Process, opts: Option<&ExecOpts>) -> Result<()> {
-        let (mut temp_file, filename) = utils::make_temp_file_in_runtime_dir()?;
-        {
-            let f = temp_file.as_file_mut();
-            let spec_json =
-                serde_json::to_string(spec).map_err(Error::JsonDeserializationFailed)?;
-            f.write(spec_json.as_bytes())
-                .map_err(Error::SpecFileCreationFailed)?;
-            f.flush().map_err(Error::SpecFileCreationFailed)?;
-        }
-
+        let (_temp_file, filename) = write_value_to_temp_file(spec)?;
         let mut args = vec!["exec".to_string(), "--process".to_string(), filename];
         if let Some(opts) = opts {
             args.append(&mut opts.args()?);
@@ -340,11 +330,8 @@ impl Runc {
     }
 
     /// Update a container with the provided resource spec
-    pub fn update(&self, id: &str, resources: &Linux) -> Result<()> {
-        let filename = utils::temp_filename_in_runtime_dir()?;
-        let spec_json =
-            serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
-        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
+    pub fn update(&self, id: &str, resources: &LinuxResources) -> Result<()> {
+        let (_temp_file, filename) = write_value_to_temp_file(resources)?;
         let args = [
             "update".to_string(),
             "--resources".to_string(),
@@ -564,12 +551,9 @@ impl Runc {
     }
 
     /// Update a container with the provided resource spec
-    pub async fn update(&self, id: &str, resources: &Linux) -> Result<()> {
-        let filename = utils::temp_filename_in_runtime_dir()?;
-        let spec_json =
-            serde_json::to_string(resources).map_err(Error::JsonDeserializationFailed)?;
-        std::fs::write(&filename, spec_json).map_err(Error::SpecFileCreationFailed)?;
-        let args = vec![
+    pub async fn update(&self, id: &str, resources: &LinuxResources) -> Result<()> {
+        let (_temp_file, filename) = write_value_to_temp_file(resources)?;
+        let args = [
             "update".to_string(),
             "--resources".to_string(),
             filename,

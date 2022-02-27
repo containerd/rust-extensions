@@ -18,11 +18,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Once};
 
 use log::{debug, info};
+use oci_spec::runtime::LinuxResources;
 
 use containerd_shim as shim;
 
-use shim::protos::protobuf::well_known_types::Timestamp;
-use shim::protos::protobuf::SingularPtrField;
+use shim::other_error;
+use shim::protos::protobuf::well_known_types::{Any, Timestamp};
+use shim::protos::protobuf::{Message, SingularPtrField};
 use shim::util::IntoOption;
 use shim::Error;
 use shim::Task;
@@ -146,7 +148,11 @@ where
     }
 
     fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
-        info!("Exec request for {:?}", req);
+        info!(
+            "Exec request for id: {} exec_id: {}",
+            req.get_id(),
+            req.get_exec_id()
+        );
         let mut containers = self.containers.lock().unwrap();
         let container = containers.get_mut(req.get_id()).ok_or_else(|| {
             Error::Other(format!("can not find container by id {}", req.get_id()))
@@ -169,6 +175,19 @@ where
             req.height,
             req.width,
         )?;
+        Ok(Empty::new())
+    }
+
+    fn update(&self, _ctx: &TtrpcContext, req: UpdateTaskRequest) -> TtrpcResult<Empty> {
+        debug!("Update request for {:?}", req);
+        let mut containers = self.containers.lock().unwrap();
+        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
+            Error::Other(format!("can not find container by id {}", req.get_id()))
+        })?;
+
+        let resources: LinuxResources = serde_json::from_slice(req.get_resources().get_value())
+            .map_err(other_error!(e, "failed to parse spec"))?;
+        container.update(&resources)?;
         Ok(Empty::new())
     }
 
@@ -208,6 +227,28 @@ where
         }
         resp.exited_at = SingularPtrField::some(ts);
         info!("Wait request for {:?} returns {:?}", req, &resp);
+        Ok(resp)
+    }
+
+    fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
+        debug!("Stats request for {:?}", req);
+        let mut containers = self.containers.lock().unwrap();
+        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
+            Error::Other(format!("can not find container by id {}", req.get_id()))
+        })?;
+        let stats = container.stats()?;
+
+        // marshal to ttrpc Any
+        let mut any = Any::new();
+        let mut data = Vec::new();
+        stats
+            .write_to_vec(&mut data)
+            .map_err(other_error!(e, "write stats to vec"))?;
+        any.set_value(data);
+        any.set_type_url(stats.descriptor().full_name().to_string());
+
+        let mut resp = StatsResponse::new();
+        resp.set_stats(any);
         Ok(resp)
     }
 
