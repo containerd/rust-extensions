@@ -25,4 +25,4 @@ cargo build --release
 ```
 
 ## Minimum supported Rust version (MSRV)
-The minimum supported version of Rust is `1.52`
+The minimum supported version of Rust is `1.54`
