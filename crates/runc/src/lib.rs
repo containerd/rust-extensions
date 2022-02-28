@@ -118,10 +118,10 @@ impl Runc {
         let args = [&self.args, args].concat();
         let mut cmd = Command::new(&self.command);
 
-        // Default to inherited stdio, and they may be override by command options.
+        // Default to piped stdio, and they may be override by command options.
         cmd.stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         // NOTIFY_SOCKET introduces a special behavior in runc but should only be set if invoked from systemd
         cmd.args(&args).env_remove("NOTIFY_SOCKET");
@@ -141,19 +141,16 @@ impl Runc {
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
 
         if status.success() {
-            if combined_output {
-                Ok(Response {
-                    pid,
-                    status,
-                    output: stdout + stderr.as_str(),
-                })
+            let output = if combined_output {
+                stdout + stderr.as_str()
             } else {
-                Ok(Response {
-                    pid,
-                    status,
-                    output: stdout,
-                })
-            }
+                stdout
+            };
+            Ok(Response {
+                pid,
+                status,
+                output,
+            })
         } else {
             Err(Error::CommandFailed {
                 status,
@@ -209,10 +206,16 @@ impl Runc {
         }
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
-        if let Some(ExecOpts { io: Some(io), .. }) = opts {
-            io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
+        match opts {
+            Some(ExecOpts { io: Some(io), .. }) => {
+                io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
+                self.launch(cmd, true)?;
+                io.close_after_start();
+            }
+            _ => {
+                self.launch(cmd, true)?;
+            }
         }
-        let _ = self.launch(cmd, true)?;
         Ok(())
     }
 
@@ -361,19 +364,16 @@ impl Runc {
         } = execute(&Self::MONITOR, cmd).await?;
 
         if status.success() {
-            if combined_output {
-                Ok(Response {
-                    pid: exit.pid,
-                    status,
-                    output: stdout + stderr.as_str(),
-                })
+            let output = if combined_output {
+                stdout + stderr.as_str()
             } else {
-                Ok(Response {
-                    pid: exit.pid,
-                    status,
-                    output: stdout,
-                })
-            }
+                stdout
+            };
+            Ok(Response {
+                pid: exit.pid,
+                status,
+                output,
+            })
         } else {
             Err(Error::CommandFailed {
                 status,
@@ -567,7 +567,7 @@ impl Runc {
 #[cfg(test)]
 #[cfg(all(target_os = "linux", not(feature = "async")))]
 mod tests {
-    use super::io::PipedStdIo;
+    use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
     use std::sync::Arc;
 
@@ -721,7 +721,9 @@ mod tests {
 
     #[test]
     fn test_output() {
-        let opts = CreateOpts::new();
+        // test create cmd with inherit Io, expect empty cmd output
+        let mut opts = CreateOpts::new();
+        opts.io = Some(Arc::new(InheritedStdIo::new().unwrap()));
         let echo_runc = echo_client();
         let response = echo_runc
             .create("fake-id", "fake-bundle", Some(&opts))
@@ -730,6 +732,7 @@ mod tests {
         assert!(response.status.success());
         assert!(response.output.is_empty());
 
+        // test create cmd with pipe Io, expect nonempty cmd output
         let mut opts = CreateOpts::new();
         opts.io = Some(Arc::new(PipedStdIo::new().unwrap()));
         let echo_runc = echo_client();
@@ -746,7 +749,7 @@ mod tests {
 #[cfg(test)]
 #[cfg(all(target_os = "linux", feature = "async"))]
 mod tests {
-    use super::io::PipedStdIo;
+    use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
     use std::sync::Arc;
 
@@ -918,7 +921,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_output() {
-        let opts = CreateOpts::new();
+        // test create cmd with inherit Io, expect empty cmd output
+        let mut opts = CreateOpts::new();
+        opts.io = Some(Arc::new(InheritedStdIo::new().unwrap()));
         let echo_runc = echo_client();
         let response = echo_runc
             .create("fake-id", "fake-bundle", Some(&opts))
@@ -928,6 +933,7 @@ mod tests {
         assert!(response.status.success());
         assert!(response.output.is_empty());
 
+        // test create cmd with pipe Io, expect nonempty cmd output
         let mut opts = CreateOpts::new();
         opts.io = Some(Arc::new(PipedStdIo::new().unwrap()));
         let response = echo_runc
