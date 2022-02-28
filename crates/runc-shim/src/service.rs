@@ -21,8 +21,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use containerd_shim as shim;
-
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
+use runc::DefaultExecutor;
 use shim::api::*;
 use shim::error::{Error, Result};
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
@@ -32,10 +32,10 @@ use shim::{debug, error, io_error, other_error, warn};
 use shim::{spawn, Config, ExitSignal, RemotePublisher, Shim, StartOpts};
 
 use crate::container::{Container, Process};
-use crate::runc::{RuncContainer, RuncFactory, DEFAULT_RUNC_ROOT};
+use crate::runc::{create_runc, RuncContainer, RuncFactory, DEFAULT_RUNC_ROOT};
 use crate::task::ShimTask;
 
-const GROUP_LABELS: [&str; 2] = [
+pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",
     "io.kubernetes.cri.sandbox-id",
 ];
@@ -92,33 +92,11 @@ impl Shim for Service {
     #[cfg(not(feature = "async"))]
     fn delete_shim(&mut self) -> Result<DeleteResponse> {
         let namespace = self.namespace.as_str();
-        let bundle_buf = current_dir().map_err(io_error!(e, "get current dir"))?;
-        let bundle = bundle_buf.as_path().to_str().unwrap();
-        let opts = read_options(bundle)?;
-        let mut runtime = read_runtime(bundle)?;
+        let bundle = current_dir().map_err(io_error!(e, "get current dir"))?;
+        let opts = read_options(&bundle)?;
+        let runtime = read_runtime(&bundle)?;
 
-        let runc = {
-            if runtime.is_empty() {
-                runtime = DEFAULT_COMMAND.to_string();
-            }
-            let root = opts.root.as_str();
-            let root = Path::new(if root.is_empty() {
-                DEFAULT_RUNC_ROOT
-            } else {
-                root
-            })
-            .join(namespace);
-            let log_buf = Path::new(bundle).join("log.json");
-            let log = log_buf.to_str().unwrap();
-            GlobalOpts::default()
-                .command(runtime)
-                .root(root)
-                .log(log)
-                .log_json()
-                .systemd_cgroup(opts.systemd_cgroup)
-                .build()
-                .map_err(other_error!(e, "unable to create runc instance"))?
-        };
+        let runc = create_runc(&*runtime, namespace, &bundle, &opts, DefaultExecutor {})?;
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
         let mut resp = DeleteResponse::new();

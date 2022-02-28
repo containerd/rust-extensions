@@ -45,15 +45,16 @@ use std::process::{self, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 
 use command_fds::{CommandFdExt, FdMapping};
-pub use containerd_shim_protos as protos;
 use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 pub use log::{debug, error, info, warn};
+use signal_hook::iterator::Signals;
+
+pub use containerd_shim_protos as protos;
 use protos::protobuf::Message;
 pub use protos::shim::shim::DeleteResponse;
 pub use protos::shim::shim_ttrpc::{create_task, Task};
 pub use protos::ttrpc::{context::Context, Result as TtrpcResult, TtrpcContext};
 use protos::ttrpc::{Client, Server};
-use signal_hook::iterator::Signals;
 
 pub use crate::error::{Error, Result};
 use crate::monitor::monitor_notify_by_pid;
@@ -80,6 +81,8 @@ pub mod util;
 
 #[cfg(feature = "async")]
 pub mod asynchronous;
+pub mod console;
+pub mod io;
 
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
 
@@ -377,7 +380,7 @@ fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result
             }
         }
     }
-    Err(other!(address, "time out waiting for socket"))
+    Err(other!("time out waiting for socket {}", address))
 }
 
 fn remove_socket_silently(address: &str) {
@@ -457,8 +460,9 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::thread;
+
+    use super::*;
 
     #[test]
     fn exit_signal() {

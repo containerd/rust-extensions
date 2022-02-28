@@ -14,10 +14,9 @@
    limitations under the License.
 */
 
-use crate::monitor::ExitEvent;
-
 use thiserror::Error;
 
+use crate::monitor::ExitEvent;
 use crate::protos::{protobuf, ttrpc};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -127,11 +126,8 @@ macro_rules! mount_error {
 
 #[macro_export]
 macro_rules! other {
-    ($e:ident, $s:expr) => {
-        Error::Other($s.to_string() + &": ".to_string() + &$e.to_string())
-    };
-    ($s: expr) => {
-        Error::Other($s.to_string())
+    ($($args:tt)*) => {
+        Error::Other(format_args!($($args)*).to_string())
     };
 }
 

@@ -88,9 +88,10 @@ pub fn init(debug: bool) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use log::{Log, Record};
     use nix::{sys::stat, unistd};
+
+    use super::*;
 
     #[test]
     fn test_fifo_log() {

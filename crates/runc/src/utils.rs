@@ -15,18 +15,18 @@
 */
 
 use std::env;
+#[cfg(not(feature = "async"))]
 use std::io::Write;
-use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
-use nix::sys::stat::Mode;
-use nix::unistd::mkdir;
 use path_absolutize::*;
 use serde::Serialize;
+#[cfg(not(feature = "async"))]
 use tempfile::{Builder, NamedTempFile};
+#[cfg(feature = "async")]
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::console::ConsoleSocket;
 use crate::error::Error;
 
 // helper to resolve path (such as path for runc binary, pid files, etc. )
@@ -69,6 +69,7 @@ fn xdg_runtime_dir() -> String {
 }
 
 /// Write the serialized 'value' to a temp file
+#[cfg(not(feature = "async"))]
 pub fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<(NamedTempFile, String), Error> {
     let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
     let mut temp_file = Builder::new()
@@ -84,17 +85,27 @@ pub fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<(NamedTempFil
     Ok((temp_file, filename))
 }
 
-/// Crate and return a temp socket file
-pub fn new_temp_console_socket() -> Result<ConsoleSocket, Error> {
-    let dir = format!("{}/pty{}", xdg_runtime_dir(), Uuid::new_v4(),);
-    mkdir(Path::new(&dir), Mode::from_bits(0o711).unwrap()).map_err(Error::CreateDir)?;
-    let file_name = Path::new(&dir).join("pty.sock");
-    let listener = UnixListener::bind(file_name.as_path()).map_err(Error::UnixSocketBindFailed)?;
-    Ok(ConsoleSocket {
-        listener,
-        path: file_name,
-        rmdir: true,
-    })
+/// Write the serialized 'value' to a temp file
+/// Unlike the same function in non-async feature,
+/// it returns the filename, without the NamedTempFile object,
+/// which implements Drop trait to remove the file if it goes out of scope.
+/// the async Drop is still not supported in rust,
+/// in async context, the created file should be removed by the caller
+#[cfg(feature = "async")]
+pub async fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<String, Error> {
+    let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
+    let mut f = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&filename)
+        .await
+        .map_err(Error::FileSystemError)?;
+    let spec_json = serde_json::to_string(value).map_err(Error::JsonDeserializationFailed)?;
+    f.write_all(spec_json.as_bytes())
+        .await
+        .map_err(Error::SpecFileCreationFailed)?;
+    f.flush().await.map_err(Error::SpecFileCreationFailed)?;
+    Ok(filename)
 }
 
 /// Resolve a binary path according to the `PATH` environment variable.

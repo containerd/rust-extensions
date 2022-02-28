@@ -20,15 +20,19 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender};
 
-use containerd_shim as shim;
-
+#[cfg(target_os = "linux")]
+use cgroups_rs::{cgroup, hierarchies, Cgroup, MaxValue, Subsystem};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
-use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
-use runc::console::{Console, ConsoleSocket};
-use runc::options::GlobalOpts;
-use runc::utils::new_temp_console_socket;
+use oci_spec::runtime::{Linux, LinuxNamespaceType, LinuxResources, Spec};
+use time::OffsetDateTime;
+
+use containerd_shim as shim;
+use containerd_shim::console::{Console, ConsoleSocket};
+use containerd_shim::io::Stdio;
+use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
+use runc::{DefaultExecutor, Runc};
 use shim::api::*;
 use shim::error::{Error, Result};
 use shim::mount::mount_rootfs;
@@ -37,19 +41,24 @@ use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
-use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
-use shim::{debug, error, other, other_error};
-use time::OffsetDateTime;
+use shim::util::{
+    new_temp_console_socket, read_spec_from_file, write_options, write_runtime, IntoOption,
+    JsonOptions,
+};
+use shim::{debug, error, io_error, other, other_error};
 
 use crate::container::{CommonContainer, CommonProcess, Container, ContainerFactory, Process};
-use crate::io::{create_io, Stdio};
+use crate::io::create_io;
 
 pub const DEFAULT_RUNC_ROOT: &str = "/run/containerd/runc";
-const INIT_PID_FILE: &str = "init.pid";
+pub const INIT_PID_FILE: &str = "init.pid";
 const DEFAULT_COMMAND: &str = "runc";
 
 #[derive(Clone, Default)]
 pub(crate) struct RuncFactory {}
+
+#[derive(Clone)]
+pub struct ShimExecutor {}
 
 impl ContainerFactory<RuncContainer> for RuncFactory {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<RuncContainer> {
@@ -62,7 +71,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         if opts.compute_size() > 0 {
             debug!("create options: {:?}", &opts);
         }
-        let mut runtime = opts.binary_name.as_str();
+        let runtime = opts.binary_name.as_str();
         write_options(bundle, &opts)?;
         write_runtime(bundle, runtime)?;
 
@@ -86,27 +95,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
         }
 
-        let runc = {
-            if runtime.is_empty() {
-                runtime = DEFAULT_COMMAND;
-            }
-            let root = opts.root.as_str();
-            let root = Path::new(if root.is_empty() {
-                DEFAULT_RUNC_ROOT
-            } else {
-                root
-            })
-            .join(ns);
-            let log_buf = Path::new(bundle).join("log.json");
-            GlobalOpts::default()
-                .command(runtime)
-                .root(root)
-                .log(log_buf)
-                .systemd_cgroup(opts.get_systemd_cgroup())
-                .log_json()
-                .build()
-                .map_err(other_error!(e, "unable to create runc instance"))?
-        };
+        let runc = create_runc(runtime, ns, bundle, &opts, DefaultExecutor {})?;
 
         let id = req.get_id();
         let stdio = Stdio {
@@ -444,7 +433,7 @@ fn kill_process(pid: u32, exit_at: Option<OffsetDateTime>, sig: u32) -> Result<(
 pub(crate) struct InitProcess {
     pub(crate) common: CommonProcess,
     pub(crate) bundle: String,
-    pub(crate) runtime: runc::Runc,
+    pub(crate) runtime: runc::Runc<DefaultExecutor>,
     pub(crate) rootfs: String,
     pub(crate) work_dir: String,
     pub(crate) io_uid: u32,
@@ -455,7 +444,7 @@ pub(crate) struct InitProcess {
 }
 
 impl InitProcess {
-    pub fn new(id: &str, bundle: &str, runtime: runc::Runc, stdio: Stdio) -> Self {
+    pub fn new(id: &str, bundle: &str, runtime: runc::Runc<DefaultExecutor>, stdio: Stdio) -> Self {
         InitProcess {
             common: CommonProcess {
                 state: Status::CREATED,
@@ -521,10 +510,9 @@ impl InitProcess {
         self.common.set_pid_from_file(pid_path.as_path())?;
         Ok(())
     }
-
     #[cfg(feature = "async")]
     pub fn create(&mut self, _conf: &CreateConfig) -> Result<()> {
-        Err(Error::Unimplemented("create".to_string()))
+        unimplemented!()
     }
 }
 
@@ -713,7 +701,7 @@ pub fn get_spec_from_request(req: &ExecProcessRequest) -> Result<oci_spec::runti
 #[derive(Default)]
 pub(crate) struct CreateConfig {}
 
-fn check_kill_error(emsg: String) -> Error {
+pub fn check_kill_error(emsg: String) -> Error {
     let emsg = emsg.to_lowercase();
     if emsg.contains("process already finished")
         || emsg.contains("container not running")
@@ -723,6 +711,37 @@ fn check_kill_error(emsg: String) -> Error {
     } else if emsg.contains("does not exist") {
         Error::NotFoundError("no such container".to_string())
     } else {
-        other!(emsg, "unknown error after kill")
+        other!("unknown error after kill {}", emsg)
     }
+}
+
+pub fn create_runc<F>(
+    runtime: &str,
+    namespace: &str,
+    bundle: impl AsRef<Path>,
+    opts: &Options,
+    executor: F,
+) -> Result<Runc<F>> {
+    let runtime = if runtime.is_empty() {
+        DEFAULT_COMMAND
+    } else {
+        runtime
+    };
+    let root = opts.root.as_str();
+    let root = Path::new(if root.is_empty() {
+        DEFAULT_RUNC_ROOT
+    } else {
+        root
+    })
+    .join(namespace);
+
+    let log = bundle.as_ref().join("log.json");
+    GlobalOpts::default()
+        .command(runtime)
+        .root(root)
+        .log(log)
+        .log_json()
+        .systemd_cgroup(opts.systemd_cgroup)
+        .build_with_executor(executor)
+        .map_err(other_error!(e, "unable to create runc instance"))
 }

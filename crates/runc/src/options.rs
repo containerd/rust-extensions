@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use crate::error::Error;
 use crate::io::Io;
-use crate::utils;
+use crate::{utils, DefaultExecutor};
 use crate::{LogFormat, Runc};
 
 // constants for log format
@@ -193,15 +193,20 @@ impl GlobalOpts {
         self
     }
 
-    pub fn build(self) -> Result<Runc, Error> {
+    pub fn build(self) -> Result<Runc<DefaultExecutor>, Error> {
         self.args()
     }
-}
 
-impl Args for GlobalOpts {
-    type Output = Result<Runc, Error>;
+    pub fn build_with_executor<E>(self, executor: E) -> Result<Runc<E>, Error> {
+        let (command, args) = self.output()?;
+        Ok(Runc {
+            command,
+            args,
+            executor,
+        })
+    }
 
-    fn args(&self) -> Self::Output {
+    fn output(&self) -> Result<(PathBuf, Vec<String>), Error> {
         let path = self
             .command
             .clone()
@@ -242,8 +247,21 @@ impl Args for GlobalOpts {
             let arg = format!("{}={}", ROOTLESS, mode);
             args.push(arg);
         }
+        Ok((command, args))
+    }
+}
 
-        Ok(Runc { command, args })
+impl Args for GlobalOpts {
+    type Output = Result<Runc<DefaultExecutor>, Error>;
+
+    fn args(&self) -> Self::Output {
+        let (command, args) = self.output()?;
+        let executor = DefaultExecutor {};
+        Ok(Runc {
+            command,
+            args,
+            executor,
+        })
     }
 }
 
@@ -456,9 +474,9 @@ impl KillOpts {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
 
     use super::*;
-    use std::env;
 
     const ARGS_FAIL_MSG: &str = "Args.args() failed.";
 

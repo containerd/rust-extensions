@@ -21,7 +21,6 @@ use log::{debug, info};
 use oci_spec::runtime::LinuxResources;
 
 use containerd_shim as shim;
-
 use shim::other_error;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{Message, SingularPtrField};

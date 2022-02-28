@@ -14,28 +14,25 @@
    limitations under the License.
 */
 
-mod cgroup;
-mod container;
-mod io;
-mod runc;
-mod service;
-mod task;
-
-#[cfg(feature = "async")]
-mod asynchronous;
-mod console;
-
-#[cfg(not(feature = "async"))]
-fn main() {
-    containerd_shim::run::<crate::service::Service>("io.containerd.runc.v2", None)
+#[derive(Clone, Debug)]
+pub struct Stdio {
+    pub stdin: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub terminal: bool,
 }
 
-#[cfg(feature = "async")]
-#[tokio::main]
-async fn main() {
-    containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
-        "io.containerd.runc.v2",
-        None,
-    )
-    .await;
+impl Stdio {
+    pub fn new(stdin: &str, stdout: &str, stderr: &str, terminal: bool) -> Self {
+        Self {
+            stdin: stdin.to_string(),
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+            terminal,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.stdin.is_empty() && self.stdout.is_empty() && self.stderr.is_empty()
+    }
 }

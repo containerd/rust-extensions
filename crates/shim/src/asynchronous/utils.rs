@@ -1,13 +1,36 @@
+/*
+   Copyright The containerd Authors.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 use std::path::Path;
 
+use libc::mode_t;
+use nix::sys::stat::Mode;
+use oci_spec::runtime::Spec;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task::spawn_blocking;
 
+use containerd_shim_protos::api::Mount;
+use containerd_shim_protos::shim::oci::Options;
+
 use crate::error::Error;
 use crate::error::Result;
+use crate::util::{AsOption, JsonOptions, CONFIG_FILE_NAME, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME};
 
-pub(crate) async fn asyncify<F, T>(f: F) -> Result<T>
+pub async fn asyncify<F, T>(f: F) -> Result<T>
 where
     F: FnOnce() -> Result<T> + Send + 'static,
     T: Send + 'static,
@@ -61,6 +84,60 @@ pub async fn write_str_to_file(filename: impl AsRef<Path>, s: impl AsRef<str>) -
             filename.as_ref().display()
         ))?;
     Ok(())
+}
+
+pub async fn read_spec(bundle: impl AsRef<Path>) -> Result<Spec> {
+    let path = bundle.as_ref().join(CONFIG_FILE_NAME);
+    let content = read_file_to_str(&path).await?;
+    serde_json::from_str::<Spec>(content.as_str()).map_err(other_error!(e, "read spec"))
+}
+
+pub async fn read_options(bundle: impl AsRef<Path>) -> Result<Options> {
+    let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
+    let opts_str = read_file_to_str(path).await?;
+    let opts =
+        serde_json::from_str::<JsonOptions>(&opts_str).map_err(other_error!(e, "read options"))?;
+    Ok(opts.into())
+}
+
+pub async fn read_runtime(bundle: impl AsRef<Path>) -> Result<String> {
+    read_file_to_str(bundle.as_ref().join(RUNTIME_FILE_NAME)).await
+}
+
+pub async fn write_options(bundle: impl AsRef<Path>, opt: &Options) -> Result<()> {
+    let json_opt = JsonOptions::from(opt.to_owned());
+    let opts_str = serde_json::to_string(&json_opt)?;
+    let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
+    write_str_to_file(path.as_path(), opts_str.as_str()).await
+}
+
+pub async fn write_runtime(bundle: impl AsRef<Path>, binary_name: &str) -> Result<()> {
+    write_str_to_file(bundle.as_ref().join(RUNTIME_FILE_NAME), binary_name).await
+}
+
+pub async fn mount_rootfs(m: &Mount, target: impl AsRef<Path>) -> Result<()> {
+    let mount_type = m.field_type.to_string();
+    let source = m.source.to_string();
+    let options = m.options.to_vec();
+    let rootfs = target.as_ref().to_owned();
+    asyncify(move || -> Result<()> {
+        let mount_type = mount_type.as_option();
+        let source = source.as_option();
+        crate::mount::mount_rootfs(mount_type, source, options.as_slice(), &rootfs)
+    })
+    .await
+}
+
+pub async fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> Result<()> {
+    let path_buf = path.as_ref().to_path_buf();
+    asyncify(move || -> Result<()> {
+        if !path_buf.as_path().exists() {
+            let mode = Mode::from_bits(mode).ok_or_else(|| other!("invalid dir mode {}", mode))?;
+            nix::unistd::mkdir(path_buf.as_path(), mode)?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]

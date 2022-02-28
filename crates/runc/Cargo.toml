@@ -10,7 +10,7 @@ description = "A crate for consuming the runc binary in your Rust applications"
 homepage = "https://containerd.io"
 
 [features]
-async = ["tokio", "async-trait", "futures"]
+async = ["tokio", "async-trait", "futures", "tokio-pipe"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -32,3 +32,4 @@ os_pipe = "1.0.0"
 tokio = { version = "1.15.0", features = ["full"], optional = true }
 async-trait = { version = "0.1.52", optional = true }
 futures = { version = "0.3.19", optional = true }
+tokio-pipe = {version="0.2.10", optional = true }

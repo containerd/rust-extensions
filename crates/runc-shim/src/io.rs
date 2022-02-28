@@ -13,7 +13,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-use std::fmt::Debug;
+
+#[cfg(not(feature = "async"))]
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -22,6 +23,7 @@ use std::thread::JoinHandle;
 use crossbeam::sync::WaitGroup;
 use log::debug;
 
+use containerd_shim::io::Stdio;
 use containerd_shim::util::IntoOption;
 use containerd_shim::{
     error::{Error, Result},
@@ -49,20 +51,6 @@ pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
     })
 }
 
-#[derive(Clone, Debug)]
-pub struct Stdio {
-    pub stdin: String,
-    pub stdout: String,
-    pub stderr: String,
-    pub terminal: bool,
-}
-
-impl Stdio {
-    pub fn is_null(&self) -> bool {
-        self.stdin.is_empty() && self.stdout.is_empty() && self.stderr.is_empty()
-    }
-}
-
 pub struct ProcessIO {
     pub uri: Option<String>,
     pub io: Option<Arc<dyn Io>>,
@@ -70,6 +58,7 @@ pub struct ProcessIO {
 }
 
 impl ProcessIO {
+    #[cfg(not(feature = "async"))]
     pub fn copy(&self, stdio: &Stdio) -> Result<WaitGroup> {
         let wg = WaitGroup::new();
         if !self.copy {
@@ -137,6 +126,11 @@ impl ProcessIO {
         }
 
         Ok(wg)
+    }
+
+    #[cfg(feature = "async")]
+    pub fn copy(&self, _stdio: &Stdio) -> Result<WaitGroup> {
+        unimplemented!()
     }
 }
 

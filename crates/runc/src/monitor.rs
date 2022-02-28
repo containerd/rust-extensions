@@ -130,10 +130,12 @@ pub async fn execute<T: ProcessMonitor + Send + Sync>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::process::Stdio;
+
     use tokio::process::Command;
     use tokio::sync::oneshot::channel;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_start_wait_without_output() {

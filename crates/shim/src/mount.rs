@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+use std::path::Path;
 
 use lazy_static::lazy_static;
 #[cfg(target_os = "linux")]
@@ -227,7 +228,7 @@ pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
     options: &[String],
-    target: &str,
+    target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
     //TODO compactLowerdirOption for overlay
@@ -256,23 +257,34 @@ pub fn mount_rootfs(
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
     let zero: MsFlags = MsFlags::from_bits(0).unwrap();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data != None {
-        mount(source, target, fs_type, oflags, data).map_err(mount_error!(
+        mount(source, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
             e,
-            "Mount {} to {}",
-            source.unwrap(),
-            target
+            "Mount {:?} to {}",
+            source,
+            target.as_ref().display()
         ))?;
     }
 
     // change the propagation type
     if flags.bitand(*PROPAGATION_TYPES).ne(&zero) {
-        mount::<str, str, str, str>(None, target, None, *MS_PROPAGATION, None)
-            .map_err(mount_error!(e, "Change {} mount propagation", target))?;
+        mount::<str, Path, str, str>(None, target.as_ref(), None, *MS_PROPAGATION, None).map_err(
+            mount_error!(e, "Change {} mount propagation", target.as_ref().display()),
+        )?;
     }
 
     if oflags.bitand(*MS_BIND_RO).eq(&MS_BIND_RO) {
-        mount::<str, str, str, str>(None, target, None, oflags.bitor(MsFlags::MS_REMOUNT), None)
-            .map_err(mount_error!(e, "Change {} read-only", target))?;
+        mount::<str, Path, str, str>(
+            None,
+            target.as_ref(),
+            None,
+            oflags.bitor(MsFlags::MS_REMOUNT),
+            None,
+        )
+        .map_err(mount_error!(
+            e,
+            "Change {} read-only",
+            target.as_ref().display()
+        ))?;
     }
 
     Ok(())
@@ -283,7 +295,7 @@ pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
     options: &[String],
-    target: &str,
+    target: impl AsRef<Path>,
 ) -> Result<()> {
     Err(Error::Unimplemented("start".to_string()))
 }

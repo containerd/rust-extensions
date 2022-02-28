@@ -14,25 +14,32 @@
    limitations under the License.
 */
 
-use oci_spec::runtime::Spec;
+use std::env;
 use std::fs::{rename, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::io::RawFd;
+use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::warn;
+use nix::sys::stat::Mode;
+use nix::unistd::mkdir;
+use oci_spec::runtime::Spec;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use containerd_shim_protos::protobuf::well_known_types::Any;
 use containerd_shim_protos::protobuf::Message;
-use serde::{Deserialize, Serialize};
 
 use crate::api::Options;
+use crate::console::ConsoleSocket;
 use crate::error::{Error, Result};
 use crate::protos::protobuf::well_known_types::Timestamp;
 
-const OPTIONS_FILE_NAME: &str = "options.json";
-const RUNTIME_FILE_NAME: &str = "runtime";
+pub const CONFIG_FILE_NAME: &str = "config.json";
+pub const OPTIONS_FILE_NAME: &str = "options.json";
+pub const RUNTIME_FILE_NAME: &str = "runtime";
 
 // Define JsonOptions here for Json serialize and deserialize
 // as rust-protobuf hasn't released serde_derive feature,
@@ -76,6 +83,26 @@ impl From<Options> for JsonOptions {
     }
 }
 
+impl From<JsonOptions> for Options {
+    fn from(j: JsonOptions) -> Self {
+        Self {
+            no_pivot_root: j.no_pivot_root,
+            no_new_keyring: j.no_new_keyring,
+            shim_cgroup: j.shim_cgroup,
+            io_uid: j.io_uid,
+            io_gid: j.io_gid,
+            binary_name: j.binary_name,
+            root: j.root,
+            criu_path: j.criu_path,
+            systemd_cgroup: j.systemd_cgroup,
+            criu_image_path: j.criu_image_path,
+            criu_work_path: j.criu_work_path,
+            unknown_fields: Default::default(),
+            cached_size: Default::default(),
+        }
+    }
+}
+
 pub fn read_file_to_str<P: AsRef<Path>>(filename: P) -> Result<String> {
     let mut file = File::open(&filename).map_err(io_error!(
         e,
@@ -91,15 +118,15 @@ pub fn read_file_to_str<P: AsRef<Path>>(filename: P) -> Result<String> {
     Ok(content)
 }
 
-pub fn read_options(bundle: &str) -> Result<JsonOptions> {
-    let path = Path::new(bundle).join(OPTIONS_FILE_NAME);
+pub fn read_options(bundle: impl AsRef<Path>) -> Result<Options> {
+    let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
     let opts_str = read_file_to_str(path)?;
     let json_opt: JsonOptions = serde_json::from_str(&opts_str)?;
-    Ok(json_opt)
+    Ok(json_opt.into())
 }
 
-pub fn read_runtime(bundle: &str) -> Result<String> {
-    let path = Path::new(bundle).join(RUNTIME_FILE_NAME);
+pub fn read_runtime(bundle: impl AsRef<Path>) -> Result<String> {
+    let path = bundle.as_ref().join(RUNTIME_FILE_NAME);
     read_file_to_str(path)
 }
 
@@ -241,6 +268,20 @@ where
 
 impl<T> IntoOption for T {}
 
+pub trait AsOption {
+    fn as_option(&self) -> Option<&Self>;
+}
+
+impl AsOption for str {
+    fn as_option(&self) -> Option<&Self> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self)
+        }
+    }
+}
+
 /// A helper to help remove temperate file or dir when it became useless
 pub struct HelperRemoveFile {
     path: String,
@@ -256,4 +297,21 @@ impl Drop for HelperRemoveFile {
         std::fs::remove_file(&self.path)
             .unwrap_or_else(|e| warn!("remove dir {} error: {}", &self.path, e));
     }
+}
+
+pub fn new_temp_console_socket() -> Result<ConsoleSocket> {
+    let dir = env::var("XDG_RUNTIME_DIR")
+        .map(|runtime_dir| format!("{}/pty{}", runtime_dir, Uuid::new_v4(),))?;
+    mkdir(Path::new(&dir), Mode::from_bits(0o711).unwrap())?;
+    let file_name = Path::new(&dir).join("pty.sock");
+    let listener = UnixListener::bind(file_name.as_path()).map_err(io_error!(
+        e,
+        "bind socket {}",
+        file_name.display()
+    ))?;
+    Ok(ConsoleSocket {
+        listener,
+        path: file_name,
+        rmdir: true,
+    })
 }

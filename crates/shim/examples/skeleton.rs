@@ -16,9 +16,9 @@
 
 use std::sync::Arc;
 
-use containerd_shim as shim;
-
 use log::info;
+
+use containerd_shim as shim;
 use shim::{api, Config, DeleteResponse, ExitSignal, RemotePublisher, TtrpcContext, TtrpcResult};
 
 #[derive(Clone)]

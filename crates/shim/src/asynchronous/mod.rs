@@ -1,3 +1,19 @@
+/*
+   Copyright The containerd Authors.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixListener;
@@ -31,8 +47,12 @@ use crate::{
     args, logger, parse_sockaddr, reap, socket_address, Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
+pub mod console;
+pub mod container;
 pub mod monitor;
+pub mod processes;
 pub mod publisher;
+pub mod task;
 pub mod utils;
 
 /// Asynchronous Main shim interface that must be implemented by all async shims.
@@ -74,8 +94,8 @@ pub trait Shim {
     /// Wait for the shim to exit asynchronously.
     async fn wait(&mut self);
 
-    /// Get the task service object asynchronously.
-    async fn get_task_service(&self) -> Self::T;
+    /// Create the task service object asynchronously.
+    async fn create_task_service(&self) -> Self::T;
 }
 
 /// Async Shim entry point that must be invoked from tokio `main`.
@@ -85,6 +105,16 @@ where
 {
     if let Some(err) = bootstrap::<T>(runtime_id, opts).await.err() {
         eprintln!("{}: {:?}", runtime_id, err);
+        let mut f = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open("/tmp/containerd-shim.log")
+            .await
+            .unwrap();
+        f.write_all(format!("error bootstrap {}....\n", err).as_bytes())
+            .await
+            .unwrap();
         process::exit(1);
     }
 }
@@ -107,8 +137,7 @@ where
     let signals = setup_signals_tokio(&config);
 
     if !config.no_sub_reaper {
-        asyncify(|| -> Result<()> { reap::set_subreaper().map_err(io_error!(e, "set subreaper")) })
-            .await?;
+        reap::set_subreaper()?;
     }
 
     let mut shim = T::new(
@@ -158,10 +187,11 @@ where
                 logger::init(flags.debug)?;
             }
 
-            let task = shim.get_task_service().await;
+            let task = shim.create_task_service().await;
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;
+            server = server.set_domain_unix();
             server.start().await?;
 
             info!("Shim successfully started, waiting for exit signal...");
@@ -186,17 +216,16 @@ where
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
 ///
 /// Shim implementations are responsible for calling [`Self::signal`].
-#[derive(Clone)]
 pub struct ExitSignal {
-    notifier: Arc<Notify>,
-    exited: Arc<AtomicBool>,
+    notifier: Notify,
+    exited: AtomicBool,
 }
 
 impl Default for ExitSignal {
     fn default() -> Self {
         ExitSignal {
-            notifier: Arc::new(Notify::new()),
-            exited: Arc::new(AtomicBool::new(false)),
+            notifier: Notify::new(),
+            exited: AtomicBool::new(false),
         }
     }
 }
@@ -366,16 +395,18 @@ async fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> 
             }
         }
     }
-    Err(other!(address, "time out waiting for socket"))
+    Err(other!("time out waiting for socket {}", address))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::asynchronous::{start_listener, ExitSignal};
 
     #[tokio::test]
     async fn test_exit_signal() {
-        let signal = ExitSignal::default();
+        let signal = Arc::new(ExitSignal::default());
 
         let cloned = signal.clone();
         let handle = tokio::spawn(async move {

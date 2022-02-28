@@ -19,11 +19,12 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 use log::warn;
-use nix::sys::termios::Termios;
+use nix::ioctl_write_ptr_bad;
+
+ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
 
 pub struct Console {
     pub file: File,
-    pub termios: Termios,
 }
 
 pub struct ConsoleSocket {
