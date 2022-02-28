@@ -171,7 +171,8 @@ impl Container for RuncContainer {
                     console_socket: None,
                     detach: true,
                 };
-                let socket = if process.common.stdio.terminal {
+                let terminal = process.common.stdio.terminal;
+                let socket = if terminal {
                     let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
                     exec_opts.console_socket = Some(s.path.to_owned());
                     Some(s)

@@ -83,15 +83,7 @@ impl ProcessIO {
                         .read(true)
                         .open(stdio.stdin.as_str())
                         .map_err(io_error!(e, "open stdin"))?;
-                    let closer = pio.stdin().unwrap();
-                    spawn_copy(
-                        stdin,
-                        w,
-                        None,
-                        Some(Box::new(move || {
-                            drop(closer);
-                        })),
-                    );
+                    spawn_copy(stdin, w, None, None);
                 }
             }
 
