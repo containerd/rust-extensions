@@ -15,6 +15,7 @@
 */
 
 use std::collections::HashMap;
+use std::process;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, Once};
 
@@ -337,5 +338,22 @@ where
         });
 
         Ok(Empty::default())
+    }
+
+    fn connect(&self, _ctx: &TtrpcContext, req: ConnectRequest) -> TtrpcResult<ConnectResponse> {
+        info!("Connect request for {:?}", req);
+
+        let containers = self.containers.lock().unwrap();
+        let container = containers.get(req.get_id()).ok_or_else(|| {
+            Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
+        })?;
+
+        let resp = ConnectResponse {
+            shim_pid: process::id() as u32,
+            task_pid: container.pid() as u32,
+            ..Default::default()
+        };
+
+        Ok(resp)
     }
 }
