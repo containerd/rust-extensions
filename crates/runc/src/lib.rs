@@ -233,7 +233,7 @@ impl Runc {
 
     /// List all containers associated with this runc instance
     pub fn list(&self) -> Result<Vec<Container>> {
-        let args = ["list".to_string(), "--format-json".to_string()];
+        let args = ["list".to_string(), "--format=json".to_string()];
         let res = self.launch(self.command(&args)?, true)?;
         let output = res.output.trim();
 
@@ -271,7 +271,7 @@ impl Runc {
     pub fn ps(&self, id: &str) -> Result<Vec<usize>> {
         let args = [
             "ps".to_string(),
-            "--format-json".to_string(),
+            "--format=json".to_string(),
             id.to_string(),
         ];
         let res = self.launch(self.command(&args)?, false)?;
@@ -449,7 +449,7 @@ impl Runc {
 
     /// List all containers associated with this runc instance
     pub async fn list(&self) -> Result<Vec<Container>> {
-        let args = ["list".to_string(), "--format-json".to_string()];
+        let args = ["list".to_string(), "--format=json".to_string()];
         let res = self.launch(self.command(&args)?, true).await?;
         let output = res.output.trim();
 
@@ -487,7 +487,7 @@ impl Runc {
     pub async fn ps(&self, id: &str) -> Result<Vec<usize>> {
         let args = [
             "ps".to_string(),
-            "--format-json".to_string(),
+            "--format=json".to_string(),
             id.to_string(),
         ];
         let res = self.launch(self.command(&args)?, true).await?;

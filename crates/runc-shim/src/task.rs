@@ -132,6 +132,17 @@ where
         Ok(resp)
     }
 
+    fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
+        debug!("Pids request for {:?}", req);
+        let containers = self.containers.lock().unwrap();
+        let container = containers.get(req.get_id()).ok_or_else(|| {
+            Error::Other(format!("can not find container by id {}", req.get_id()))
+        })?;
+
+        let resp = container.pids()?;
+        Ok(resp)
+    }
+
     fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
         let mut containers = self.containers.lock().unwrap();
@@ -175,6 +186,11 @@ where
             req.height,
             req.width,
         )?;
+        Ok(Empty::new())
+    }
+
+    fn close_io(&self, _ctx: &TtrpcContext, _req: CloseIORequest) -> TtrpcResult<Empty> {
+        // unnecessary close io here since fd was closed automatically after object was destroyed.
         Ok(Empty::new())
     }
 
@@ -232,8 +248,8 @@ where
 
     fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
         debug!("Stats request for {:?}", req);
-        let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
+        let containers = self.containers.lock().unwrap();
+        let container = containers.get(req.get_id()).ok_or_else(|| {
             Error::Other(format!("can not find container by id {}", req.get_id()))
         })?;
         let stats = container.stats()?;

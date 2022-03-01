@@ -35,8 +35,11 @@ use shim::api::*;
 use shim::error::{Error, Result};
 use shim::io_error;
 use shim::mount::mount_rootfs;
+use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics};
-use shim::protos::protobuf::{well_known_types::Timestamp, CodedInputStream, Message};
+use shim::protos::protobuf::well_known_types::{Any, Timestamp};
+use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
+use shim::protos::shim::oci::ProcessDetails;
 use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
 use shim::{debug, error, other, other_error};
 use time::OffsetDateTime;
@@ -171,7 +174,8 @@ impl Container for RuncContainer {
                     console_socket: None,
                     detach: true,
                 };
-                let socket = if process.common.stdio.terminal {
+                let terminal = process.common.stdio.terminal;
+                let socket = if terminal {
                     let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
                     exec_opts.console_socket = Some(s.path.to_owned());
                     Some(s)
@@ -462,6 +466,53 @@ impl Container for RuncContainer {
     #[cfg(not(target_os = "linux"))]
     fn update(&mut self, resources: &LinuxResources) -> Result<()> {
         Err(Error::Unimplemented("update".to_string()))
+    }
+
+    #[cfg(feature = "async")]
+    fn pids(&self) -> Result<PidsResponse> {
+        Err(Error::Unimplemented("pids".to_string()))
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn pids(&self) -> Result<PidsResponse> {
+        let pids = self
+            .common
+            .init
+            .runtime
+            .ps(self.common.init.id())
+            .map_err(other_error!(e, "failed to ps"))?;
+        let mut processes: Vec<ProcessInfo> = Vec::new();
+        for pid in pids {
+            let mut p_info = ProcessInfo {
+                pid: pid as u32,
+                ..Default::default()
+            };
+            for process in self.common.processes.values() {
+                if process.common.pid as usize == pid {
+                    let details = ProcessDetails {
+                        exec_id: "".to_string(),
+                        ..Default::default()
+                    };
+                    // marshal ProcessDetails to Any
+                    let mut any = Any::new();
+                    let mut data = Vec::new();
+                    details
+                        .write_to_vec(&mut data)
+                        .map_err(other_error!(e, "write ProcessDetails to vec"))?;
+                    any.set_value(data);
+                    any.set_type_url(details.descriptor().full_name().to_string());
+
+                    p_info.set_info(any);
+                    break;
+                }
+            }
+            processes.push(p_info);
+        }
+        let resp = PidsResponse {
+            processes: RepeatedField::from(processes),
+            ..Default::default()
+        };
+        Ok(resp)
     }
 }
 
