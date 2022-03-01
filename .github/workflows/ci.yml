@@ -12,7 +12,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - run: cargo check --examples --tests --all-targets
       - run: cargo fmt --all -- --check --files-with-diff
       - run: cargo clippy --all-targets -- -D warnings
@@ -28,7 +28,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
@@ -43,5 +43,5 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: EmbarkStudios/cargo-deny-action@v1
