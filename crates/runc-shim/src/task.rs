@@ -132,6 +132,17 @@ where
         Ok(resp)
     }
 
+    fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
+        debug!("Pids request for {:?}", req);
+        let containers = self.containers.lock().unwrap();
+        let container = containers.get(req.get_id()).ok_or_else(|| {
+            Error::Other(format!("can not find container by id {}", req.get_id()))
+        })?;
+
+        let resp = container.pids()?;
+        Ok(resp)
+    }
+
     fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
         let mut containers = self.containers.lock().unwrap();

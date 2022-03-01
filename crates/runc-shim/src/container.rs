@@ -84,6 +84,7 @@ pub trait Container {
     fn pid(&self) -> i32;
     fn stats(&self) -> Result<Metrics>;
     fn update(&mut self, resources: &LinuxResources) -> Result<()>;
+    fn pids(&self) -> Result<PidsResponse>;
 }
 
 pub struct CommonContainer<T, E> {
