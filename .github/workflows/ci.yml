@@ -32,10 +32,12 @@ jobs:
       - env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
-        run: |
+        run:
+        # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup
+          |
           mkdir -p /tmp/dummy-xdr
-          cargo test
-          cargo test --all-features
+          sudo -E $(command -v cargo) test
+          sudo -E $(command -v cargo) test --all-features
 
   deny:
     name: Deny

@@ -393,7 +393,7 @@ fn remove_socket(address: &str) -> Result<()> {
 
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
-pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<String> {
+pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<(u32, String)> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;
     let address = socket_address(&opts.address, &opts.namespace, grouping);
@@ -411,7 +411,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
             };
             if let Ok(()) = wait_socket_working(&address, 5, 200) {
                 write_address(&address)?;
-                return Ok(address);
+                return Ok((0, address));
             }
             remove_socket(&address)?;
             start_listener(&address).map_err(io_error!(e, ""))?
@@ -445,10 +445,10 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
     command
         .spawn()
         .map_err(io_error!(e, "spawn shim"))
-        .map(|_| {
+        .map(|child| {
             // Ownership of `listener` has been passed to child.
             std::mem::forget(listener);
-            address
+            (child.id(), address)
         })
 }
 
