@@ -24,6 +24,7 @@ serde = "1.0.136"
 uuid = { version = "0.8.2", features = ["v4"] }
 signal-hook = "0.3.13"
 oci-spec = "0.5.4"
+prctl = "1.0.0"
 
 containerd-shim-protos = { path = "../shim-protos", version = "0.1.2" }
 
