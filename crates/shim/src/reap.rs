@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use std::io::Result;
+use crate::error::Result;
 
 #[cfg(target_os = "linux")]
 /// Set current process as subreaper for child processes.
@@ -26,21 +26,23 @@ use std::io::Result;
 /// it is the subreaper process that will receive a SIGCHLD signal and will be able to `wait()`
 /// on the process to discover its termination status.
 pub fn set_subreaper() -> Result<()> {
-    use libc::PR_SET_CHILD_SUBREAPER;
-    use std::io::Error;
-
-    // Set current process as `subreaper` for child processes if the second parameter is non-zero,
-    // otherwise unset the attribute.
-    // Safe because we trust the kernel and have checked the result.
-    let code = unsafe { libc::prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0) };
-    if code != 0 {
-        Err(Error::from_raw_os_error(code))
-    } else {
-        Ok(())
-    }
+    use crate::error::Error;
+    prctl::set_child_subreaper(true).map_err(other_error!(code, "linux prctl returned"))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn set_subreaper() -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+mod tests {
+    use crate::reap::set_subreaper;
+
+    #[test]
+    fn test_set_subreaper() {
+        set_subreaper().unwrap();
+        assert!(prctl::get_child_subreaper().unwrap());
+    }
 }

@@ -207,7 +207,7 @@ where
     let signals = setup_signals(&config);
 
     if !config.no_sub_reaper {
-        reap::set_subreaper().map_err(io_error!(e, "set subreaper"))?;
+        reap::set_subreaper()?;
     }
 
     let mut shim = T::new(
