@@ -22,21 +22,18 @@ use std::sync::mpsc::{Receiver, SyncSender};
 
 use containerd_shim as shim;
 
-#[cfg(target_os = "linux")]
-use cgroups_rs::{cgroup, hierarchies, Cgroup, MaxValue, Subsystem};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
-use oci_spec::runtime::{Linux, LinuxNamespaceType, LinuxResources, Spec};
+use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
 use runc::console::{Console, ConsoleSocket};
-use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
+use runc::options::GlobalOpts;
 use runc::utils::new_temp_console_socket;
 use shim::api::*;
 use shim::error::{Error, Result};
-use shim::io_error;
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
-use shim::protos::cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics};
+use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
@@ -335,34 +332,8 @@ impl Container for RuncContainer {
 
     #[cfg(target_os = "linux")]
     fn stats(&self) -> Result<Metrics> {
-        let mut metrics = Metrics::new();
-        // get container main process cgroup
-        let path = get_cgroups_relative_paths_by_pid(self.common.init.pid() as u32)?;
-        let cgroup = Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path);
-
-        // to make it easy, fill the necessary metrics only.
-        for sub_system in Cgroup::subsystems(&cgroup) {
-            match sub_system {
-                Subsystem::CpuAcct(cpuacct_ctr) => {
-                    let mut cpu_usage = CPUUsage::new();
-                    cpu_usage.set_total(cpuacct_ctr.cpuacct().usage);
-                    let mut cpu_stat = CPUStat::new();
-                    cpu_stat.set_usage(cpu_usage);
-                    metrics.set_cpu(cpu_stat);
-                }
-                Subsystem::Mem(mem_ctr) => {
-                    let mem = mem_ctr.memory_stat();
-                    let mut mem_entry = MemoryEntry::new();
-                    mem_entry.set_usage(mem.usage_in_bytes);
-                    let mut mem_stat = MemoryStat::new();
-                    mem_stat.set_usage(mem_entry);
-                    mem_stat.set_total_inactive_file(mem.stat.total_inactive_file);
-                    metrics.set_memory(mem_stat);
-                }
-                _ => {}
-            }
-        }
-        Ok(metrics)
+        let pid = self.common.init.pid() as u32;
+        crate::cgroup::collect_metrics(pid)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -372,95 +343,8 @@ impl Container for RuncContainer {
 
     #[cfg(target_os = "linux")]
     fn update(&mut self, resources: &LinuxResources) -> Result<()> {
-        // get container main process cgroup
-        let path = get_cgroups_relative_paths_by_pid(self.common.init.pid() as u32)?;
-        let cgroup = Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path);
-
-        for sub_system in Cgroup::subsystems(&cgroup) {
-            match sub_system {
-                Subsystem::Pid(pid_ctr) => {
-                    // set maximum number of PIDs
-                    if let Some(pids) = resources.pids() {
-                        pid_ctr
-                            .set_pid_max(MaxValue::Value(pids.limit()))
-                            .map_err(other_error!(e, "set pid max"))?;
-                    }
-                }
-                Subsystem::Mem(mem_ctr) => {
-                    if let Some(memory) = resources.memory() {
-                        // set memory limit in bytes
-                        if let Some(limit) = memory.limit() {
-                            mem_ctr
-                                .set_limit(limit)
-                                .map_err(other_error!(e, "set mem limit"))?;
-                        }
-
-                        // set memory swap limit in bytes
-                        if let Some(swap) = memory.swap() {
-                            mem_ctr
-                                .set_memswap_limit(swap)
-                                .map_err(other_error!(e, "set memsw limit"))?;
-                        }
-                    }
-                }
-                Subsystem::CpuSet(cpuset_ctr) => {
-                    if let Some(cpu) = resources.cpu() {
-                        // set CPUs to use within the cpuset
-                        if let Some(cpus) = cpu.cpus() {
-                            cpuset_ctr
-                                .set_cpus(cpus)
-                                .map_err(other_error!(e, "set CPU sets"))?;
-                        }
-
-                        // set list of memory nodes in the cpuset
-                        if let Some(mems) = cpu.mems() {
-                            cpuset_ctr
-                                .set_mems(mems)
-                                .map_err(other_error!(e, "set CPU memes"))?;
-                        }
-                    }
-                }
-                Subsystem::Cpu(cpu_ctr) => {
-                    if let Some(cpu) = resources.cpu() {
-                        // set CPU shares
-                        if let Some(shares) = cpu.shares() {
-                            cpu_ctr
-                                .set_shares(shares)
-                                .map_err(other_error!(e, "set CPU share"))?;
-                        }
-
-                        // set CPU hardcap limit
-                        if let Some(quota) = cpu.quota() {
-                            cpu_ctr
-                                .set_cfs_quota(quota)
-                                .map_err(other_error!(e, "set CPU quota"))?;
-                        }
-
-                        // set CPU hardcap period
-                        if let Some(period) = cpu.period() {
-                            cpu_ctr
-                                .set_cfs_period(period)
-                                .map_err(other_error!(e, "set CPU period"))?;
-                        }
-                    }
-                }
-                Subsystem::HugeTlb(ht_ctr) => {
-                    // set the limit if "pagesize" hugetlb usage
-                    if let Some(hp_limits) = resources.hugepage_limits() {
-                        for limit in hp_limits {
-                            ht_ctr
-                                .set_limit_in_bytes(
-                                    limit.page_size().as_str(),
-                                    limit.limit() as u64,
-                                )
-                                .map_err(other_error!(e, "set huge page limit"))?;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
+        let pid = self.common.init.pid() as u32;
+        crate::cgroup::update_metrics(pid, resources)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -841,23 +725,4 @@ fn check_kill_error(emsg: String) -> Error {
     } else {
         other!(emsg, "unknown error after kill")
     }
-}
-
-#[cfg(target_os = "linux")]
-fn get_cgroups_relative_paths_by_pid(pid: u32) -> Result<HashMap<String, String>> {
-    let path = format!("/proc/{}/cgroup", pid);
-    let mut m = HashMap::new();
-    let content = std::fs::read_to_string(path).map_err(io_error!(e, "read process cgroup"))?;
-    for l in content.lines() {
-        let fl: Vec<&str> = l.split(':').collect();
-        if fl.len() != 3 {
-            continue;
-        }
-
-        let keys: Vec<&str> = fl[1].split(',').collect();
-        for key in &keys {
-            m.insert(key.to_string(), fl[2].to_string());
-        }
-    }
-    Ok(m)
 }

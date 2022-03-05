@@ -43,7 +43,7 @@ impl shim::Shim for Service {
 
     fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
         let grouping = opts.id.clone();
-        let address = shim::spawn(opts, &grouping, Vec::new())?;
+        let (_child_id, address) = shim::spawn(opts, &grouping, Vec::new())?;
         Ok(address)
     }
 

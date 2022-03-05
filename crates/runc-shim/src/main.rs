@@ -14,6 +14,7 @@
    limitations under the License.
 */
 
+mod cgroup;
 mod container;
 mod io;
 mod runc;

@@ -18,10 +18,11 @@
 
 use std::env::current_dir;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use containerd_shim as shim;
 
+use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
 use shim::api::*;
 use shim::error::{Error, Result};
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
@@ -29,8 +30,6 @@ use shim::protos::protobuf::SingularPtrField;
 use shim::util::{get_timestamp, read_options, read_runtime, read_spec_from_file, write_address};
 use shim::{debug, error, io_error, other_error, warn};
 use shim::{spawn, Config, ExitSignal, RemotePublisher, Shim, StartOpts};
-
-use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
 
 use crate::container::{Container, Process};
 use crate::runc::{RuncContainer, RuncFactory, DEFAULT_RUNC_ROOT};
@@ -81,7 +80,11 @@ impl Shim for Service {
             None => {}
         }
 
-        let address = spawn(opts, &grouping, Vec::new())?;
+        let (child_id, address) = spawn(opts, &grouping, Vec::new())?;
+
+        #[cfg(target_os = "linux")]
+        crate::cgroup::set_cgroup_and_oom_score(child_id)?;
+
         write_address(&address)?;
         Ok(address)
     }

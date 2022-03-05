@@ -26,4 +26,4 @@ containerd-shim = { path = "../shim", version = "0.2.0" }
 runc = { path = "../runc", version = "0.1.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.2.8"
+cgroups-rs = "0.2.9"
