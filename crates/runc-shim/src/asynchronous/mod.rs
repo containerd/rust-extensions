@@ -28,7 +28,7 @@ use containerd_shim::asynchronous::monitor::{
 use containerd_shim::asynchronous::processes::Process;
 use containerd_shim::asynchronous::publisher::RemotePublisher;
 use containerd_shim::asynchronous::task::TaskService;
-use containerd_shim::asynchronous::utils::{
+use containerd_shim::asynchronous::util::{
     read_options, read_runtime, read_spec, write_str_to_file,
 };
 use containerd_shim::asynchronous::{spawn, ExitSignal, Shim};
@@ -39,8 +39,8 @@ use containerd_shim::Error;
 use containerd_shim::{io_error, Config, DeleteResponse, StartOpts};
 
 use crate::asynchronous::runc::{RuncContainer, RuncFactory};
-use crate::runc::{create_runc, ShimExecutor};
-use crate::service::GROUP_LABELS;
+use crate::common::create_runc;
+use crate::common::{ShimExecutor, GROUP_LABELS};
 
 mod runc;
 

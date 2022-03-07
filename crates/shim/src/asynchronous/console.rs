@@ -21,7 +21,7 @@ use log::warn;
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
-use crate::asynchronous::utils::mkdir;
+use crate::asynchronous::util::mkdir;
 use crate::Error;
 use crate::Result;
 

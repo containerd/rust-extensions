@@ -21,30 +21,23 @@ use std::path::Path;
 use std::sync::Arc;
 
 use containerd_shim as shim;
+use containerd_shim::util::{read_options, read_runtime, read_spec_from_file, write_address};
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
 use runc::DefaultExecutor;
 use shim::api::*;
 use shim::error::{Error, Result};
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
 use shim::protos::protobuf::SingularPtrField;
-use shim::util::{get_timestamp, read_options, read_runtime, read_spec_from_file, write_address};
+use shim::publisher::RemotePublisher;
+use shim::util::get_timestamp;
 use shim::{debug, error, io_error, other_error, warn};
-use shim::{spawn, Config, ExitSignal, RemotePublisher, Shim, StartOpts};
+use shim::{spawn, Config, ExitSignal, Shim, StartOpts};
 
-use crate::container::{Container, Process};
-use crate::runc::{create_runc, RuncContainer, RuncFactory, DEFAULT_RUNC_ROOT};
-use crate::task::ShimTask;
-
-pub const GROUP_LABELS: [&str; 2] = [
-    "io.containerd.runc.v2.group",
-    "io.kubernetes.cri.sandbox-id",
-];
-
-pub(crate) struct Service {
-    exit: Arc<ExitSignal>,
-    id: String,
-    namespace: String,
-}
+use crate::common::{create_runc, GROUP_LABELS};
+use crate::synchronous::container::{Container, Process};
+use crate::synchronous::runc::{RuncContainer, RuncFactory};
+use crate::synchronous::task::ShimTask;
+use crate::synchronous::Service;
 
 impl Shim for Service {
     type T = ShimTask<RuncFactory, RuncContainer>;
@@ -65,7 +58,7 @@ impl Shim for Service {
         }
     }
 
-    fn start_shim(&mut self, opts: StartOpts) -> Result<String> {
+    fn start_shim(&mut self, opts: StartOpts) -> containerd_shim::Result<String> {
         let mut grouping = opts.id.clone();
         let spec = read_spec_from_file("")?;
         match spec.annotations() {
@@ -83,14 +76,14 @@ impl Shim for Service {
         let (child_id, address) = spawn(opts, &grouping, Vec::new())?;
 
         #[cfg(target_os = "linux")]
-        crate::cgroup::set_cgroup_and_oom_score(child_id)?;
+        crate::synchronous::cgroup::set_cgroup_and_oom_score(child_id)?;
 
         write_address(&address)?;
         Ok(address)
     }
 
     #[cfg(not(feature = "async"))]
-    fn delete_shim(&mut self) -> Result<DeleteResponse> {
+    fn delete_shim(&mut self) -> containerd_shim::Result<DeleteResponse> {
         let namespace = self.namespace.as_str();
         let bundle = current_dir().map_err(io_error!(e, "get current dir"))?;
         let opts = read_options(&bundle)?;
@@ -107,7 +100,7 @@ impl Shim for Service {
     }
 
     #[cfg(feature = "async")]
-    fn delete_shim(&mut self) -> Result<DeleteResponse> {
+    fn delete_shim(&mut self) -> containerd_shim::Result<DeleteResponse> {
         Err(Error::Unimplemented("delete shim".to_string()))
     }
 

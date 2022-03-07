@@ -142,7 +142,7 @@ pub async fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::asynchronous::utils::{read_file_to_str, write_str_to_file};
+    use crate::asynchronous::util::{read_file_to_str, write_str_to_file};
 
     #[tokio::test]
     async fn test_read_write_str() {

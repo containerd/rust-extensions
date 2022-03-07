@@ -13,73 +13,84 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-use std::sync::Arc;
-
-use log::info;
-
+#[cfg(not(feature = "async"))]
 use containerd_shim as shim;
-use shim::{api, Config, DeleteResponse, ExitSignal, RemotePublisher, TtrpcContext, TtrpcResult};
 
-#[derive(Clone)]
-struct Service {
-    exit: Arc<ExitSignal>,
-}
+#[cfg(not(feature = "async"))]
+mod skeleton {
+    use std::sync::Arc;
 
-impl shim::Shim for Service {
-    type T = Service;
+    use log::info;
 
-    fn new(
-        _runtime_id: &str,
-        _id: &str,
-        _namespace: &str,
-        _publisher: RemotePublisher,
-        _config: &mut Config,
-    ) -> Self {
-        Service {
-            exit: Arc::new(ExitSignal::default()),
+    use containerd_shim as shim;
+    use containerd_shim::synchronous::publisher::RemotePublisher;
+    use shim::{api, Config, DeleteResponse, ExitSignal, TtrpcContext, TtrpcResult};
+
+    #[derive(Clone)]
+    pub(crate) struct Service {
+        exit: Arc<ExitSignal>,
+    }
+
+    impl shim::Shim for Service {
+        type T = Service;
+
+        fn new(
+            _runtime_id: &str,
+            _id: &str,
+            _namespace: &str,
+            _publisher: RemotePublisher,
+            _config: &mut Config,
+        ) -> Self {
+            Service {
+                exit: Arc::new(ExitSignal::default()),
+            }
+        }
+
+        fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
+            let grouping = opts.id.clone();
+            let (_child_id, address) = shim::spawn(opts, &grouping, Vec::new())?;
+            Ok(address)
+        }
+
+        fn delete_shim(&mut self) -> Result<DeleteResponse, shim::Error> {
+            Ok(DeleteResponse::new())
+        }
+
+        fn wait(&mut self) {
+            self.exit.wait();
+        }
+
+        fn create_task_service(&self) -> Self::T {
+            self.clone()
         }
     }
 
-    fn start_shim(&mut self, opts: shim::StartOpts) -> Result<String, shim::Error> {
-        let grouping = opts.id.clone();
-        let (_child_id, address) = shim::spawn(opts, &grouping, Vec::new())?;
-        Ok(address)
-    }
+    impl shim::Task for Service {
+        fn connect(
+            &self,
+            _ctx: &TtrpcContext,
+            _req: api::ConnectRequest,
+        ) -> TtrpcResult<api::ConnectResponse> {
+            info!("Connect request");
+            Ok(api::ConnectResponse {
+                version: String::from("example"),
+                ..Default::default()
+            })
+        }
 
-    fn delete_shim(&mut self) -> Result<DeleteResponse, shim::Error> {
-        Ok(DeleteResponse::new())
-    }
-
-    fn wait(&mut self) {
-        self.exit.wait();
-    }
-
-    fn create_task_service(&self) -> Self::T {
-        self.clone()
-    }
-}
-
-impl shim::Task for Service {
-    fn connect(
-        &self,
-        _ctx: &TtrpcContext,
-        _req: api::ConnectRequest,
-    ) -> TtrpcResult<api::ConnectResponse> {
-        info!("Connect request");
-        Ok(api::ConnectResponse {
-            version: String::from("example"),
-            ..Default::default()
-        })
-    }
-
-    fn shutdown(&self, _ctx: &TtrpcContext, _req: api::ShutdownRequest) -> TtrpcResult<api::Empty> {
-        info!("Shutdown request");
-        self.exit.signal();
-        Ok(api::Empty::default())
+        fn shutdown(
+            &self,
+            _ctx: &TtrpcContext,
+            _req: api::ShutdownRequest,
+        ) -> TtrpcResult<api::Empty> {
+            info!("Shutdown request");
+            self.exit.signal();
+            Ok(api::Empty::default())
+        }
     }
 }
 
 fn main() {
-    shim::run::<Service>("io.containerd.empty.v1", None)
+    #[cfg(not(feature = "async"))]
+    shim::run::<skeleton::Service>("io.containerd.empty.v1", None)
 }

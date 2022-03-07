@@ -30,7 +30,7 @@ use shim::Task;
 use shim::{api::*, ExitSignal};
 use shim::{TtrpcContext, TtrpcResult};
 
-use crate::container::{Container, ContainerFactory};
+use crate::synchronous::container::{Container, ContainerFactory};
 
 pub struct ShimTask<F, C> {
     pub containers: Arc<Mutex<HashMap<String, C>>>,

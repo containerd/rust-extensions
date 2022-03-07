@@ -37,21 +37,22 @@ use containerd_shim::asynchronous::monitor::{
     monitor_subscribe, monitor_unsubscribe, Subscription,
 };
 use containerd_shim::asynchronous::processes::{ProcessLifecycle, ProcessTemplate};
-use containerd_shim::asynchronous::utils::{
+use containerd_shim::asynchronous::util::{
     asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
 };
-use containerd_shim::console::Console;
 use containerd_shim::io::Stdio;
 use containerd_shim::monitor::{ExitEvent, Subject, Topic};
 use containerd_shim::protos::protobuf::{CodedInputStream, Message};
+use containerd_shim::Console;
 use containerd_shim::{io_error, other, Error};
 use containerd_shim::{other_error, Result};
 use runc::{Command, Executor, Runc};
 
-use crate::console::receive_socket;
-use crate::io::{create_io, ProcessIO};
-use crate::runc::{
-    check_kill_error, create_runc, get_spec_from_request, CreateConfig, ShimExecutor, INIT_PID_FILE,
+use crate::common::receive_socket;
+use crate::common::CreateConfig;
+use crate::common::{
+    check_kill_error, create_io, create_runc, get_spec_from_request, ProcessIO, ShimExecutor,
+    INIT_PID_FILE,
 };
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;

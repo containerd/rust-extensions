@@ -26,17 +26,20 @@ use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 
 use containerd_shim as shim;
-use containerd_shim::console::{ioctl_set_winsz, Console, ConsoleSocket};
-use containerd_shim::io::Stdio;
 use shim::api::*;
+use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
+use shim::io::Stdio;
+use shim::ioctl_set_winsz;
 use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::Timestamp;
 use shim::util::read_pid_from_file;
+use shim::Console;
 use shim::{io_error, other, other_error};
 
-use crate::console::receive_socket;
-use crate::io::{spawn_copy, ProcessIO};
+use crate::common::receive_socket;
+use crate::common::ProcessIO;
+use crate::synchronous::io::spawn_copy;
 
 pub trait ContainerFactory<C> {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<C>;
@@ -65,12 +68,7 @@ pub trait Process {
 pub trait Container {
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32>;
     fn state(&self, exec_id: Option<&str>) -> Result<StateResponse>;
-    fn kill(
-        &mut self,
-        exec_id: Option<&str>,
-        signal: u32,
-        all: bool,
-    ) -> containerd_shim::Result<()>;
+    fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()>;
     fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>>;
     fn get_exit_info(&self, exec_id: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)>;
     fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)>;

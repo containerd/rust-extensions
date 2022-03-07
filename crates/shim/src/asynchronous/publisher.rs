@@ -26,7 +26,7 @@ use containerd_shim_protos::ttrpc;
 use containerd_shim_protos::ttrpc::context::Context;
 use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
 
-use crate::asynchronous::utils::asyncify;
+use crate::asynchronous::util::asyncify;
 use crate::error::Result;
 use crate::util::{any, connect, timestamp};
 

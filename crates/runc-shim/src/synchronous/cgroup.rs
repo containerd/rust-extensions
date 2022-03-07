@@ -20,17 +20,17 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use containerd_shim as shim;
-
 use cgroups_rs::cgroup::get_cgroups_relative_paths_by_pid;
 use cgroups_rs::{hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem};
+use oci_spec::runtime::LinuxResources;
+
+use containerd_shim as shim;
 use containerd_shim::api::Options;
 use containerd_shim::protos::cgroups::metrics::{
     CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics,
 };
 use containerd_shim::protos::protobuf::well_known_types::Any;
 use containerd_shim::protos::protobuf::Message;
-use oci_spec::runtime::LinuxResources;
 use shim::error::{Error, Result};
 use shim::{io_error, other_error};
 
@@ -223,10 +223,11 @@ pub fn update_metrics(pid: u32, resources: &LinuxResources) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cgroup::{
+    use cgroups_rs::{hierarchies, Cgroup, CgroupPid};
+
+    use crate::synchronous::cgroup::{
         add_task_to_cgroup, adjust_oom_score, read_process_oom_score, OOM_SCORE_ADJ_MAX,
     };
-    use cgroups_rs::{hierarchies, Cgroup, CgroupPid};
 
     #[test]
     fn test_add_cgroup() {

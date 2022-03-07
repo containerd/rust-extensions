@@ -14,18 +14,10 @@
    limitations under the License.
 */
 
-use std::fs::File;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 use log::warn;
-use nix::ioctl_write_ptr_bad;
-
-ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
-
-pub struct Console {
-    pub file: File,
-}
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,

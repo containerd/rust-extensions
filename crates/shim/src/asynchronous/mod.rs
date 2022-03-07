@@ -40,7 +40,7 @@ use containerd_shim_protos::ttrpc::r#async::Server;
 
 use crate::asynchronous::monitor::monitor_notify_by_pid;
 use crate::asynchronous::publisher::RemotePublisher;
-use crate::asynchronous::utils::{asyncify, read_file_to_str, write_str_to_file};
+use crate::asynchronous::util::{asyncify, read_file_to_str, write_str_to_file};
 use crate::error::Error;
 use crate::error::Result;
 use crate::{
@@ -53,7 +53,7 @@ pub mod monitor;
 pub mod processes;
 pub mod publisher;
 pub mod task;
-pub mod utils;
+pub mod util;
 
 /// Asynchronous Main shim interface that must be implemented by all async shims.
 ///

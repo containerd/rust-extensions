@@ -14,22 +14,20 @@
    limitations under the License.
 */
 
-#[cfg(not(feature = "async"))]
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crossbeam::sync::WaitGroup;
 use log::debug;
 
 use containerd_shim::io::Stdio;
-use containerd_shim::util::IntoOption;
 use containerd_shim::{
     error::{Error, Result},
     io_error,
 };
-use runc::io::{Io, NullIo, FIFO};
+
+use crate::common::ProcessIO;
 
 pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
     mut from: R,
@@ -51,14 +49,7 @@ pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
     })
 }
 
-pub struct ProcessIO {
-    pub uri: Option<String>,
-    pub io: Option<Arc<dyn Io>>,
-    pub copy: bool,
-}
-
 impl ProcessIO {
-    #[cfg(not(feature = "async"))]
     pub fn copy(&self, stdio: &Stdio) -> Result<WaitGroup> {
         let wg = WaitGroup::new();
         if !self.copy {
@@ -127,58 +118,4 @@ impl ProcessIO {
 
         Ok(wg)
     }
-
-    #[cfg(feature = "async")]
-    pub fn copy(&self, _stdio: &Stdio) -> Result<WaitGroup> {
-        unimplemented!()
-    }
-}
-
-pub fn create_io(id: &str, _io_uid: u32, _io_gid: u32, stdio: &Stdio) -> Result<ProcessIO> {
-    if stdio.is_null() {
-        let nio = NullIo::new().map_err(io_error!(e, "new Null Io"))?;
-        let pio = ProcessIO {
-            uri: None,
-            io: Some(Arc::new(nio)),
-            copy: false,
-        };
-        return Ok(pio);
-    }
-    let stdout = stdio.stdout.as_str();
-    let scheme_path = stdout.trim().split("://").collect::<Vec<&str>>();
-    let scheme: &str;
-    let uri: String;
-    if scheme_path.len() <= 1 {
-        // no scheme specified
-        // default schema to fifo
-        uri = format!("fifo://{}", stdout);
-        scheme = "fifo"
-    } else {
-        uri = stdout.to_string();
-        scheme = scheme_path[0];
-    }
-
-    let mut pio = ProcessIO {
-        uri: Some(uri),
-        io: None,
-        copy: false,
-    };
-
-    if scheme == "fifo" {
-        debug!(
-            "create named pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
-            id,
-            stdio.stdin.as_str(),
-            stdio.stdout.as_str(),
-            stdio.stderr.as_str()
-        );
-        let io = FIFO {
-            stdin: stdio.stdin.to_string().none_if(|x| x.is_empty()),
-            stdout: stdio.stdout.to_string().none_if(|x| x.is_empty()),
-            stderr: stdio.stderr.to_string().none_if(|x| x.is_empty()),
-        };
-        pio.io = Some(Arc::new(io));
-        pio.copy = false;
-    }
-    Ok(pio)
 }

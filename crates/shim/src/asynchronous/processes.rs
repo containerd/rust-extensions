@@ -23,10 +23,10 @@ use tokio::sync::oneshot::{channel, Receiver, Sender};
 use containerd_shim_protos::api::{StateResponse, Status};
 use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
-use crate::asynchronous::utils::asyncify;
-use crate::console::{ioctl_set_winsz, Console};
-use crate::error::Error;
+use crate::asynchronous::util::asyncify;
 use crate::io::Stdio;
+use crate::Error;
+use crate::{ioctl_set_winsz, Console};
 
 #[async_trait]
 pub trait Process {

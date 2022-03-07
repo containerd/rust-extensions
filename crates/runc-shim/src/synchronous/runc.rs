@@ -29,36 +29,32 @@ use oci_spec::runtime::{Linux, LinuxNamespaceType, LinuxResources, Spec};
 use time::OffsetDateTime;
 
 use containerd_shim as shim;
-use containerd_shim::console::{Console, ConsoleSocket};
-use containerd_shim::io::Stdio;
 use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
 use runc::{DefaultExecutor, Runc};
 use shim::api::*;
+use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
+use shim::io::Stdio;
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
-use shim::util::{
-    new_temp_console_socket, read_spec_from_file, write_options, write_runtime, IntoOption,
-    JsonOptions,
-};
+#[cfg(not(feature = "async"))]
+use shim::util::{new_temp_console_socket, read_spec_from_file, write_options, write_runtime};
+use shim::util::{IntoOption, JsonOptions};
+use shim::Console;
 use shim::{debug, error, io_error, other, other_error};
 
-use crate::container::{CommonContainer, CommonProcess, Container, ContainerFactory, Process};
-use crate::io::create_io;
-
-pub const DEFAULT_RUNC_ROOT: &str = "/run/containerd/runc";
-pub const INIT_PID_FILE: &str = "init.pid";
-const DEFAULT_COMMAND: &str = "runc";
+use crate::common;
+use crate::common::{create_io, CreateConfig, INIT_PID_FILE};
+use crate::synchronous::container::{
+    CommonContainer, CommonProcess, Container, ContainerFactory, Process,
+};
 
 #[derive(Clone, Default)]
 pub(crate) struct RuncFactory {}
-
-#[derive(Clone)]
-pub struct ShimExecutor {}
 
 impl ContainerFactory<RuncContainer> for RuncFactory {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<RuncContainer> {
@@ -95,7 +91,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
         }
 
-        let runc = create_runc(runtime, ns, bundle, &opts, DefaultExecutor {})?;
+        let runc = common::create_runc(runtime, ns, bundle, &opts, DefaultExecutor {})?;
 
         let id = req.get_id();
         let stdio = Stdio {
@@ -142,7 +138,6 @@ pub(crate) struct RuncContainer {
 }
 
 impl Container for RuncContainer {
-    #[cfg(not(feature = "async"))]
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
         match exec_id {
             Some(exec_id) => {
@@ -213,22 +208,16 @@ impl Container for RuncContainer {
         }
     }
 
-    #[cfg(feature = "async")]
-    fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
-        Err(Error::Unimplemented("start".to_string()))
-    }
-
     fn state(&self, exec_id: Option<&str>) -> Result<StateResponse> {
         self.common.state(exec_id)
     }
 
-    #[cfg(not(feature = "async"))]
     fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()> {
         match exec_id {
             Some(_) => {
                 let p = self.common.get_mut_process(exec_id)?;
                 kill_process(p.pid() as u32, p.exited_at(), signal)
-                    .map_err(|e| check_kill_error(format!("{}", e)))
+                    .map_err(|e| common::check_kill_error(format!("{}", e)))
             }
             None => self
                 .common
@@ -239,13 +228,8 @@ impl Container for RuncContainer {
                     signal,
                     Some(&runc::options::KillOpts { all }),
                 )
-                .map_err(|e| check_kill_error(format!("{}", e))),
+                .map_err(|e| common::check_kill_error(format!("{}", e))),
         }
-    }
-
-    #[cfg(feature = "async")]
-    fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()> {
-        Err(Error::Unimplemented("kill".to_string()))
     }
 
     fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>> {
@@ -256,7 +240,6 @@ impl Container for RuncContainer {
         self.common.get_exit_info(exec_id)
     }
 
-    #[cfg(not(feature = "async"))]
     fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)> {
         let (pid, code, exit_at) = self
             .get_exit_info(exec_id_opt)
@@ -292,21 +275,10 @@ impl Container for RuncContainer {
         Ok((pid, code as u32, time_stamp))
     }
 
-    #[cfg(feature = "async")]
-    fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)> {
-        Err(Error::Unimplemented("delete".to_string()))
-    }
-
-    #[cfg(not(feature = "async"))]
     fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
         self.common
             .exec(req)
             .map_err(other_error!(e, "failed exec"))
-    }
-
-    #[cfg(feature = "async")]
-    fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
-        Err(Error::Unimplemented("exec".to_string()))
     }
 
     fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()> {
@@ -322,7 +294,7 @@ impl Container for RuncContainer {
     #[cfg(target_os = "linux")]
     fn stats(&self) -> Result<Metrics> {
         let pid = self.common.init.pid() as u32;
-        crate::cgroup::collect_metrics(pid)
+        crate::synchronous::cgroup::collect_metrics(pid)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -333,7 +305,7 @@ impl Container for RuncContainer {
     #[cfg(target_os = "linux")]
     fn update(&mut self, resources: &LinuxResources) -> Result<()> {
         let pid = self.common.init.pid() as u32;
-        crate::cgroup::update_metrics(pid, resources)
+        crate::synchronous::cgroup::update_metrics(pid, resources)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -341,12 +313,6 @@ impl Container for RuncContainer {
         Err(Error::Unimplemented("update".to_string()))
     }
 
-    #[cfg(feature = "async")]
-    fn pids(&self) -> Result<PidsResponse> {
-        Err(Error::Unimplemented("pids".to_string()))
-    }
-
-    #[cfg(not(feature = "async"))]
     fn pids(&self) -> Result<PidsResponse> {
         let pids = self
             .common
@@ -468,7 +434,7 @@ impl InitProcess {
             criu_work_path: "".to_string(),
         }
     }
-    #[cfg(not(feature = "async"))]
+
     pub fn create(&mut self, _conf: &CreateConfig) -> Result<()> {
         //TODO  checkpoint support
         let id = self.common.id.to_string();
@@ -509,10 +475,6 @@ impl InitProcess {
         }
         self.common.set_pid_from_file(pid_path.as_path())?;
         Ok(())
-    }
-    #[cfg(feature = "async")]
-    pub fn create(&mut self, _conf: &CreateConfig) -> Result<()> {
-        unimplemented!()
     }
 }
 
@@ -664,7 +626,7 @@ impl Process for ExecProcess {
 impl TryFrom<ExecProcessRequest> for ExecProcess {
     type Error = Error;
     fn try_from(req: ExecProcessRequest) -> std::result::Result<Self, Self::Error> {
-        let p = get_spec_from_request(&req)?;
+        let p = common::get_spec_from_request(&req)?;
         let exec_process = ExecProcess {
             common: CommonProcess {
                 state: Status::CREATED,
@@ -686,62 +648,4 @@ impl TryFrom<ExecProcessRequest> for ExecProcess {
         };
         Ok(exec_process)
     }
-}
-
-pub fn get_spec_from_request(req: &ExecProcessRequest) -> Result<oci_spec::runtime::Process> {
-    if let Some(val) = req.spec.as_ref() {
-        let mut p = serde_json::from_slice::<oci_spec::runtime::Process>(val.get_value())?;
-        p.set_terminal(Some(req.terminal));
-        Ok(p)
-    } else {
-        Err(Error::InvalidArgument("no spec in request".to_string()))
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct CreateConfig {}
-
-pub fn check_kill_error(emsg: String) -> Error {
-    let emsg = emsg.to_lowercase();
-    if emsg.contains("process already finished")
-        || emsg.contains("container not running")
-        || emsg.contains("no such process")
-    {
-        Error::NotFoundError("process already finished".to_string())
-    } else if emsg.contains("does not exist") {
-        Error::NotFoundError("no such container".to_string())
-    } else {
-        other!("unknown error after kill {}", emsg)
-    }
-}
-
-pub fn create_runc<F>(
-    runtime: &str,
-    namespace: &str,
-    bundle: impl AsRef<Path>,
-    opts: &Options,
-    executor: F,
-) -> Result<Runc<F>> {
-    let runtime = if runtime.is_empty() {
-        DEFAULT_COMMAND
-    } else {
-        runtime
-    };
-    let root = opts.root.as_str();
-    let root = Path::new(if root.is_empty() {
-        DEFAULT_RUNC_ROOT
-    } else {
-        root
-    })
-    .join(namespace);
-
-    let log = bundle.as_ref().join("log.json");
-    GlobalOpts::default()
-        .command(runtime)
-        .root(root)
-        .log(log)
-        .log_json()
-        .systemd_cgroup(opts.systemd_cgroup)
-        .build_with_executor(executor)
-        .map_err(other_error!(e, "unable to create runc instance"))
 }
