@@ -23,7 +23,6 @@ use std::sync::Arc;
 use containerd_shim as shim;
 use containerd_shim::util::{read_options, read_runtime, read_spec_from_file, write_address};
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
-use runc::DefaultExecutor;
 use shim::api::*;
 use shim::error::{Error, Result};
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
@@ -89,7 +88,7 @@ impl Shim for Service {
         let opts = read_options(&bundle)?;
         let runtime = read_runtime(&bundle)?;
 
-        let runc = create_runc(&*runtime, namespace, &bundle, &opts, DefaultExecutor {})?;
+        let runc = create_runc(&*runtime, namespace, &bundle, &opts, None)?;
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
         let mut resp = DeleteResponse::new();

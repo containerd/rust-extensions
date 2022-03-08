@@ -35,9 +35,10 @@
 
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use async_trait::async_trait;
@@ -104,13 +105,13 @@ pub type Command = std::process::Command;
 pub type Command = tokio::process::Command;
 
 #[derive(Debug, Clone)]
-pub struct Runc<F> {
+pub struct Runc {
     command: PathBuf,
     args: Vec<String>,
-    executor: F,
+    spawner: Arc<dyn Spawner + Send + Sync>,
 }
 
-impl<F> Runc<F> {
+impl Runc {
     fn command(&self, args: &[String]) -> Result<Command> {
         let args = [&self.args, args].concat();
         let mut cmd = Command::new(&self.command);
@@ -128,12 +129,9 @@ impl<F> Runc<F> {
 }
 
 #[cfg(not(feature = "async"))]
-impl<F> Runc<F>
-where
-    F: Executor,
-{
+impl Runc {
     fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
-        let (status, pid, stdout, stderr) = self.executor.execute(cmd)?;
+        let (status, pid, stdout, stderr) = self.spawner.execute(cmd)?;
         if status.success() {
             let output = if combined_output {
                 stdout + stderr.as_str()
@@ -358,13 +356,13 @@ macro_rules! tc {
 }
 
 #[cfg(not(feature = "async"))]
-pub trait Executor {
+pub trait Spawner: Debug {
     fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)>;
 }
 
 #[cfg(feature = "async")]
 #[async_trait]
-pub trait Executor {
+pub trait Spawner: Debug {
     async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)>;
 }
 
@@ -373,13 +371,10 @@ pub trait Executor {
 /// Note that you MUST use this client on tokio runtime, as this client internally use [`tokio::process::Command`]
 /// and some other utilities.
 #[cfg(feature = "async")]
-impl<F> Runc<F>
-where
-    F: Executor,
-{
+impl Runc {
     async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
         debug!("Execute command {:?}", cmd);
-        let (status, pid, stdout, stderr) = self.executor.execute(cmd).await?;
+        let (status, pid, stdout, stderr) = self.spawner.execute(cmd).await?;
         if status.success() {
             let output = if combined_output {
                 stdout + stderr.as_str()
@@ -611,21 +606,21 @@ mod tests {
     use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
 
-    fn ok_client() -> Runc<DefaultExecutor> {
+    fn ok_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/true")
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn fail_client() -> Runc<DefaultExecutor> {
+    fn fail_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/false")
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn echo_client() -> Runc<DefaultExecutor> {
+    fn echo_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/echo")
             .build()
@@ -794,21 +789,21 @@ mod tests {
     use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
 
-    fn ok_client() -> Runc<DefaultExecutor> {
+    fn ok_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/true")
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn fail_client() -> Runc<DefaultExecutor> {
+    fn fail_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/false")
             .build()
             .expect("unable to create runc instance")
     }
 
-    fn echo_client() -> Runc<DefaultExecutor> {
+    fn echo_client() -> Runc {
         GlobalOpts::new()
             .command("/bin/echo")
             .build()
@@ -987,12 +982,12 @@ mod tests {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct DefaultExecutor {}
 
 #[cfg(feature = "async")]
 #[async_trait]
-impl Executor for DefaultExecutor {
+impl Spawner for DefaultExecutor {
     async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
         let mut cmd = cmd;
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
@@ -1009,7 +1004,7 @@ impl Executor for DefaultExecutor {
 }
 
 #[cfg(not(feature = "async"))]
-impl Executor for DefaultExecutor {
+impl Spawner for DefaultExecutor {
     fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
         let mut cmd = cmd;
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;

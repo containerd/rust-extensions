@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use crate::error::Error;
 use crate::io::Io;
-use crate::{utils, DefaultExecutor};
+use crate::{utils, DefaultExecutor, Spawner};
 use crate::{LogFormat, Runc};
 
 // constants for log format
@@ -108,6 +108,8 @@ pub struct GlobalOpts {
     /// Default is 5 seconds.
     /// This will be used only in AsyncClient.
     timeout: Duration,
+    /// executor that runs the commands
+    executor: Option<Arc<dyn Spawner + Send + Sync>>,
 }
 
 impl GlobalOpts {
@@ -193,17 +195,13 @@ impl GlobalOpts {
         self
     }
 
-    pub fn build(self) -> Result<Runc<DefaultExecutor>, Error> {
-        self.args()
+    pub fn custom_spawner(&mut self, executor: Arc<dyn Spawner + Send + Sync>) -> &mut Self {
+        self.executor = Some(executor);
+        self
     }
 
-    pub fn build_with_executor<E>(self, executor: E) -> Result<Runc<E>, Error> {
-        let (command, args) = self.output()?;
-        Ok(Runc {
-            command,
-            args,
-            executor,
-        })
+    pub fn build(self) -> Result<Runc, Error> {
+        self.args()
     }
 
     fn output(&self) -> Result<(PathBuf, Vec<String>), Error> {
@@ -252,15 +250,19 @@ impl GlobalOpts {
 }
 
 impl Args for GlobalOpts {
-    type Output = Result<Runc<DefaultExecutor>, Error>;
+    type Output = Result<Runc, Error>;
 
     fn args(&self) -> Self::Output {
         let (command, args) = self.output()?;
-        let executor = DefaultExecutor {};
+        let executor = if let Some(exec) = self.executor.clone() {
+            exec
+        } else {
+            Arc::new(DefaultExecutor {})
+        };
         Ok(Runc {
             command,
             args,
-            executor,
+            spawner: executor,
         })
     }
 }

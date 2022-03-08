@@ -30,7 +30,7 @@ use containerd_shim::util::IntoOption;
 use containerd_shim::{io_error, other, other_error, Error};
 use runc::io::{Io, NullIo, FIFO};
 use runc::options::GlobalOpts;
-use runc::Runc;
+use runc::{Runc, Spawner};
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",
@@ -98,7 +98,7 @@ pub fn create_io(
     Ok(pio)
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ShimExecutor {}
 
 pub fn get_spec_from_request(
@@ -130,13 +130,13 @@ pub fn check_kill_error(emsg: String) -> Error {
 const DEFAULT_RUNC_ROOT: &str = "/run/containerd/runc";
 const DEFAULT_COMMAND: &str = "runc";
 
-pub fn create_runc<F>(
+pub fn create_runc(
     runtime: &str,
     namespace: &str,
     bundle: impl AsRef<Path>,
     opts: &Options,
-    executor: F,
-) -> containerd_shim::Result<Runc<F>> {
+    spawner: Option<Arc<dyn Spawner + Send + Sync>>,
+) -> containerd_shim::Result<Runc> {
     let runtime = if runtime.is_empty() {
         DEFAULT_COMMAND
     } else {
@@ -151,13 +151,17 @@ pub fn create_runc<F>(
     .join(namespace);
 
     let log = bundle.as_ref().join("log.json");
-    GlobalOpts::default()
+    let mut gopts = GlobalOpts::default()
         .command(runtime)
         .root(root)
         .log(log)
         .log_json()
-        .systemd_cgroup(opts.systemd_cgroup)
-        .build_with_executor(executor)
+        .systemd_cgroup(opts.systemd_cgroup);
+    if let Some(s) = spawner {
+        gopts.custom_spawner(s);
+    }
+    gopts
+        .build()
         .map_err(other_error!(e, "unable to create runc instance"))
 }
 

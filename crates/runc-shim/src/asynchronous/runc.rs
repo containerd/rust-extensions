@@ -19,6 +19,7 @@ use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{debug, error};
@@ -46,7 +47,7 @@ use containerd_shim::protos::protobuf::{CodedInputStream, Message};
 use containerd_shim::Console;
 use containerd_shim::{io_error, other, Error};
 use containerd_shim::{other_error, Result};
-use runc::{Command, Executor, Runc};
+use runc::{Command, Runc, Spawner};
 
 use crate::common::receive_socket;
 use crate::common::CreateConfig;
@@ -96,7 +97,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(&m, rootfs.as_path()).await?
         }
 
-        let runc = create_runc(runtime, ns, bundle, &opts, ShimExecutor {})?;
+        let runc = create_runc(runtime, ns, bundle, &opts, Some(Arc::new(ShimExecutor {})))?;
 
         let id = req.get_id();
         let stdio = Stdio::new(
@@ -175,7 +176,7 @@ impl RuncFactory {
 }
 
 pub struct RuncExecFactory {
-    runtime: Runc<ShimExecutor>,
+    runtime: Runc,
     bundle: String,
     io_uid: u32,
     io_gid: u32,
@@ -213,7 +214,7 @@ impl ProcessFactory<ExecProcess> for RuncExecFactory {
 
 #[derive(Clone)]
 pub struct RuncInitLifecycle {
-    runtime: Runc<ShimExecutor>,
+    runtime: Runc,
     opts: Options,
     bundle: String,
     rootfs: PathBuf,
@@ -266,7 +267,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
 }
 
 impl RuncInitLifecycle {
-    pub fn new(runtime: Runc<ShimExecutor>, opts: Options, rootfs: PathBuf, bundle: &str) -> Self {
+    pub fn new(runtime: Runc, opts: Options, rootfs: PathBuf, bundle: &str) -> Self {
         let work_dir = Path::new(bundle).join("work");
         let mut opts = opts;
         if opts.get_criu_path().is_empty() {
@@ -310,7 +311,7 @@ impl RuncInitLifecycle {
 
 #[derive(Clone)]
 pub struct RuncExecLifecycle {
-    runtime: Runc<ShimExecutor>,
+    runtime: Runc,
     bundle: String,
     container_id: String,
     io_uid: u32,
@@ -552,18 +553,17 @@ async fn copy_io_or_console<P>(
 }
 
 #[async_trait]
-impl Executor for ShimExecutor {
+impl Spawner for ShimExecutor {
     async fn execute(&self, cmd: Command) -> runc::Result<(ExitStatus, u32, String, String)> {
         let mut cmd = cmd;
         let subscription = monitor_subscribe(Topic::Pid)
             .await
             .map_err(|e| runc::error::Error::Other(Box::new(e)))?;
+        let sid = subscription.id;
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                monitor_unsubscribe(subscription.id)
-                    .await
-                    .unwrap_or_default();
+                monitor_unsubscribe(sid).await.unwrap_or_default();
                 return Err(runc::error::Error::ProcessSpawnFailed(e));
             }
         };
@@ -574,6 +574,7 @@ impl Executor for ShimExecutor {
             wait_pid(pid as i32, subscription)
         );
         let status = ExitStatus::from_raw(exit_code);
+        monitor_unsubscribe(sid).await.unwrap_or_default();
         Ok((status, pid, stdout, stderr))
     }
 }

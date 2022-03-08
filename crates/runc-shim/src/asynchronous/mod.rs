@@ -96,7 +96,14 @@ impl Shim for Service {
         let opts = read_options(&bundle).await?;
         let runtime = read_runtime(&bundle).await?;
 
-        let runc = create_runc(&*runtime, namespace, &bundle, &opts, ShimExecutor {})?;
+        let runc = create_runc(
+            &*runtime,
+            namespace,
+            &bundle,
+            &opts,
+            Some(Arc::new(ShimExecutor {})),
+        )?;
+
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .await
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));

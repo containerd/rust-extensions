@@ -30,7 +30,7 @@ use time::OffsetDateTime;
 
 use containerd_shim as shim;
 use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
-use runc::{DefaultExecutor, Runc};
+use runc::Runc;
 use shim::api::*;
 use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
@@ -91,7 +91,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
         }
 
-        let runc = common::create_runc(runtime, ns, bundle, &opts, DefaultExecutor {})?;
+        let runc = common::create_runc(runtime, ns, bundle, &opts, None)?;
 
         let id = req.get_id();
         let stdio = Stdio {
@@ -399,7 +399,7 @@ fn kill_process(pid: u32, exit_at: Option<OffsetDateTime>, sig: u32) -> Result<(
 pub(crate) struct InitProcess {
     pub(crate) common: CommonProcess,
     pub(crate) bundle: String,
-    pub(crate) runtime: runc::Runc<DefaultExecutor>,
+    pub(crate) runtime: runc::Runc,
     pub(crate) rootfs: String,
     pub(crate) work_dir: String,
     pub(crate) io_uid: u32,
@@ -410,7 +410,7 @@ pub(crate) struct InitProcess {
 }
 
 impl InitProcess {
-    pub fn new(id: &str, bundle: &str, runtime: runc::Runc<DefaultExecutor>, stdio: Stdio) -> Self {
+    pub fn new(id: &str, bundle: &str, runtime: runc::Runc, stdio: Stdio) -> Self {
         InitProcess {
             common: CommonProcess {
                 state: Status::CREATED,
