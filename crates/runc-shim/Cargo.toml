@@ -10,7 +10,7 @@ description = "Rust implementation of containerd's runc v2 shim runtime"
 homepage = "https://containerd.io"
 
 [features]
-async = []
+async = ["containerd-shim/async", "runc/async", "tokio", "futures", "async-trait"]
 
 [dependencies]
 log = "0.4"
@@ -21,6 +21,9 @@ serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
 oci-spec = "0.5.4"
 crossbeam = "0.8.1"
+async-trait = { version = "0.1.51", optional = true }
+tokio = { version = "1.17.0", features = ["full"], optional = true }
+futures = {version = "0.3.21", optional = true}
 
 containerd-shim = { path = "../shim", version = "0.2.0" }
 runc = { path = "../runc", version = "0.1.0" }

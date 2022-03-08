@@ -17,31 +17,29 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs::{File, OpenOptions};
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::Path;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
-use log::{debug, warn};
-use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
-use nix::sys::termios::tcgetattr;
-use nix::sys::uio::IoVec;
-use nix::{cmsg_space, ioctl_write_ptr_bad};
+use log::debug;
 use oci_spec::runtime::LinuxResources;
-use runc::console::{Console, ConsoleSocket};
 use time::OffsetDateTime;
 
 use containerd_shim as shim;
-
 use shim::api::*;
+use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
+use shim::io::Stdio;
+use shim::ioctl_set_winsz;
 use shim::protos::cgroups::metrics::Metrics;
 use shim::protos::protobuf::well_known_types::Timestamp;
 use shim::util::read_pid_from_file;
+use shim::Console;
 use shim::{io_error, other, other_error};
 
-use crate::io::{spawn_copy, ProcessIO, Stdio};
-
-ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
+use crate::common::receive_socket;
+use crate::common::ProcessIO;
+use crate::synchronous::io::spawn_copy;
 
 pub trait ContainerFactory<C> {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<C>;
@@ -70,12 +68,7 @@ pub trait Process {
 pub trait Container {
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32>;
     fn state(&self, exec_id: Option<&str>) -> Result<StateResponse>;
-    fn kill(
-        &mut self,
-        exec_id: Option<&str>,
-        signal: u32,
-        all: bool,
-    ) -> containerd_shim::Result<()>;
+    fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()>;
     fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>>;
     fn get_exit_info(&self, exec_id: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)>;
     fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)>;
@@ -261,45 +254,11 @@ impl Process for CommonProcess {
         let stream = console_socket
             .accept()
             .map_err(io_error!(e, "accept console socket"))?;
-        let mut buf = [0u8; 4096];
-        let iovec = [IoVec::from_mut_slice(&mut buf)];
-        let mut space = cmsg_space!([RawFd; 2]);
-        let (path, fds) = match recvmsg(
-            stream.as_raw_fd(),
-            &iovec,
-            Some(&mut space),
-            MsgFlags::empty(),
-        ) {
-            Ok(msg) => {
-                let mut iter = msg.cmsgs();
-                if let Some(ControlMessageOwned::ScmRights(fds)) = iter.next() {
-                    (iovec[0].as_slice(), fds)
-                } else {
-                    return Err(other!("received message is empty"));
-                }
-            }
-            Err(e) => {
-                return Err(other!(e, "failed to receive message"));
-            }
-        };
-        if fds.is_empty() {
-            return Err(other!("received message is empty"));
-        }
-        let path = String::from_utf8(Vec::from(path)).unwrap_or_else(|e| {
-            warn!("failed to get path from array {}", e);
-            "".to_string()
-        });
-        let path = path.trim_matches(char::from(0));
-        debug!(
-            "copy_console: console socket get path: {}, fd: {}",
-            path, &fds[0]
-        );
-        let f = unsafe { File::from_raw_fd(fds[0]) };
-        let termios = tcgetattr(fds[0])?;
+        let fd = receive_socket(stream.as_raw_fd())?;
 
         if !self.stdio.stdin.is_empty() {
             debug!("copy_console: pipe stdin to console");
-            let f = unsafe { File::from_raw_fd(fds[0]) };
+            let f = unsafe { File::from_raw_fd(fd) };
             let stdin = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -309,7 +268,7 @@ impl Process for CommonProcess {
         }
 
         if !self.stdio.stdout.is_empty() {
-            let f = unsafe { File::from_raw_fd(fds[0]) };
+            let f = unsafe { File::from_raw_fd(fd) };
             debug!("copy_console: pipe stdout from console");
             let stdout = OpenOptions::new()
                 .write(true)
@@ -330,7 +289,9 @@ impl Process for CommonProcess {
                 })),
             );
         }
-        let console = Console { file: f, termios };
+        let console = Console {
+            file: unsafe { File::from_raw_fd(fd) },
+        };
         Ok(console)
     }
 

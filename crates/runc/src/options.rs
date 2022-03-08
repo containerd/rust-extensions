@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use crate::error::Error;
 use crate::io::Io;
-use crate::utils;
+use crate::{utils, DefaultExecutor, Spawner};
 use crate::{LogFormat, Runc};
 
 // constants for log format
@@ -108,6 +108,8 @@ pub struct GlobalOpts {
     /// Default is 5 seconds.
     /// This will be used only in AsyncClient.
     timeout: Duration,
+    /// executor that runs the commands
+    executor: Option<Arc<dyn Spawner + Send + Sync>>,
 }
 
 impl GlobalOpts {
@@ -193,15 +195,16 @@ impl GlobalOpts {
         self
     }
 
+    pub fn custom_spawner(&mut self, executor: Arc<dyn Spawner + Send + Sync>) -> &mut Self {
+        self.executor = Some(executor);
+        self
+    }
+
     pub fn build(self) -> Result<Runc, Error> {
         self.args()
     }
-}
 
-impl Args for GlobalOpts {
-    type Output = Result<Runc, Error>;
-
-    fn args(&self) -> Self::Output {
+    fn output(&self) -> Result<(PathBuf, Vec<String>), Error> {
         let path = self
             .command
             .clone()
@@ -242,8 +245,25 @@ impl Args for GlobalOpts {
             let arg = format!("{}={}", ROOTLESS, mode);
             args.push(arg);
         }
+        Ok((command, args))
+    }
+}
 
-        Ok(Runc { command, args })
+impl Args for GlobalOpts {
+    type Output = Result<Runc, Error>;
+
+    fn args(&self) -> Self::Output {
+        let (command, args) = self.output()?;
+        let executor = if let Some(exec) = self.executor.clone() {
+            exec
+        } else {
+            Arc::new(DefaultExecutor {})
+        };
+        Ok(Runc {
+            command,
+            args,
+            spawner: executor,
+        })
     }
 }
 
@@ -456,9 +476,9 @@ impl KillOpts {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
 
     use super::*;
-    use std::env;
 
     const ARGS_FAIL_MSG: &str = "Args.args() failed.";
 

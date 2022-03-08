@@ -21,7 +21,6 @@ use log::{debug, info};
 use oci_spec::runtime::LinuxResources;
 
 use containerd_shim as shim;
-
 use shim::other_error;
 use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{Message, SingularPtrField};
@@ -31,7 +30,7 @@ use shim::Task;
 use shim::{api::*, ExitSignal};
 use shim::{TtrpcContext, TtrpcResult};
 
-use crate::container::{Container, ContainerFactory};
+use crate::synchronous::container::{Container, ContainerFactory};
 
 pub struct ShimTask<F, C> {
     pub containers: Arc<Mutex<HashMap<String, C>>>,

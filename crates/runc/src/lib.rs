@@ -35,13 +35,22 @@
 
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
 
+#[cfg(feature = "async")]
+use async_trait::async_trait;
+#[cfg(feature = "async")]
+use log::debug;
 use oci_spec::runtime::{LinuxResources, Process};
 
-pub mod console;
+use crate::container::Container;
+use crate::error::Error;
+use crate::options::*;
+use crate::utils::write_value_to_temp_file;
+
 pub mod container;
 pub mod error;
 pub mod events;
@@ -51,14 +60,7 @@ pub mod monitor;
 pub mod options;
 pub mod utils;
 
-use crate::container::Container;
-use crate::error::Error;
-#[cfg(feature = "async")]
-use crate::monitor::{execute, DefaultMonitor, ExecuteResult};
-use crate::options::*;
-use crate::utils::write_value_to_temp_file;
-
-type Result<T> = std::result::Result<T, crate::error::Error>;
+pub type Result<T> = std::result::Result<T, crate::error::Error>;
 
 /// Response is for (pid, exit status, outputs).
 #[derive(Debug, Clone)]
@@ -96,11 +98,6 @@ impl Default for LogFormat {
     }
 }
 
-/// A shortcut to create `runc` global options builder.
-pub fn builder() -> GlobalOpts {
-    GlobalOpts::default()
-}
-
 #[cfg(not(feature = "async"))]
 pub type Command = std::process::Command;
 
@@ -111,6 +108,7 @@ pub type Command = tokio::process::Command;
 pub struct Runc {
     command: PathBuf,
     args: Vec<String>,
+    spawner: Arc<dyn Spawner + Send + Sync>,
 }
 
 impl Runc {
@@ -132,14 +130,8 @@ impl Runc {
 
 #[cfg(not(feature = "async"))]
 impl Runc {
-    fn launch(&self, mut cmd: std::process::Command, combined_output: bool) -> Result<Response> {
-        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
-        let pid = child.id();
-        let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
-        let status = result.status;
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-
+    fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
+        let (status, pid, stdout, stderr) = self.spawner.execute(cmd)?;
         if status.success() {
             let output = if combined_output {
                 stdout + stderr.as_str()
@@ -346,23 +338,43 @@ impl Runc {
     }
 }
 
+// a macro tool to cleanup the file with name $filename,
+// there is no async drop in async rust, so we have to call remove_file everytime
+// after a temp file created, before return of a function.
+// with this macro we don't have to write the match case codes everytime.
+#[cfg(feature = "async")]
+macro_rules! tc {
+    ($b:expr, $filename: expr) => {
+        match $b {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tokio::fs::remove_file($filename).await;
+                return Err(e);
+            }
+        }
+    };
+}
+
+#[cfg(not(feature = "async"))]
+pub trait Spawner: Debug {
+    fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)>;
+}
+
+#[cfg(feature = "async")]
+#[async_trait]
+pub trait Spawner: Debug {
+    async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)>;
+}
+
 /// Async implementation for [Runc].
 ///
 /// Note that you MUST use this client on tokio runtime, as this client internally use [`tokio::process::Command`]
 /// and some other utilities.
 #[cfg(feature = "async")]
 impl Runc {
-    // As monitor instance never have to be mutable (it has only &self methods), declare it as const.
-    const MONITOR: DefaultMonitor = DefaultMonitor::new();
-
     async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
-        let ExecuteResult {
-            exit,
-            status,
-            stdout,
-            stderr,
-        } = execute(&Self::MONITOR, cmd).await?;
-
+        debug!("Execute command {:?}", cmd);
+        let (status, pid, stdout, stderr) = self.spawner.execute(cmd).await?;
         if status.success() {
             let output = if combined_output {
                 stdout + stderr.as_str()
@@ -370,7 +382,7 @@ impl Runc {
                 stdout
             };
             Ok(Response {
-                pid: exit.pid,
+                pid,
                 status,
                 output,
             })
@@ -431,8 +443,29 @@ impl Runc {
     }
 
     /// Execute an additional process inside the container
-    pub async fn exec(&self, _id: &str, _spec: &Process, _opts: Option<&ExecOpts>) -> Result<()> {
-        Err(Error::Unimplemented("exec".to_string()))
+    pub async fn exec(&self, id: &str, spec: &Process, opts: Option<&ExecOpts>) -> Result<()> {
+        let f = write_value_to_temp_file(spec).await?;
+        let mut args = vec!["exec".to_string(), "--process".to_string(), f.clone()];
+        if let Some(opts) = opts {
+            args.append(&mut tc!(opts.args(), &f));
+        }
+        args.push(id.to_string());
+        let mut cmd = self.command(&args)?;
+        match opts {
+            Some(ExecOpts { io: Some(io), .. }) => {
+                tc!(
+                    io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string())),
+                    &f
+                );
+                tc!(self.launch(cmd, true).await, &f);
+                io.close_after_start();
+            }
+            _ => {
+                tc!(self.launch(cmd, true).await, &f);
+            }
+        }
+        let _ = tokio::fs::remove_file(&f).await;
+        Ok(())
     }
 
     /// Send the specified signal to processes inside the container
@@ -552,14 +585,15 @@ impl Runc {
 
     /// Update a container with the provided resource spec
     pub async fn update(&self, id: &str, resources: &LinuxResources) -> Result<()> {
-        let (_temp_file, filename) = write_value_to_temp_file(resources)?;
+        let f = write_value_to_temp_file(resources).await?;
         let args = [
             "update".to_string(),
             "--resources".to_string(),
-            filename,
+            f.to_string(),
             id.to_string(),
         ];
-        let _ = self.launch(self.command(&args)?, true).await?;
+        let _ = tc!(self.launch(self.command(&args)?, true).await, &f);
+        let _ = tokio::fs::remove_file(&f).await;
         Ok(())
     }
 }
@@ -567,9 +601,10 @@ impl Runc {
 #[cfg(test)]
 #[cfg(all(target_os = "linux", not(feature = "async")))]
 mod tests {
+    use std::sync::Arc;
+
     use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
-    use std::sync::Arc;
 
     fn ok_client() -> Runc {
         GlobalOpts::new()
@@ -749,9 +784,10 @@ mod tests {
 #[cfg(test)]
 #[cfg(all(target_os = "linux", feature = "async"))]
 mod tests {
+    use std::sync::Arc;
+
     use super::io::{InheritedStdIo, PipedStdIo};
     use super::*;
-    use std::sync::Arc;
 
     fn ok_client() -> Runc {
         GlobalOpts::new()
@@ -943,5 +979,40 @@ mod tests {
         assert_ne!(response.pid, 0);
         assert!(response.status.success());
         assert!(!response.output.is_empty());
+    }
+}
+
+#[derive(Debug)]
+pub struct DefaultExecutor {}
+
+#[cfg(feature = "async")]
+#[async_trait]
+impl Spawner for DefaultExecutor {
+    async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
+        let mut cmd = cmd;
+        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
+        let pid = child.id().unwrap();
+        let result = child
+            .wait_with_output()
+            .await
+            .map_err(Error::InvalidCommand)?;
+        let status = result.status;
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        Ok((status, pid, stdout, stderr))
+    }
+}
+
+#[cfg(not(feature = "async"))]
+impl Spawner for DefaultExecutor {
+    fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
+        let mut cmd = cmd;
+        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
+        let pid = child.id();
+        let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
+        let status = result.status;
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        Ok((status, pid, stdout, stderr))
     }
 }

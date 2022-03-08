@@ -15,7 +15,9 @@
 */
 use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Result, Write};
+use std::io::Result;
+#[cfg(not(feature = "async"))]
+use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::process::Stdio;
@@ -24,22 +26,45 @@ use std::sync::Mutex;
 use log::debug;
 use nix::unistd::{Gid, Uid};
 use os_pipe::{PipeReader, PipeWriter};
+#[cfg(feature = "async")]
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::Command;
 
 pub trait Io: Debug + Send + Sync {
     /// Return write side of stdin
+    #[cfg(not(feature = "async"))]
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
         None
     }
 
     /// Return read side of stdout
+    #[cfg(not(feature = "async"))]
     fn stdout(&self) -> Option<Box<dyn Read + Send>> {
         None
     }
 
     /// Return read side of stderr
+    #[cfg(not(feature = "async"))]
     fn stderr(&self) -> Option<Box<dyn Read + Send>> {
+        None
+    }
+
+    /// Return write side of stdin
+    #[cfg(feature = "async")]
+    fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
+        None
+    }
+
+    /// Return read side of stdout
+    #[cfg(feature = "async")]
+    fn stdout(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
+        None
+    }
+
+    /// Return read side of stderr
+    #[cfg(feature = "async")]
+    fn stderr(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
         None
     }
 
@@ -126,6 +151,7 @@ impl PipedIo {
 }
 
 impl Io for PipedIo {
+    #[cfg(not(feature = "async"))]
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
         self.stdin.as_ref().and_then(|pipe| {
             pipe.wr
@@ -135,6 +161,17 @@ impl Io for PipedIo {
         })
     }
 
+    #[cfg(feature = "async")]
+    fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
+        self.stdin.as_ref().and_then(|pipe| {
+            let fd = pipe.wr.as_raw_fd();
+            tokio_pipe::PipeWrite::from_raw_fd_checked(fd)
+                .map(|x| Box::new(x) as Box<dyn AsyncWrite + Send + Sync + Unpin>)
+                .ok()
+        })
+    }
+
+    #[cfg(not(feature = "async"))]
     fn stdout(&self) -> Option<Box<dyn Read + Send>> {
         self.stdout.as_ref().and_then(|pipe| {
             pipe.rd
@@ -144,11 +181,32 @@ impl Io for PipedIo {
         })
     }
 
+    #[cfg(feature = "async")]
+    fn stdout(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
+        self.stdout.as_ref().and_then(|pipe| {
+            let fd = pipe.rd.as_raw_fd();
+            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
+                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
+                .ok()
+        })
+    }
+
+    #[cfg(not(feature = "async"))]
     fn stderr(&self) -> Option<Box<dyn Read + Send>> {
         self.stderr.as_ref().and_then(|pipe| {
             pipe.rd
                 .try_clone()
                 .map(|x| Box::new(x) as Box<dyn Read + Send>)
+                .ok()
+        })
+    }
+
+    #[cfg(feature = "async")]
+    fn stderr(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
+        self.stderr.as_ref().and_then(|pipe| {
+            let fd = pipe.rd.as_raw_fd();
+            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
+                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
                 .ok()
         })
     }
@@ -303,9 +361,8 @@ impl Io for FIFO {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(not(target_os = "macos"))]
-    use std::io::{Read, Write};
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn test_io_option() {
         let opts = IOOption {
@@ -321,6 +378,7 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    #[cfg(not(feature = "async"))]
     #[test]
     fn test_create_piped_io() {
         let opts = IOOption::default();

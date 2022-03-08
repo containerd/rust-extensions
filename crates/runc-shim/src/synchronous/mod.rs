@@ -14,23 +14,19 @@
    limitations under the License.
 */
 
-#[cfg(feature = "async")]
-mod asynchronous;
-mod common;
-#[cfg(not(feature = "async"))]
-mod synchronous;
+use std::sync::Arc;
 
-#[cfg(not(feature = "async"))]
-fn main() {
-    containerd_shim::run::<synchronous::Service>("io.containerd.runc.v2", None)
-}
+use containerd_shim::ExitSignal;
 
-#[cfg(feature = "async")]
-#[tokio::main]
-async fn main() {
-    containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
-        "io.containerd.runc.v2",
-        None,
-    )
-    .await;
+mod cgroup;
+mod container;
+mod io;
+mod runc;
+mod service;
+mod task;
+
+pub(crate) struct Service {
+    exit: Arc<ExitSignal>,
+    id: String,
+    namespace: String,
 }

@@ -14,17 +14,10 @@
    limitations under the License.
 */
 
-use std::fs::File;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 use log::warn;
-use nix::sys::termios::Termios;
-
-pub struct Console {
-    pub file: File,
-    pub termios: Termios,
-}
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,
