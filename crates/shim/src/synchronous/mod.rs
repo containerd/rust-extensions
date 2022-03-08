@@ -32,6 +32,7 @@
 //! ```
 //!
 
+use std::convert::TryFrom;
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -42,8 +43,12 @@ use std::process::{self, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 
 use command_fds::{CommandFdExt, FdMapping};
-use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
+use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 pub use log::{debug, error, info, warn};
+use nix::errno::Errno;
+use nix::sys::signal::Signal;
+use nix::sys::wait::{self, WaitPidFlag, WaitStatus};
+use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 
 use crate::protos::protobuf::Message;
@@ -52,6 +57,7 @@ use crate::protos::ttrpc::{Client, Server};
 use util::{read_address, write_address};
 
 use crate::api::DeleteResponse;
+use crate::synchronous::monitor::monitor_notify_by_pid;
 use crate::synchronous::publisher::RemotePublisher;
 use crate::Error;
 use crate::{args, logger, reap, Result, TTRPC_ADDRESS};
@@ -230,23 +236,41 @@ fn handle_signals(mut signals: Signals) {
                     debug!("received {}", sig);
                 }
                 SIGCHLD => loop {
-                    unsafe {
-                        let pid: pid_t = -1;
-                        let mut status: c_int = 0;
-                        let options: c_int = libc::WNOHANG;
-                        let res_pid = libc::waitpid(pid, &mut status, options);
-                        let status = libc::WEXITSTATUS(status);
-                        if res_pid <= 0 {
-                            break;
-                        } else {
-                            monitor::monitor_notify_by_pid(res_pid, status).unwrap_or_else(|e| {
-                                error!("failed to send exit event {}", e);
-                            });
+                    // If WUNTRACED is not set, both suspended and running process will
+                    // bring WaitStatus::StillAlive and we cannot distinguish them.
+                    // Note that this thread sticks to child even it is suspended.
+                    // (it will repeatedly bring WaitStatus::StillAlive after once WaitStatus::Stopped is reported)
+                    match wait::waitpid(
+                        Some(Pid::from_raw(-1)),
+                        Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
+                    ) {
+                        Ok(WaitStatus::Exited(pid, status)) => {
+                            monitor_notify_by_pid(pid.as_raw(), status)
+                                .unwrap_or_else(|e| error!("failed to send exit event {}", e))
                         }
+                        Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                            // TODO: add signal notification for monitor
+                            warn!("child {} terminated({})", pid, sig);
+                        }
+                        Ok(WaitStatus::Stopped(pid, sig)) => {
+                            warn!("child {} stopped({})", pid, sig);
+                        }
+                        Err(Errno::ECHILD) => {
+                            break;
+                        }
+                        Err(e) => {
+                            // stick until all children will be successfully waited, even some unexpected error occurs.
+                            warn!("error occurred in signal handler: {}", e);
+                        }
+                        _ => {} // stick until exit
                     }
                 },
                 _ => {
-                    debug!("received {}", sig);
+                    if let Ok(sig) = Signal::try_from(sig) {
+                        debug!("received {}", sig);
+                    } else {
+                        warn!("received invalid signal {}", sig);
+                    }
                 }
             }
         }
