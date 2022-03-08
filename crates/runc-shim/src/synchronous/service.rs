@@ -18,19 +18,25 @@
 
 use std::env::current_dir;
 use std::path::Path;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use containerd_shim as shim;
-use containerd_shim::util::{read_options, read_runtime, read_spec_from_file, write_address};
+
+use log::{debug, error};
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
 use shim::api::*;
 use shim::error::{Error, Result};
+use shim::event::Event;
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
-use shim::protos::protobuf::SingularPtrField;
+use shim::protos::events::task::TaskExit;
+use shim::protos::protobuf::{Message, SingularPtrField};
 use shim::publisher::RemotePublisher;
-use shim::util::get_timestamp;
-use shim::{debug, error, io_error, other_error, warn};
-use shim::{spawn, Config, ExitSignal, Shim, StartOpts};
+use shim::util::{
+    convert_to_timestamp, read_options, read_runtime, read_spec_from_file, timestamp, write_address,
+};
+use shim::{io_error, other_error, warn};
+use shim::{spawn, Config, Context, ExitSignal, Shim, StartOpts};
 
 use crate::common::{create_runc, ShimExecutor, GROUP_LABELS};
 use crate::synchronous::container::{Container, Process};
@@ -41,15 +47,7 @@ use crate::synchronous::Service;
 impl Shim for Service {
     type T = ShimTask<RuncFactory, RuncContainer>;
 
-    fn new(
-        _runtime_id: &str,
-        id: &str,
-        namespace: &str,
-        _publisher: RemotePublisher,
-        _config: &mut Config,
-    ) -> Self {
-        // TODO: add publisher
-
+    fn new(_runtime_id: &str, id: &str, namespace: &str, _config: &mut Config) -> Self {
         Service {
             exit: Arc::new(ExitSignal::default()),
             id: id.to_string(),
@@ -100,7 +98,7 @@ impl Shim for Service {
         let mut resp = DeleteResponse::new();
         // sigkill
         resp.exit_status = 137;
-        resp.exited_at = SingularPtrField::some(get_timestamp()?);
+        resp.exited_at = SingularPtrField::some(timestamp()?);
         Ok(resp)
     }
 
@@ -113,18 +111,24 @@ impl Shim for Service {
         self.exit.wait();
     }
 
-    fn create_task_service(&self) -> Self::T {
-        let task = ShimTask::new(&self.namespace, Arc::clone(&self.exit));
+    fn create_task_service(&self, publisher: RemotePublisher) -> Self::T {
+        let (tx, rx) = channel();
+        let task = ShimTask::new(self.namespace.as_str(), Arc::clone(&self.exit), tx.clone());
 
         let s = monitor_subscribe(Topic::All).expect("monitor subscribe failed");
-        self.process_exits(s, &task);
-
+        self.process_exits(s, &task, tx);
+        forward(publisher, self.namespace.to_string(), rx);
         task
     }
 }
 
 impl Service {
-    pub fn process_exits(&self, s: Subscription, task: &ShimTask<RuncFactory, RuncContainer>) {
+    pub fn process_exits(
+        &self,
+        s: Subscription,
+        task: &ShimTask<RuncFactory, RuncContainer>,
+        tx: Sender<(String, Box<dyn Message>)>,
+    ) {
         let containers = task.containers.clone();
         std::thread::spawn(move || {
             for e in s.rx.iter() {
@@ -134,7 +138,7 @@ impl Service {
                     for (_k, cont) in containers.lock().unwrap().iter_mut() {
                         let bundle = cont.common.bundle.to_string();
                         // pid belongs to container init process
-                        if cont.common.init.common.pid == pid {
+                        if cont.pid() == pid {
                             // kill all children process if the container has a private PID namespace
                             if cont.should_kill_all_on_exit(&bundle) {
                                 cont.kill(None, 9, true).unwrap_or_else(|e| {
@@ -143,14 +147,33 @@ impl Service {
                             }
                             // set exit for init process
                             cont.common.init.set_exited(exit_code);
-                            // TODO: publish event
+
+                            // publish event
+                            let (_, code, exited_at) = match cont.get_exit_info(None) {
+                                Ok(info) => info,
+                                Err(_) => break,
+                            };
+
+                            let ts = convert_to_timestamp(exited_at);
+                            let event = TaskExit {
+                                container_id: cont.id(),
+                                id: cont.id(),
+                                pid: cont.pid() as u32,
+                                exit_status: code as u32,
+                                exited_at: SingularPtrField::some(ts),
+                                ..Default::default()
+                            };
+                            let topic = event.topic();
+                            tx.send((topic.to_string(), Box::new(event)))
+                                .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
+
                             break;
                         }
 
                         // pid belongs to container common process
                         for (_exec_id, p) in cont.common.processes.iter_mut() {
                             // set exit for exec process
-                            if p.common.pid == pid {
+                            if p.pid() == pid {
                                 p.set_exited(exit_code);
                                 // TODO: publish event
                                 break;
@@ -161,4 +184,14 @@ impl Service {
             }
         });
     }
+}
+
+fn forward(publisher: RemotePublisher, ns: String, rx: Receiver<(String, Box<dyn Message>)>) {
+    std::thread::spawn(move || {
+        for (topic, e) in rx.iter() {
+            publisher
+                .publish(Context::default(), &topic, &ns, e)
+                .unwrap_or_else(|e| warn!("publish {} to containerd: {}", topic, e));
+        }
+    });
 }

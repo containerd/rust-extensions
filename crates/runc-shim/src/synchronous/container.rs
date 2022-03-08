@@ -32,8 +32,7 @@ use shim::error::{Error, Result};
 use shim::io::Stdio;
 use shim::ioctl_set_winsz;
 use shim::protos::cgroups::metrics::Metrics;
-use shim::protos::protobuf::well_known_types::Timestamp;
-use shim::util::read_pid_from_file;
+use shim::util::{convert_to_timestamp, read_pid_from_file};
 use shim::Console;
 use shim::{io_error, other, other_error};
 
@@ -71,13 +70,14 @@ pub trait Container {
     fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()>;
     fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>>;
     fn get_exit_info(&self, exec_id: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)>;
-    fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)>;
+    fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)>;
     fn exec(&mut self, req: ExecProcessRequest) -> Result<()>;
     fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
     fn pid(&self) -> i32;
     fn stats(&self) -> Result<Metrics>;
     fn update(&mut self, resources: &LinuxResources) -> Result<()>;
     fn pids(&self) -> Result<PidsResponse>;
+    fn id(&self) -> String;
 }
 
 pub struct CommonContainer<T, E> {
@@ -228,12 +228,8 @@ impl Process for CommonProcess {
         resp.stdout = self.stdio.stdout.to_string();
         resp.stderr = self.stdio.stderr.to_string();
         resp.exit_status = self.exit_code as u32;
-        if let Some(exit_at) = self.exited_at {
-            let mut time_stamp = Timestamp::new();
-            time_stamp.set_seconds(exit_at.unix_timestamp());
-            time_stamp.set_nanos(exit_at.nanosecond() as i32);
-            resp.set_exited_at(time_stamp);
-        }
+        let ts = convert_to_timestamp(self.exited_at);
+        resp.set_exited_at(ts);
         resp
     }
 

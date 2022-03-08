@@ -26,9 +26,9 @@ use containerd_shim_protos::ttrpc;
 use containerd_shim_protos::ttrpc::context::Context;
 use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
 
-use crate::asynchronous::util::asyncify;
 use crate::error::Result;
-use crate::util::{any, connect, timestamp};
+use crate::util::asyncify;
+use crate::util::{connect, convert_to_any, timestamp};
 
 /// Async Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -67,13 +67,13 @@ impl RemotePublisher {
         ctx: Context,
         topic: &str,
         namespace: &str,
-        event: impl Message,
+        event: Box<dyn Message>,
     ) -> Result<()> {
         let mut envelope = events::Envelope::new();
         envelope.set_topic(topic.to_owned());
         envelope.set_namespace(namespace.to_owned());
         envelope.set_timestamp(timestamp()?);
-        envelope.set_event(any(event)?);
+        envelope.set_event(convert_to_any(event)?);
 
         let mut req = events::ForwardRequest::new();
         req.set_envelope(envelope);
@@ -163,7 +163,7 @@ mod tests {
         let mut msg = TaskOOM::new();
         msg.set_container_id("test".to_string());
         client
-            .publish(Context::default(), "/tasks/oom", "ns1", msg)
+            .publish(Context::default(), "/tasks/oom", "ns1", Box::new(msg))
             .await
             .unwrap();
         match rx.recv().await {

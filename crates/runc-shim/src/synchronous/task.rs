@@ -15,22 +15,26 @@
 */
 
 use std::collections::HashMap;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, Once};
 
-use log::{debug, info};
+use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
 
 use containerd_shim as shim;
-use shim::other_error;
-use shim::protos::protobuf::well_known_types::{Any, Timestamp};
+
+use shim::api::*;
+use shim::event::Event;
+use shim::protos::events::task::{
+    TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
+};
 use shim::protos::protobuf::{Message, SingularPtrField};
-use shim::util::IntoOption;
-use shim::Error;
-use shim::Task;
-use shim::{api::*, ExitSignal};
-use shim::{TtrpcContext, TtrpcResult};
+use shim::util::{convert_to_any, convert_to_timestamp, IntoOption};
+use shim::{other_error, Error, ExitSignal, Task, TtrpcContext, TtrpcResult};
 
 use crate::synchronous::container::{Container, ContainerFactory};
+
+type EventSender = Sender<(String, Box<dyn Message>)>;
 
 pub struct ShimTask<F, C> {
     pub containers: Arc<Mutex<HashMap<String, C>>>,
@@ -39,20 +43,33 @@ pub struct ShimTask<F, C> {
     exit: Arc<ExitSignal>,
     /// Prevent multiple shutdown
     shutdown: Once,
+    tx: Arc<Mutex<EventSender>>,
 }
 
 impl<F, C> ShimTask<F, C>
 where
     F: Default,
 {
-    pub fn new(ns: &str, exit: Arc<ExitSignal>) -> Self {
+    pub fn new(ns: &str, exit: Arc<ExitSignal>, tx: EventSender) -> Self {
         Self {
             factory: Default::default(),
             containers: Arc::new(Mutex::new(Default::default())),
             namespace: ns.to_string(),
             exit,
             shutdown: Once::new(),
+            tx: Arc::new(Mutex::new(tx)),
         }
+    }
+}
+
+impl<F, C> ShimTask<F, C> {
+    pub fn send_event(&self, event: impl Event) {
+        let topic = event.topic();
+        self.tx
+            .lock()
+            .unwrap()
+            .send((topic.to_string(), Box::new(event)))
+            .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
     }
 }
 
@@ -86,10 +103,29 @@ where
 
         let container = self.factory.create(ns, &req)?;
         let mut resp = CreateTaskResponse::new();
-        resp.pid = container.pid() as u32;
+        let pid = container.pid() as u32;
+        resp.pid = pid;
 
         containers.insert(id.to_string(), container);
-        info!("Create request for {} returns pid {}", id, resp.pid);
+
+        self.send_event(TaskCreate {
+            container_id: req.id.to_string(),
+            bundle: req.bundle.to_string(),
+            rootfs: req.rootfs,
+            io: SingularPtrField::some(TaskIO {
+                stdin: req.stdin.to_string(),
+                stdout: req.stdout.to_string(),
+                stderr: req.stderr.to_string(),
+                terminal: req.terminal,
+                unknown_fields: Default::default(),
+                cached_size: Default::default(),
+            }),
+            checkpoint: req.checkpoint.to_string(),
+            pid,
+            ..Default::default()
+        });
+
+        info!("Create request for {} returns pid {}", id, pid);
         Ok(resp)
     }
 
@@ -103,6 +139,22 @@ where
 
         let mut resp = StartResponse::new();
         resp.pid = pid as u32;
+
+        if req.exec_id.is_empty() {
+            self.send_event(TaskStart {
+                container_id: req.id.to_string(),
+                pid: pid as u32,
+                ..Default::default()
+            });
+        } else {
+            self.send_event(TaskExecStarted {
+                container_id: req.id.to_string(),
+                exec_id: req.exec_id.to_string(),
+                pid: pid as u32,
+                ..Default::default()
+            });
+        };
+
         info!("Start request for {:?} returns pid {}", req, resp.get_pid());
         Ok(resp)
     }
@@ -113,15 +165,26 @@ where
         let container = containers.get_mut(req.get_id()).ok_or_else(|| {
             Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
         })?;
+        let id = container.id();
         let exec_id_opt = req.get_exec_id().none_if(|x| x.is_empty());
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt)?;
         if req.get_exec_id().is_empty() {
             containers.remove(req.id.as_str());
         }
+
+        let ts = convert_to_timestamp(exited_at);
+        self.send_event(TaskDelete {
+            container_id: id,
+            pid: pid as u32,
+            exit_status: exit_status as u32,
+            exited_at: SingularPtrField::some(ts.clone()),
+            ..Default::default()
+        });
+
         let mut resp = DeleteResponse::new();
-        resp.set_exited_at(exited_at);
+        resp.set_exited_at(ts);
         resp.set_pid(pid as u32);
-        resp.set_exit_status(exit_status);
+        resp.set_exit_status(exit_status as u32);
         info!(
             "Delete request for {} {} returns {:?}",
             req.get_id(),
@@ -158,6 +221,7 @@ where
     }
 
     fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
+        let exec_id = req.get_exec_id().to_string();
         info!(
             "Exec request for id: {} exec_id: {}",
             req.get_id(),
@@ -168,6 +232,13 @@ where
             Error::Other(format!("can not find container by id {}", req.get_id()))
         })?;
         container.exec(req)?;
+
+        self.send_event(TaskExecAdded {
+            container_id: container.id(),
+            exec_id,
+            ..Default::default()
+        });
+
         Ok(Empty::new())
     }
 
@@ -235,11 +306,7 @@ where
         let (_, code, exited_at) = container.get_exit_info(exec_id)?;
         let mut resp = WaitResponse::new();
         resp.exit_status = code as u32;
-        let mut ts = Timestamp::new();
-        if let Some(ea) = exited_at {
-            ts.seconds = ea.unix_timestamp();
-            ts.nanos = ea.nanosecond() as i32;
-        }
+        let ts = convert_to_timestamp(exited_at);
         resp.exited_at = SingularPtrField::some(ts);
         info!("Wait request for {:?} returns {:?}", req, &resp);
         Ok(resp)
@@ -253,17 +320,8 @@ where
         })?;
         let stats = container.stats()?;
 
-        // marshal to ttrpc Any
-        let mut any = Any::new();
-        let mut data = Vec::new();
-        stats
-            .write_to_vec(&mut data)
-            .map_err(other_error!(e, "write stats to vec"))?;
-        any.set_value(data);
-        any.set_type_url(stats.descriptor().full_name().to_string());
-
         let mut resp = StatsResponse::new();
-        resp.set_stats(any);
+        resp.set_stats(convert_to_any(Box::new(stats))?);
         Ok(resp)
     }
 

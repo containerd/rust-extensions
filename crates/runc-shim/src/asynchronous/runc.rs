@@ -38,12 +38,12 @@ use containerd_shim::asynchronous::monitor::{
     monitor_subscribe, monitor_unsubscribe, Subscription,
 };
 use containerd_shim::asynchronous::processes::{ProcessLifecycle, ProcessTemplate};
-use containerd_shim::asynchronous::util::{
-    asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
-};
 use containerd_shim::io::Stdio;
 use containerd_shim::monitor::{ExitEvent, Subject, Topic};
 use containerd_shim::protos::protobuf::{CodedInputStream, Message};
+use containerd_shim::util::{
+    asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
+};
 use containerd_shim::Console;
 use containerd_shim::{io_error, other, Error};
 use containerd_shim::{other_error, Result};

@@ -18,15 +18,16 @@
 
 use protobuf::Message;
 
+use containerd_shim_protos as client;
+
 use client::protobuf;
 use client::shim::events;
 use client::ttrpc::{self, context::Context};
 use client::types::empty;
 use client::{Client, Events, EventsClient};
-use containerd_shim_protos as client;
 
 use crate::error::Result;
-use crate::util::{any, connect, timestamp};
+use crate::util::{connect, convert_to_any, timestamp};
 
 /// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -59,13 +60,13 @@ impl RemotePublisher {
         ctx: Context,
         topic: &str,
         namespace: &str,
-        event: impl Message,
+        event: Box<dyn Message>,
     ) -> Result<()> {
         let mut envelope = events::Envelope::new();
         envelope.set_topic(topic.to_owned());
         envelope.set_namespace(namespace.to_owned());
         envelope.set_timestamp(timestamp()?);
-        envelope.set_event(any(event)?);
+        envelope.set_event(convert_to_any(event)?);
 
         let mut req = events::ForwardRequest::new();
         req.set_envelope(envelope);
@@ -110,12 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn test_timestamp() {
-        let ts = timestamp().unwrap();
-        assert!(ts.seconds > 0);
-    }
-
-    #[test]
     fn test_connect() {
         let tmpdir = tempfile::tempdir().unwrap();
         let path = format!("{}/socket", tmpdir.as_ref().to_str().unwrap());
@@ -149,7 +144,7 @@ mod tests {
         let mut msg = TaskOOM::new();
         msg.set_container_id("test".to_string());
         client
-            .publish(Context::default(), "/tasks/oom", "ns1", msg)
+            .publish(Context::default(), "/tasks/oom", "ns1", Box::new(msg))
             .unwrap();
         barrier.wait();
 

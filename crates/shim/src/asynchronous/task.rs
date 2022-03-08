@@ -18,12 +18,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::{debug, info};
+use log::{debug, info, warn};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
 use containerd_shim_protos::api::DeleteResponse;
-use containerd_shim_protos::protobuf::well_known_types::Timestamp;
-use containerd_shim_protos::protobuf::SingularPtrField;
+use containerd_shim_protos::events::task::{
+    TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
+};
+use containerd_shim_protos::protobuf::{Message, SingularPtrField};
 use containerd_shim_protos::shim_async::Task;
 use containerd_shim_protos::ttrpc;
 use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
@@ -35,8 +38,11 @@ use crate::api::{
 };
 use crate::asynchronous::container::{Container, ContainerFactory};
 use crate::asynchronous::ExitSignal;
-use crate::util::AsOption;
+use crate::event::Event;
+use crate::util::{convert_to_timestamp, AsOption};
 use crate::TtrpcResult;
+
+type EventSender = Sender<(String, Box<dyn Message>)>;
 
 /// TaskService is a Task template struct, it is considered a helper struct,
 /// which has already implemented `Task` trait, so that users can make it the type `T`
@@ -46,18 +52,20 @@ pub struct TaskService<F, C> {
     pub containers: Arc<Mutex<HashMap<String, C>>>,
     pub namespace: String,
     pub exit: Arc<ExitSignal>,
+    pub tx: EventSender,
 }
 
 impl<F, C> TaskService<F, C>
 where
     F: Default,
 {
-    pub fn new(ns: &str, exit: Arc<ExitSignal>) -> Self {
+    pub fn new(ns: &str, exit: Arc<ExitSignal>, tx: EventSender) -> Self {
         Self {
             factory: Default::default(),
             containers: Arc::new(Mutex::new(Default::default())),
             namespace: ns.to_string(),
             exit,
+            tx,
         }
     }
 }
@@ -73,6 +81,14 @@ impl<F, C> TaskService<F, C> {
         })?;
         let container = MutexGuard::map(containers, |m| m.get_mut(id).unwrap());
         Ok(container)
+    }
+
+    pub async fn send_event(&self, event: impl Event) {
+        let topic = event.topic();
+        self.tx
+            .send((topic.to_string(), Box::new(event)))
+            .await
+            .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
     }
 }
 
@@ -104,9 +120,28 @@ where
 
         let container = self.factory.create(ns, &req).await?;
         let mut resp = CreateTaskResponse::new();
-        resp.pid = container.pid().await as u32;
+        let pid = container.pid().await as u32;
+        resp.pid = pid;
 
         containers.insert(id.to_string(), container);
+
+        self.send_event(TaskCreate {
+            container_id: req.id.to_string(),
+            bundle: req.bundle.to_string(),
+            rootfs: req.rootfs,
+            io: SingularPtrField::some(TaskIO {
+                stdin: req.stdin.to_string(),
+                stdout: req.stdout.to_string(),
+                stderr: req.stderr.to_string(),
+                terminal: req.terminal,
+                unknown_fields: Default::default(),
+                cached_size: Default::default(),
+            }),
+            checkpoint: req.checkpoint.to_string(),
+            pid,
+            ..Default::default()
+        })
+        .await;
         info!("Create request for {} returns pid {}", id, resp.pid);
         Ok(resp)
     }
@@ -118,6 +153,24 @@ where
 
         let mut resp = StartResponse::new();
         resp.pid = pid as u32;
+
+        if req.exec_id.is_empty() {
+            self.send_event(TaskStart {
+                container_id: req.id.to_string(),
+                pid: pid as u32,
+                ..Default::default()
+            })
+            .await;
+        } else {
+            self.send_event(TaskExecStarted {
+                container_id: req.id.to_string(),
+                exec_id: req.exec_id.to_string(),
+                pid: pid as u32,
+                ..Default::default()
+            })
+            .await;
+        };
+
         info!("Start request for {:?} returns pid {}", req, resp.get_pid());
         Ok(resp)
     }
@@ -131,16 +184,28 @@ where
                 format!("can not find container by id {}", req.get_id()),
             ))
         })?;
+        let id = container.id().await;
         let exec_id_opt = req.get_exec_id().as_option();
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
         self.factory.cleanup(&*self.namespace, container).await?;
         if req.get_exec_id().is_empty() {
             containers.remove(req.get_id());
         }
+
+        let ts = convert_to_timestamp(exited_at);
+        self.send_event(TaskDelete {
+            container_id: id,
+            pid: pid as u32,
+            exit_status: exit_status as u32,
+            exited_at: SingularPtrField::some(ts.clone()),
+            ..Default::default()
+        })
+        .await;
+
         let mut resp = DeleteResponse::new();
-        resp.set_exited_at(exited_at);
+        resp.set_exited_at(ts);
         resp.set_pid(pid as u32);
-        resp.set_exit_status(exit_status);
+        resp.set_exit_status(exit_status as u32);
         info!(
             "Delete request for {} {} returns {:?}",
             req.get_id(),
@@ -162,8 +227,17 @@ where
 
     async fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
         info!("Exec request for {:?}", req);
+        let exec_id = req.get_exec_id().to_string();
         let mut container = self.get_container(req.get_id()).await?;
         container.exec(req).await?;
+
+        self.send_event(TaskExecAdded {
+            container_id: container.id().await,
+            exec_id,
+            ..Default::default()
+        })
+        .await;
+
         Ok(Empty::new())
     }
 
@@ -202,12 +276,8 @@ where
         let container = self.get_container(req.get_id()).await?;
         let (_, code, exited_at) = container.get_exit_info(exec_id).await?;
         let mut resp = WaitResponse::new();
-        resp.exit_status = code;
-        let mut ts = Timestamp::new();
-        if let Some(ea) = exited_at {
-            ts.seconds = ea.unix_timestamp();
-            ts.nanos = ea.nanosecond() as i32;
-        }
+        resp.exit_status = code as u32;
+        let ts = convert_to_timestamp(exited_at);
         resp.exited_at = SingularPtrField::some(ts);
         info!("Wait request for {:?} returns {:?}", req, &resp);
         Ok(resp)

@@ -20,8 +20,7 @@ use log::warn;
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
-use crate::asynchronous::util::mkdir;
-use crate::util::xdg_runtime_dir;
+use crate::util::{mkdir, xdg_runtime_dir};
 use crate::Error;
 use crate::Result;
 

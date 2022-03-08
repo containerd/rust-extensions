@@ -40,11 +40,9 @@ use shim::monitor::{monitor_subscribe, ExitEvent, Subject, Subscription, Topic};
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::Metrics;
-use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
-#[cfg(not(feature = "async"))]
-use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
+use shim::util::{convert_to_any, read_spec_from_file, write_options, write_runtime, IntoOption};
 use shim::Console;
 use shim::{other, other_error};
 
@@ -146,6 +144,7 @@ pub(crate) struct RuncContainer {
 
 impl Container for RuncContainer {
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
+        let id = self.id();
         match exec_id {
             Some(exec_id) => {
                 let process = self
@@ -189,7 +188,7 @@ impl Container for RuncContainer {
                 self.common
                     .init
                     .runtime
-                    .exec(&self.common.id, &process.spec, Some(&exec_opts))
+                    .exec(&id, &process.spec, Some(&exec_opts))
                     .map_err(other_error!(e, "failed exec"))?;
                 if process.common.stdio.terminal {
                     let console_socket =
@@ -201,16 +200,16 @@ impl Container for RuncContainer {
                 }
                 process.common.set_pid_from_file(pid_path.as_path())?;
                 process.common.state = Status::RUNNING;
-                Ok(process.common.pid())
+                Ok(process.pid())
             }
             None => {
                 self.common
                     .init
                     .runtime
-                    .start(self.common.id.as_str())
+                    .start(&id)
                     .map_err(other_error!(e, "failed start"))?;
                 self.common.init.common.set_status(Status::RUNNING);
-                Ok(self.common.init.common.pid())
+                Ok(self.pid())
             }
         }
     }
@@ -231,7 +230,7 @@ impl Container for RuncContainer {
                 .init
                 .runtime
                 .kill(
-                    self.common.id.as_str(),
+                    self.id().as_str(),
                     signal,
                     Some(&runc::options::KillOpts { all }),
                 )
@@ -247,8 +246,8 @@ impl Container for RuncContainer {
         self.common.get_exit_info(exec_id)
     }
 
-    fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)> {
-        let (pid, code, exit_at) = self
+    fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, i32, Option<OffsetDateTime>)> {
+        let (pid, code, exited_at) = self
             .get_exit_info(exec_id_opt)
             .map_err(other_error!(e, "failed to get exit info"))?;
         match exec_id_opt {
@@ -260,7 +259,7 @@ impl Container for RuncContainer {
                     .init
                     .runtime
                     .delete(
-                        self.common.id.as_str(),
+                        self.id().as_str(),
                         Some(&runc::options::DeleteOpts { force: true }),
                     )
                     .or_else(|e| {
@@ -273,13 +272,7 @@ impl Container for RuncContainer {
                     .map_err(other_error!(e, "failed delete"))?;
             }
         };
-
-        let mut time_stamp = Timestamp::new();
-        if let Some(exit_at) = exit_at {
-            time_stamp.set_seconds(exit_at.unix_timestamp());
-            time_stamp.set_nanos(exit_at.nanosecond() as i32);
-        }
-        Ok((pid, code as u32, time_stamp))
+        Ok((pid, code, exited_at))
     }
 
     fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
@@ -339,16 +332,7 @@ impl Container for RuncContainer {
                         exec_id: "".to_string(),
                         ..Default::default()
                     };
-                    // marshal ProcessDetails to Any
-                    let mut any = Any::new();
-                    let mut data = Vec::new();
-                    details
-                        .write_to_vec(&mut data)
-                        .map_err(other_error!(e, "write ProcessDetails to vec"))?;
-                    any.set_value(data);
-                    any.set_type_url(details.descriptor().full_name().to_string());
-
-                    p_info.set_info(any);
+                    p_info.set_info(convert_to_any(Box::new(details))?);
                     break;
                 }
             }
@@ -359,6 +343,10 @@ impl Container for RuncContainer {
             ..Default::default()
         };
         Ok(resp)
+    }
+
+    fn id(&self) -> String {
+        self.common.id.to_string()
     }
 }
 

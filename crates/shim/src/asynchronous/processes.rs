@@ -23,8 +23,8 @@ use tokio::sync::oneshot::{channel, Receiver, Sender};
 use containerd_shim_protos::api::{StateResponse, Status};
 use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
-use crate::asynchronous::util::asyncify;
 use crate::io::Stdio;
+use crate::util::asyncify;
 use crate::Error;
 use crate::{ioctl_set_winsz, Console};
 

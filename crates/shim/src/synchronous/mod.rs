@@ -103,15 +103,8 @@ pub trait Shim {
     /// - `runtime_id`: identifier of the container runtime.
     /// - `id`: identifier of the shim/container, passed in from Containerd.
     /// - `namespace`: namespace of the shim/container, passed in from Containerd.
-    /// - `publisher`: publisher to send events to Containerd.
     /// - `config`: for the shim to pass back configuration information
-    fn new(
-        runtime_id: &str,
-        id: &str,
-        namespace: &str,
-        publisher: RemotePublisher,
-        config: &mut Config,
-    ) -> Self;
+    fn new(runtime_id: &str, id: &str, namespace: &str, config: &mut Config) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -128,7 +121,7 @@ pub trait Shim {
     fn wait(&mut self);
 
     /// Create the task service object.
-    fn create_task_service(&self) -> Self::T;
+    fn create_task_service(&self, publisher: RemotePublisher) -> Self::T;
 }
 
 /// Shim entry point that must be invoked from `main`.
@@ -151,7 +144,6 @@ where
     let flags = args::parse(&os_args[1..])?;
 
     let ttrpc_address = env::var(TTRPC_ADDRESS)?;
-    let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
 
     // Create shim instance
     let mut config = opts.unwrap_or_else(Config::default);
@@ -163,13 +155,7 @@ where
         reap::set_subreaper()?;
     }
 
-    let mut shim = T::new(
-        runtime_id,
-        &flags.id,
-        &flags.namespace,
-        publisher,
-        &mut config,
-    );
+    let mut shim = T::new(runtime_id, &flags.id, &flags.namespace, &mut config);
 
     match flags.action.as_str() {
         "start" => {
@@ -205,7 +191,8 @@ where
                 logger::init(flags.debug)?;
             }
 
-            let task = shim.create_task_service();
+            let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
+            let task = shim.create_task_service(publisher);
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;
