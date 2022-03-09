@@ -98,7 +98,7 @@ pub fn create_io(
     Ok(pio)
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct ShimExecutor {}
 
 pub fn get_spec_from_request(

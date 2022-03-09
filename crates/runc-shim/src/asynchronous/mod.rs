@@ -101,7 +101,7 @@ impl Shim for Service {
             namespace,
             &bundle,
             &opts,
-            Some(Arc::new(ShimExecutor {})),
+            Some(Arc::new(ShimExecutor::default())),
         )?;
 
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))

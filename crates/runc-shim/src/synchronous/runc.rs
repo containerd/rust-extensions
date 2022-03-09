@@ -15,26 +15,28 @@
 */
 #![allow(unused)]
 
-use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::io::Read;
+use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
-use cgroups_rs::{cgroup, hierarchies, Cgroup, MaxValue, Subsystem};
+use log::{debug, error};
 use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
 use nix::unistd::{mkdir, Pid};
-use oci_spec::runtime::{Linux, LinuxNamespaceType, LinuxResources, Spec};
+use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
 use time::OffsetDateTime;
 
 use containerd_shim as shim;
-use runc::options::{CreateOpts, DeleteOpts, ExecOpts, GlobalOpts, KillOpts};
-use runc::Runc;
+use runc::{Command, Spawner};
 use shim::api::*;
 use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
 use shim::io::Stdio;
+use shim::monitor::{monitor_subscribe, ExitEvent, Subject, Subscription, Topic};
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::Metrics;
@@ -42,13 +44,14 @@ use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
 #[cfg(not(feature = "async"))]
-use shim::util::{new_temp_console_socket, read_spec_from_file, write_options, write_runtime};
-use shim::util::{IntoOption, JsonOptions};
+use shim::util::{
+    new_temp_console_socket, read_spec_from_file, write_options, write_runtime, IntoOption,
+};
 use shim::Console;
-use shim::{debug, error, io_error, other, other_error};
+use shim::{other, other_error};
 
 use crate::common;
-use crate::common::{create_io, CreateConfig, INIT_PID_FILE};
+use crate::common::{create_io, CreateConfig, ShimExecutor, INIT_PID_FILE};
 use crate::synchronous::container::{
     CommonContainer, CommonProcess, Container, ContainerFactory, Process,
 };
@@ -91,7 +94,13 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
         }
 
-        let runc = common::create_runc(runtime, ns, bundle, &opts, None)?;
+        let runc = common::create_runc(
+            runtime,
+            ns,
+            bundle,
+            &opts,
+            Some(Arc::new(ShimExecutor::default())),
+        )?;
 
         let id = req.get_id();
         let stdio = Stdio {
@@ -647,5 +656,58 @@ impl TryFrom<ExecProcessRequest> for ExecProcess {
             spec: p,
         };
         Ok(exec_process)
+    }
+}
+
+impl Spawner for ShimExecutor {
+    fn execute(&self, cmd: Command) -> runc::Result<(ExitStatus, u32, String, String)> {
+        let mut cmd = cmd;
+        let subscription =
+            monitor_subscribe(Topic::Pid).map_err(|e| runc::error::Error::Other(Box::new(e)))?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(runc::error::Error::ProcessSpawnFailed(e));
+            }
+        };
+        let pid = child.id();
+        // May block here when stream exceeds buffer size, it's better to spawn another thread for io copy
+        let (stdout, stderr, exit_code) = (
+            read_std(child.stdout),
+            read_std(child.stderr),
+            wait_pid(pid as i32, subscription),
+        );
+        let status = ExitStatus::from_raw(exit_code);
+        Ok((status, pid, stdout, stderr))
+    }
+}
+
+fn read_std<T>(std: Option<T>) -> String
+where
+    T: Read,
+{
+    let mut std = std;
+    if let Some(mut std) = std.take() {
+        let mut out = String::new();
+        std.read_to_string(&mut out).unwrap_or_else(|e| {
+            error!("failed to read stdout {}", e);
+            0
+        });
+        return out;
+    }
+    "".to_string()
+}
+
+fn wait_pid(pid: i32, s: Subscription) -> i32 {
+    loop {
+        if let Ok(ExitEvent {
+            subject: Subject::Pid(epid),
+            exit_code: code,
+        }) = s.rx.recv()
+        {
+            if pid == epid {
+                return code;
+            }
+        }
     }
 }
