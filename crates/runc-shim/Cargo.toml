@@ -35,8 +35,8 @@ async-trait = { version = "0.1.51", optional = true }
 tokio = { version = "1.17.0", features = ["full"], optional = true }
 futures = {version = "0.3.21", optional = true}
 
-containerd-shim = { path = "../shim", version = "0.2.0" }
-runc = { path = "../runc", version = "0.1.0" }
+containerd-shim = { path = "../shim", version = "0.3.0" }
+runc = { path = "../runc", version = "0.2.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.2.9"
