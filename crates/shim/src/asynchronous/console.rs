@@ -14,7 +14,6 @@
    limitations under the License.
 */
 
-use std::env;
 use std::path::{Path, PathBuf};
 
 use log::warn;
@@ -22,6 +21,7 @@ use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
 use crate::asynchronous::util::mkdir;
+use crate::util::xdg_runtime_dir;
 use crate::Error;
 use crate::Result;
 
@@ -33,8 +33,7 @@ pub struct ConsoleSocket {
 
 impl ConsoleSocket {
     pub async fn new() -> Result<ConsoleSocket> {
-        let dir = env::var("XDG_RUNTIME_DIR")
-            .map(|runtime_dir| format!("{}/pty{}", runtime_dir, Uuid::new_v4(),))?;
+        let dir = format!("{}/pty{}", xdg_runtime_dir(), Uuid::new_v4());
         mkdir(&dir, 0o711).await?;
         let file_name = Path::new(&dir).join("pty.sock");
         let listener = UnixListener::bind(&file_name).map_err(io_error!(

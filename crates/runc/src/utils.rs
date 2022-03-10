@@ -61,8 +61,8 @@ where
     path_to_string(abs_path_buf(path)?)
 }
 
-/// Fetches the value of environment variable "XDG_RUNTIME_DIR", returning a temporary directory
-/// if the variable isn't set
+/// Returns a temp dir. If the environment variable "XDG_RUNTIME_DIR" is set, return its value.
+/// Otherwise if `std::env::temp_dir()` failed, return current dir or return the temp dir depended on OS.
 fn xdg_runtime_dir() -> String {
     env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| abs_string(env::temp_dir()).unwrap_or_else(|_| ".".to_string()))

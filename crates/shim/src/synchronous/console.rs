@@ -15,9 +15,14 @@
 */
 
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use log::warn;
+use uuid::Uuid;
+
+use crate::util::{mkdir, xdg_runtime_dir};
+use crate::Error;
+use crate::Result;
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,
@@ -26,6 +31,22 @@ pub struct ConsoleSocket {
 }
 
 impl ConsoleSocket {
+    pub fn new() -> Result<ConsoleSocket> {
+        let dir = format!("{}/pty{}", xdg_runtime_dir(), Uuid::new_v4());
+        mkdir(&dir, 0o711)?;
+        let file_name = Path::new(&dir).join("pty.sock");
+        let listener = UnixListener::bind(&file_name).map_err(io_error!(
+            e,
+            "bind socket {}",
+            file_name.display()
+        ))?;
+        Ok(ConsoleSocket {
+            listener,
+            path: file_name,
+            rmdir: true,
+        })
+    }
+
     pub fn accept(&self) -> std::io::Result<UnixStream> {
         let (stream, _addr) = self.listener.accept()?;
         Ok(stream)

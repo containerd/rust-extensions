@@ -44,9 +44,7 @@ use shim::protos::protobuf::well_known_types::{Any, Timestamp};
 use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
 use shim::protos::shim::oci::ProcessDetails;
 #[cfg(not(feature = "async"))]
-use shim::util::{
-    new_temp_console_socket, read_spec_from_file, write_options, write_runtime, IntoOption,
-};
+use shim::util::{read_spec_from_file, write_options, write_runtime, IntoOption};
 use shim::Console;
 use shim::{other, other_error};
 
@@ -166,7 +164,7 @@ impl Container for RuncContainer {
                 };
                 let terminal = process.common.stdio.terminal;
                 let socket = if terminal {
-                    let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
+                    let s = ConsoleSocket::new()?;
                     exec_opts.console_socket = Some(s.path.to_owned());
                     Some(s)
                 } else {
@@ -456,7 +454,7 @@ impl InitProcess {
             .no_new_keyring(self.no_new_key_ring)
             .detach(false);
         let socket = if terminal {
-            let s = new_temp_console_socket().map_err(other_error!(e, ""))?;
+            let s = ConsoleSocket::new()?;
             create_opts.console_socket = Some(s.path.to_owned());
             Some(s)
         } else {

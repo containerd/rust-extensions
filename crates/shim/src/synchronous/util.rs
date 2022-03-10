@@ -14,21 +14,17 @@
    limitations under the License.
 */
 
-use std::env;
 use std::fs::{rename, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
 use std::path::Path;
 
+use libc::mode_t;
 use log::warn;
 use nix::sys::stat::Mode;
-use nix::unistd::mkdir;
 use oci_spec::runtime::Spec;
-use uuid::Uuid;
 
 use containerd_shim_protos::shim::oci::Options;
 
-use crate::console::ConsoleSocket;
 use crate::util::{JsonOptions, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME};
 use crate::Error;
 
@@ -118,21 +114,13 @@ pub fn read_spec_from_file(bundle: &str) -> crate::Result<Spec> {
     Spec::load(path).map_err(other_error!(e, "read spec file"))
 }
 
-pub fn new_temp_console_socket() -> crate::Result<ConsoleSocket> {
-    let dir = env::var("XDG_RUNTIME_DIR")
-        .map(|runtime_dir| format!("{}/pty{}", runtime_dir, Uuid::new_v4(),))?;
-    mkdir(Path::new(&dir), Mode::from_bits(0o711).unwrap())?;
-    let file_name = Path::new(&dir).join("pty.sock");
-    let listener = UnixListener::bind(file_name.as_path()).map_err(io_error!(
-        e,
-        "bind socket {}",
-        file_name.display()
-    ))?;
-    Ok(ConsoleSocket {
-        listener,
-        path: file_name,
-        rmdir: true,
-    })
+pub fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> crate::Result<()> {
+    let path_buf = path.as_ref().to_path_buf();
+    if !path_buf.as_path().exists() {
+        let mode = Mode::from_bits(mode).ok_or_else(|| other!("invalid dir mode {}", mode))?;
+        nix::unistd::mkdir(path_buf.as_path(), mode)?;
+    }
+    Ok(())
 }
 
 /// A helper to help remove temperate file or dir when it became useless
