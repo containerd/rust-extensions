@@ -23,7 +23,7 @@ mod skeleton {
     use log::info;
 
     use containerd_shim as shim;
-    use containerd_shim::synchronous::publisher::RemotePublisher;
+    use shim::synchronous::publisher::RemotePublisher;
     use shim::{api, Config, DeleteResponse, ExitSignal, TtrpcContext, TtrpcResult};
 
     #[derive(Clone)]
@@ -34,13 +34,7 @@ mod skeleton {
     impl shim::Shim for Service {
         type T = Service;
 
-        fn new(
-            _runtime_id: &str,
-            _id: &str,
-            _namespace: &str,
-            _publisher: RemotePublisher,
-            _config: &mut Config,
-        ) -> Self {
+        fn new(_runtime_id: &str, _id: &str, _namespace: &str, _config: &mut Config) -> Self {
             Service {
                 exit: Arc::new(ExitSignal::default()),
             }
@@ -60,7 +54,7 @@ mod skeleton {
             self.exit.wait();
         }
 
-        fn create_task_service(&self) -> Self::T {
+        fn create_task_service(&self, _publisher: RemotePublisher) -> Self::T {
             self.clone()
         }
     }

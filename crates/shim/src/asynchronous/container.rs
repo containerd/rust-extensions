@@ -22,7 +22,6 @@ use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
 
 use containerd_shim_protos::api::{CreateTaskRequest, ExecProcessRequest, StateResponse};
-use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
 use crate::asynchronous::processes::Process;
 use crate::error::Result;
@@ -37,11 +36,15 @@ pub trait Container {
     async fn get_exit_info(
         &self,
         exec_id: Option<&str>,
-    ) -> Result<(i32, u32, Option<OffsetDateTime>)>;
-    async fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)>;
+    ) -> Result<(i32, i32, Option<OffsetDateTime>)>;
+    async fn delete(
+        &mut self,
+        exec_id_opt: Option<&str>,
+    ) -> Result<(i32, i32, Option<OffsetDateTime>)>;
     async fn exec(&mut self, req: ExecProcessRequest) -> Result<()>;
     async fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
     async fn pid(&self) -> i32;
+    async fn id(&self) -> String;
 }
 
 #[async_trait]
@@ -106,32 +109,30 @@ where
     async fn get_exit_info(
         &self,
         exec_id: Option<&str>,
-    ) -> Result<(i32, u32, Option<OffsetDateTime>)> {
+    ) -> Result<(i32, i32, Option<OffsetDateTime>)> {
         let process = self.get_process(exec_id)?;
         Ok((
             process.pid().await,
-            process.exit_code().await as u32,
+            process.exit_code().await,
             process.exited_at().await,
         ))
     }
 
-    async fn delete(&mut self, exec_id_opt: Option<&str>) -> Result<(i32, u32, Timestamp)> {
-        let (pid, code, exit_at) = self.get_exit_info(exec_id_opt).await?;
-        let mut timestamp = Timestamp::new();
-        if let Some(exit_at) = exit_at {
-            timestamp.set_seconds(exit_at.unix_timestamp());
-            timestamp.set_nanos(exit_at.nanosecond() as i32);
-        }
+    async fn delete(
+        &mut self,
+        exec_id_opt: Option<&str>,
+    ) -> Result<(i32, i32, Option<OffsetDateTime>)> {
+        let (pid, code, exited_at) = self.get_exit_info(exec_id_opt).await?;
         let process = self.get_mut_process(exec_id_opt);
         match process {
             Ok(p) => p.delete().await?,
-            Err(Error::NotFoundError(_)) => return Ok((pid, code, timestamp)),
+            Err(Error::NotFoundError(_)) => return Ok((pid, code, exited_at)),
             Err(e) => return Err(e),
         }
         if let Some(exec_id) = exec_id_opt {
             self.processes.remove(exec_id);
         }
-        Ok((pid, code, timestamp))
+        Ok((pid, code, exited_at))
     }
 
     async fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
@@ -148,6 +149,10 @@ where
 
     async fn pid(&self) -> i32 {
         self.init.pid().await
+    }
+
+    async fn id(&self) -> String {
+        self.id.to_string()
     }
 }
 

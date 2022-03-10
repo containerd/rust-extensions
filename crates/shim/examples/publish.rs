@@ -41,7 +41,7 @@ fn main() {
     println!("Sending event");
 
     publisher
-        .publish(ctx, "/tasks/oom", "default", event)
+        .publish(ctx, "/tasks/oom", "default", Box::new(event))
         .expect("Publish failed");
 
     println!("Done");
@@ -70,7 +70,7 @@ async fn main() {
     println!("Sending event");
 
     publisher
-        .publish(ctx, "/tasks/oom", "default", event)
+        .publish(ctx, "/tasks/oom", "default", Box::new(event))
         .await
         .expect("Publish failed");
 

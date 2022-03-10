@@ -19,8 +19,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::info;
 
-use containerd_shim::asynchronous::publisher::RemotePublisher;
 use containerd_shim::asynchronous::{run, spawn, ExitSignal, Shim};
+use containerd_shim::publisher::RemotePublisher;
 use containerd_shim::{Config, Error, StartOpts, TtrpcResult};
 use containerd_shim_protos::api;
 use containerd_shim_protos::api::DeleteResponse;
@@ -36,13 +36,7 @@ struct Service {
 impl Shim for Service {
     type T = Service;
 
-    async fn new(
-        _runtime_id: &str,
-        _id: &str,
-        _namespace: &str,
-        _publisher: RemotePublisher,
-        _config: &mut Config,
-    ) -> Self {
+    async fn new(_runtime_id: &str, _id: &str, _namespace: &str, _config: &mut Config) -> Self {
         Service {
             exit: Arc::new(ExitSignal::default()),
         }
@@ -62,7 +56,7 @@ impl Shim for Service {
         self.exit.wait().await;
     }
 
-    async fn create_task_service(&self) -> Self::T {
+    async fn create_task_service(&self, _publisher: RemotePublisher) -> Self::T {
         self.clone()
     }
 }

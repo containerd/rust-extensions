@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{debug, error, warn};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use ::runc::options::DeleteOpts;
 use containerd_shim::asynchronous::container::Container;
@@ -28,15 +29,14 @@ use containerd_shim::asynchronous::monitor::{
 use containerd_shim::asynchronous::processes::Process;
 use containerd_shim::asynchronous::publisher::RemotePublisher;
 use containerd_shim::asynchronous::task::TaskService;
-use containerd_shim::asynchronous::util::{
-    read_options, read_runtime, read_spec, write_str_to_file,
-};
 use containerd_shim::asynchronous::{spawn, ExitSignal, Shim};
+use containerd_shim::event::Event;
 use containerd_shim::monitor::{Subject, Topic};
-use containerd_shim::protos::protobuf::SingularPtrField;
-use containerd_shim::util::get_timestamp;
-use containerd_shim::Error;
-use containerd_shim::{io_error, Config, DeleteResponse, StartOpts};
+use containerd_shim::protos::events::task::TaskExit;
+use containerd_shim::protos::protobuf::{Message, SingularPtrField};
+use containerd_shim::util::{convert_to_timestamp, timestamp};
+use containerd_shim::util::{read_options, read_runtime, read_spec, write_str_to_file};
+use containerd_shim::{io_error, Config, Context, DeleteResponse, Error, StartOpts};
 
 use crate::asynchronous::runc::{RuncContainer, RuncFactory};
 use crate::common::create_runc;
@@ -54,13 +54,7 @@ pub(crate) struct Service {
 impl Shim for Service {
     type T = TaskService<RuncFactory, RuncContainer>;
 
-    async fn new(
-        _runtime_id: &str,
-        id: &str,
-        namespace: &str,
-        _publisher: RemotePublisher,
-        _config: &mut Config,
-    ) -> Self {
+    async fn new(_runtime_id: &str, id: &str, namespace: &str, _config: &mut Config) -> Self {
         let exit = Arc::new(ExitSignal::default());
         // TODO: add publisher
         Service {
@@ -110,7 +104,7 @@ impl Shim for Service {
         let mut resp = DeleteResponse::new();
         // sigkill
         resp.exit_status = 137;
-        resp.exited_at = SingularPtrField::some(get_timestamp()?);
+        resp.exited_at = SingularPtrField::some(timestamp()?);
         Ok(resp)
     }
 
@@ -118,19 +112,24 @@ impl Shim for Service {
         self.exit.wait().await;
     }
 
-    async fn create_task_service(&self) -> Self::T {
+    async fn create_task_service(&self, publisher: RemotePublisher) -> Self::T {
+        let (tx, rx) = channel(128);
         let exit_clone = self.exit.clone();
-        let task = TaskService::new(&*self.namespace, exit_clone);
+        let task = TaskService::new(&*self.namespace, exit_clone, tx.clone());
         let s = monitor_subscribe(Topic::Pid)
             .await
             .expect("monitor subscribe failed");
-        process_exits(s, &task).await;
-
+        process_exits(s, &task, tx).await;
+        forward(publisher, self.namespace.to_string(), rx).await;
         task
     }
 }
 
-async fn process_exits(s: Subscription, task: &TaskService<RuncFactory, RuncContainer>) {
+async fn process_exits(
+    s: Subscription,
+    task: &TaskService<RuncFactory, RuncContainer>,
+    tx: Sender<(String, Box<dyn Message>)>,
+) {
     let containers = task.containers.clone();
     let mut s = s;
     tokio::spawn(async move {
@@ -150,7 +149,27 @@ async fn process_exits(s: Subscription, task: &TaskService<RuncFactory, RuncCont
                         }
                         // set exit for init process
                         cont.init.set_exited(exit_code).await;
-                        // TODO: publish event
+
+                        // publish event
+                        let (_, code, exited_at) = match cont.get_exit_info(None).await {
+                            Ok(info) => info,
+                            Err(_) => break,
+                        };
+
+                        let ts = convert_to_timestamp(exited_at);
+                        let event = TaskExit {
+                            container_id: cont.id.to_string(),
+                            id: cont.id.to_string(),
+                            pid: cont.pid().await as u32,
+                            exit_status: code as u32,
+                            exited_at: SingularPtrField::some(ts),
+                            ..Default::default()
+                        };
+                        let topic = event.topic();
+                        tx.send((topic.to_string(), Box::new(event)))
+                            .await
+                            .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
+
                         break;
                     }
 
@@ -167,5 +186,20 @@ async fn process_exits(s: Subscription, task: &TaskService<RuncFactory, RuncCont
             }
         }
         monitor_unsubscribe(s.id).await.unwrap_or_default();
+    });
+}
+
+async fn forward(
+    publisher: RemotePublisher,
+    ns: String,
+    mut rx: Receiver<(String, Box<dyn Message>)>,
+) {
+    tokio::spawn(async move {
+        while let Some((topic, e)) = rx.recv().await {
+            publisher
+                .publish(Context::default(), &topic, &ns, e)
+                .await
+                .unwrap_or_else(|e| warn!("publish {} to containerd: {}", topic, e));
+        }
     });
 }

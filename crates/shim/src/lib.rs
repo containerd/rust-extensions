@@ -56,6 +56,7 @@ pub mod error;
 mod args;
 #[cfg(feature = "async")]
 pub mod asynchronous;
+pub mod event;
 pub mod io;
 mod logger;
 pub mod monitor;

@@ -40,9 +40,9 @@ use containerd_shim_protos::ttrpc::r#async::Server;
 
 use crate::asynchronous::monitor::monitor_notify_by_pid;
 use crate::asynchronous::publisher::RemotePublisher;
-use crate::asynchronous::util::{asyncify, read_file_to_str, write_str_to_file};
 use crate::error::Error;
 use crate::error::Result;
+use crate::util::{asyncify, read_file_to_str, write_str_to_file};
 use crate::{
     args, logger, parse_sockaddr, reap, socket_address, Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
@@ -69,15 +69,8 @@ pub trait Shim {
     /// - `runtime_id`: identifier of the container runtime.
     /// - `id`: identifier of the shim/container, passed in from Containerd.
     /// - `namespace`: namespace of the shim/container, passed in from Containerd.
-    /// - `publisher`: publisher to send events to Containerd.
     /// - `config`: for the shim to pass back configuration information
-    async fn new(
-        runtime_id: &str,
-        id: &str,
-        namespace: &str,
-        publisher: RemotePublisher,
-        config: &mut Config,
-    ) -> Self;
+    async fn new(runtime_id: &str, id: &str, namespace: &str, config: &mut Config) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -95,7 +88,7 @@ pub trait Shim {
     async fn wait(&mut self);
 
     /// Create the task service object asynchronously.
-    async fn create_task_service(&self) -> Self::T;
+    async fn create_task_service(&self, publisher: RemotePublisher) -> Self::T;
 }
 
 /// Async Shim entry point that must be invoked from tokio `main`.
@@ -128,8 +121,6 @@ where
     let flags = args::parse(&os_args[1..])?;
 
     let ttrpc_address = env::var(TTRPC_ADDRESS)?;
-    let publisher = publisher::RemotePublisher::new(&ttrpc_address).await?;
-
     // Create shim instance
     let mut config = opts.unwrap_or_else(Config::default);
 
@@ -140,14 +131,7 @@ where
         reap::set_subreaper()?;
     }
 
-    let mut shim = T::new(
-        runtime_id,
-        &flags.id,
-        &flags.namespace,
-        publisher,
-        &mut config,
-    )
-    .await;
+    let mut shim = T::new(runtime_id, &flags.id, &flags.namespace, &mut config).await;
 
     match flags.action.as_str() {
         "start" => {
@@ -187,7 +171,8 @@ where
                 logger::init(flags.debug)?;
             }
 
-            let task = shim.create_task_service().await;
+            let publisher = RemotePublisher::new(&ttrpc_address).await?;
+            let task = shim.create_task_service(publisher).await;
             let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;

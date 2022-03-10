@@ -19,6 +19,7 @@ use std::os::unix::io::RawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::api::Options;
 #[cfg(feature = "async")]
@@ -95,14 +96,6 @@ impl From<JsonOptions> for Options {
     }
 }
 
-pub fn get_timestamp() -> Result<Timestamp> {
-    let mut timestamp = Timestamp::new();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-    timestamp.set_seconds(now.as_secs() as i64);
-    timestamp.set_nanos(now.subsec_nanos() as i32);
-    Ok(timestamp)
-}
-
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     use nix::sys::socket::*;
     use nix::unistd::close;
@@ -148,10 +141,22 @@ pub fn timestamp() -> Result<Timestamp> {
     Ok(ts)
 }
 
-pub fn any(event: impl Message) -> Result<Any> {
-    let data = event.write_to_bytes()?;
+pub fn convert_to_timestamp(exited_at: Option<OffsetDateTime>) -> Timestamp {
+    let mut ts = Timestamp::new();
+    if let Some(ea) = exited_at {
+        ts.seconds = ea.unix_timestamp();
+        ts.nanos = ea.nanosecond() as i32;
+    }
+    ts
+}
+
+pub fn convert_to_any(obj: Box<dyn Message>) -> Result<Any> {
+    let mut data = Vec::new();
+    obj.write_to_vec(&mut data)?;
+
     let mut any = Any::new();
-    any.merge_from_bytes(&data)?;
+    any.set_value(data);
+    any.set_type_url(obj.descriptor().full_name().to_string());
 
     Ok(any)
 }
@@ -192,5 +197,16 @@ impl AsOption for str {
         } else {
             Some(self)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp() {
+        let ts = timestamp().unwrap();
+        assert!(ts.seconds > 0);
     }
 }
