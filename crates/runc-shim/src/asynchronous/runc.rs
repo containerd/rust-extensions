@@ -97,7 +97,13 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(&m, rootfs.as_path()).await?
         }
 
-        let runc = create_runc(runtime, ns, bundle, &opts, Some(Arc::new(ShimExecutor {})))?;
+        let runc = create_runc(
+            runtime,
+            ns,
+            bundle,
+            &opts,
+            Some(Arc::new(ShimExecutor::default())),
+        )?;
 
         let id = req.get_id();
         let stdio = Stdio::new(

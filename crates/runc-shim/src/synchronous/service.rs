@@ -32,7 +32,7 @@ use shim::util::get_timestamp;
 use shim::{debug, error, io_error, other_error, warn};
 use shim::{spawn, Config, ExitSignal, Shim, StartOpts};
 
-use crate::common::{create_runc, GROUP_LABELS};
+use crate::common::{create_runc, ShimExecutor, GROUP_LABELS};
 use crate::synchronous::container::{Container, Process};
 use crate::synchronous::runc::{RuncContainer, RuncFactory};
 use crate::synchronous::task::ShimTask;
@@ -88,7 +88,13 @@ impl Shim for Service {
         let opts = read_options(&bundle)?;
         let runtime = read_runtime(&bundle)?;
 
-        let runc = create_runc(&*runtime, namespace, &bundle, &opts, None)?;
+        let runc = create_runc(
+            &*runtime,
+            namespace,
+            &bundle,
+            &opts,
+            Some(Arc::new(ShimExecutor::default())),
+        )?;
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
         let mut resp = DeleteResponse::new();
