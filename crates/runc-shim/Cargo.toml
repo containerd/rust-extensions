@@ -1,5 +1,5 @@
 [package]
-name = "containerd-shim-runc-v2"
+name = "containerd-runc-shim"
 version = "0.1.0"
 authors = ["Shaobao Feng <fshb1988@gmail.com>", "Tianyang Zhang <burning9699@gmail.com>", "The containerd Authors"]
 edition = "2018"
@@ -8,6 +8,14 @@ repository = "https://github.com/containerd/rust-extensions"
 keywords = ["containerd", "shim", "containers"]
 description = "Rust implementation of containerd's runc v2 shim runtime"
 homepage = "https://containerd.io"
+
+[[bin]]
+# Overwrite the binary name so it can be referred as "io.containerd.runc.v2-rs" from containerd.
+# Note: the runtime's binary name must start with "io.containerd.runc" in order to
+# keep compatibility with Go runc runtime and the containerd client.
+# Example: https://github.com/containerd/containerd/blob/8047eb2fcac1f4553ee7652862194b1e10855ce7/task_opts_unix.go#L33
+name = "containerd-shim-runc-v2-rs"
+path = "src/main.rs"
 
 [features]
 async = ["containerd-shim/async", "runc/async", "tokio", "futures", "async-trait"]
@@ -21,6 +29,8 @@ serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
 oci-spec = "0.5.4"
 crossbeam = "0.8.1"
+
+# Async dependencies
 async-trait = { version = "0.1.51", optional = true }
 tokio = { version = "1.17.0", features = ["full"], optional = true }
 futures = {version = "0.3.21", optional = true}
