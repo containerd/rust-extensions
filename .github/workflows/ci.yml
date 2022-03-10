@@ -65,8 +65,8 @@ jobs:
 
       - name: Install shim
         run: |
-          cargo build --release --bin containerd-shim-runc-v2
-          sudo install -D ./target/release/containerd-shim-runc-v2 /usr/local/bin/
+          cargo build --release --bin containerd-shim-runc-v2-rs
+          sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
 
       - uses: actions/setup-go@v2
         with:
@@ -104,6 +104,6 @@ jobs:
       - name: Integration
         env:
           GOPROXY: direct
-          TEST_RUNTIME: "io.containerd.runc.v2"
+          TEST_RUNTIME: "io.containerd.runc.v2-rs"
         run: sudo -E PATH=$PATH TESTFLAGS_PARALLEL=1 make integration TESTFLAGS_RACE=-race EXTRA_TESTFLAGS=-no-criu
         working-directory: src/github.com/containerd/containerd

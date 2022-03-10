@@ -22,14 +22,14 @@ mod synchronous;
 
 #[cfg(not(feature = "async"))]
 fn main() {
-    containerd_shim::run::<synchronous::Service>("io.containerd.runc.v2", None)
+    containerd_shim::run::<synchronous::Service>("io.containerd.runc.v2-rs", None)
 }
 
 #[cfg(feature = "async")]
 #[tokio::main]
 async fn main() {
     containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
-        "io.containerd.runc.v2",
+        "io.containerd.runc.v2-rs",
         None,
     )
     .await;
