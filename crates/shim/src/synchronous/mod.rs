@@ -236,24 +236,15 @@ fn handle_signals(mut signals: Signals) {
                     debug!("received {}", sig);
                 }
                 SIGCHLD => loop {
-                    // If WUNTRACED is not set, both suspended and running process will
-                    // bring WaitStatus::StillAlive and we cannot distinguish them.
                     // Note that this thread sticks to child even it is suspended.
-                    // (it will repeatedly bring WaitStatus::StillAlive after once WaitStatus::Stopped is reported)
-                    match wait::waitpid(
-                        Some(Pid::from_raw(-1)),
-                        Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
-                    ) {
+                    match wait::waitpid(Some(Pid::from_raw(-1)), Some(WaitPidFlag::WNOHANG)) {
                         Ok(WaitStatus::Exited(pid, status)) => {
                             monitor_notify_by_pid(pid.as_raw(), status)
                                 .unwrap_or_else(|e| error!("failed to send exit event {}", e))
                         }
                         Ok(WaitStatus::Signaled(pid, sig, _)) => {
                             // TODO: add signal notification for monitor
-                            warn!("child {} terminated({})", pid, sig);
-                        }
-                        Ok(WaitStatus::Stopped(pid, sig)) => {
-                            warn!("child {} stopped({})", pid, sig);
+                            debug!("child {} terminated({})", pid, sig);
                         }
                         Err(Errno::ECHILD) => {
                             break;

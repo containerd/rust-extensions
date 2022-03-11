@@ -313,7 +313,7 @@ async fn handle_signals(signals: Signals) {
                 match asyncify(move || {
                     Ok(wait::waitpid(
                         Some(Pid::from_raw(-1)),
-                        Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED),
+                        Some(WaitPidFlag::WNOHANG),
                     )?)
                 })
                 .await
@@ -324,10 +324,7 @@ async fn handle_signals(signals: Signals) {
                             .unwrap_or_else(|e| error!("failed to send exit event {}", e))
                     }
                     Ok(WaitStatus::Signaled(pid, sig, _)) => {
-                        warn!("child {} terminated({})", pid, sig);
-                    }
-                    Ok(WaitStatus::Stopped(pid, sig)) => {
-                        warn!("child {} stopped({})", pid, sig);
+                        debug!("child {} terminated({})", pid, sig);
                     }
                     Err(Error::Nix(Errno::ECHILD)) => {
                         break;
