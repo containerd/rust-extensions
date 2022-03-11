@@ -1,6 +1,6 @@
 [package]
 name = "containerd-runc-shim"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Shaobao Feng <fshb1988@gmail.com>", "Tianyang Zhang <burning9699@gmail.com>", "The containerd Authors"]
 edition = "2018"
 license = "Apache-2.0"
@@ -33,7 +33,7 @@ crossbeam = "0.8.1"
 # Async dependencies
 async-trait = { version = "0.1.51", optional = true }
 tokio = { version = "1.17.0", features = ["full"], optional = true }
-futures = {version = "0.3.21", optional = true}
+futures = { version = "0.3.21", optional = true }
 
 containerd-shim = { path = "../shim", version = "0.3.0" }
 runc = { path = "../runc", version = "0.2.0" }

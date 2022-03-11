@@ -1,7 +1,7 @@
 # Rust containerd shim v2 for runc container
 
-[![Crates.io](https://img.shields.io/crates/v/containerd-shim)](https://crates.io/crates/containerd-shim)
-[![docs.rs](https://img.shields.io/docsrs/containerd-shim)](https://docs.rs/containerd-shim/latest/containerd_shim/)
+[![Crates.io](https://img.shields.io/crates/v/containerd-runc-shim)](https://crates.io/crates/containerd-runc-shim)
+[![docs.rs](https://img.shields.io/docsrs/containerd-runc-shim)](https://docs.rs/containerd-runc-shim/latest/containerd-runc-shim/)
 [![Crates.io](https://img.shields.io/crates/l/containerd-shim)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![CI](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml)
 
