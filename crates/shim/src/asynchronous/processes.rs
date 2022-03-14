@@ -27,7 +27,6 @@ use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
 use crate::io::Stdio;
 use crate::util::asyncify;
-use crate::Error;
 use crate::{ioctl_set_winsz, Console};
 
 #[async_trait]
@@ -154,23 +153,20 @@ where
     }
 
     async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()> {
-        match self.console.as_ref() {
-            Some(console) => unsafe {
-                let w = libc::winsize {
-                    ws_row: height as u16,
-                    ws_col: width as u16,
-                    ws_xpixel: 0,
-                    ws_ypixel: 0,
-                };
-                let fd = console.file.as_raw_fd();
-                asyncify(move || -> crate::Result<()> {
-                    ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into)
-                })
-                .await?;
-                Ok(())
-            },
-            None => Err(other!("there is no console")),
+        if let Some(console) = self.console.as_ref() {
+            let w = libc::winsize {
+                ws_row: height as u16,
+                ws_col: width as u16,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let fd = console.file.as_raw_fd();
+            asyncify(move || -> crate::Result<()> {
+                unsafe { ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into) }
+            })
+            .await?;
         }
+        Ok(())
     }
 
     async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()> {

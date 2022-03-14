@@ -98,16 +98,6 @@ where
 {
     if let Some(err) = bootstrap::<T>(runtime_id, opts).await.err() {
         eprintln!("{}: {:?}", runtime_id, err);
-        let mut f = tokio::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open("/tmp/containerd-shim.log")
-            .await
-            .unwrap();
-        f.write_all(format!("error bootstrap {}....\n", err).as_bytes())
-            .await
-            .unwrap();
         process::exit(1);
     }
 }
@@ -293,11 +283,11 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     command
         .spawn()
         .map_err(io_error!(e, "spawn shim"))
-        .and_then(|child| {
+        .and_then(|_child| {
             // Ownership of `listener` has been passed to child.
             std::mem::forget(listener);
             #[cfg(target_os = "linux")]
-            crate::cgroup::set_cgroup_and_oom_score(child.id())?;
+            crate::cgroup::set_cgroup_and_oom_score(_child.id())?;
             Ok(address)
         })
 }
@@ -316,25 +306,29 @@ async fn handle_signals(signals: Signals) {
         match sig {
             SIGTERM | SIGINT => {
                 debug!("received {}", sig);
-                return;
             }
-            SIGCHLD => {
-                let mut status: c_int = 0;
-                let options: c_int = libc::WNOHANG;
-                let res_pid = asyncify(move || -> Result<pid_t> {
-                    Ok(unsafe { libc::waitpid(-1, &mut status, options) })
+            SIGCHLD => loop {
+                let result = asyncify(move || -> Result<(pid_t, c_int)> {
+                    let mut status: c_int = -1;
+                    let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
+                    if pid <= 0 {
+                        return Err(other!("wait finished"));
+                    }
+                    let status = libc::WEXITSTATUS(status);
+                    Ok((pid, status))
                 })
-                .await
-                .unwrap_or(-1);
-                let status = libc::WEXITSTATUS(status);
-                if res_pid > 0 {
+                .await;
+
+                if let Ok((res_pid, status)) = result {
                     monitor_notify_by_pid(res_pid, status)
                         .await
                         .unwrap_or_else(|e| {
                             error!("failed to send pid exit event {}", e);
                         })
+                } else {
+                    break;
                 }
-            }
+            },
             _ => {}
         }
     }

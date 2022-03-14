@@ -228,7 +228,6 @@ fn handle_signals(mut signals: Signals) {
             match sig {
                 SIGTERM | SIGINT => {
                     debug!("received {}", sig);
-                    return;
                 }
                 SIGCHLD => loop {
                     unsafe {

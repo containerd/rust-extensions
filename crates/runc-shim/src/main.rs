@@ -26,11 +26,18 @@ fn main() {
 }
 
 #[cfg(feature = "async")]
-#[tokio::main]
-async fn main() {
-    containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
-        "io.containerd.runc.v2-rs",
-        None,
-    )
-    .await;
+fn main() {
+    let body = async {
+        containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
+            "io.containerd.runc.v2-rs",
+            None,
+        )
+        .await;
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed building the runtime");
+    runtime.block_on(body);
+    runtime.shutdown_background();
 }

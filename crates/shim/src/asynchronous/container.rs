@@ -168,7 +168,7 @@ where
     }
 
     #[cfg(not(target_os = "linux"))]
-    async fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+    async fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
         Err(Error::Unimplemented("update".to_string()))
     }
 

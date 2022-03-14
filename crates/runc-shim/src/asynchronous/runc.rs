@@ -46,9 +46,7 @@ use containerd_shim::protos::protobuf::{CodedInputStream, Message};
 use containerd_shim::util::{
     asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
 };
-use containerd_shim::Console;
-use containerd_shim::{io_error, other, Error};
-use containerd_shim::{other_error, Result};
+use containerd_shim::{io_error, other, other_error, Console, Error, Result};
 use runc::{Command, Runc, Spawner};
 
 use crate::common::receive_socket;
@@ -273,6 +271,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             .map_err(other_error!(e, "failed delete"))
     }
 
+    #[cfg(target_os = "linux")]
     async fn update(&self, p: &mut InitProcess, resources: &LinuxResources) -> Result<()> {
         if p.pid <= 0 {
             return Err(other!(
@@ -283,6 +282,12 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
         containerd_shim::cgroup::update_resources(p.pid as u32, resources)
     }
 
+    #[cfg(not(target_os = "linux"))]
+    async fn update(&self, _p: &mut InitProcess, _resources: &LinuxResources) -> Result<()> {
+        Err(Error::Unimplemented("update resource".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
     async fn stats(&self, p: &InitProcess) -> Result<Metrics> {
         if p.pid <= 0 {
             return Err(other!(
@@ -291,6 +296,11 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             ));
         }
         containerd_shim::cgroup::collect_metrics(p.pid as u32)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn stats(&self, _p: &InitProcess) -> Result<Metrics> {
+        Err(Error::Unimplemented("process stats".to_string()))
     }
 
     async fn ps(&self, p: &InitProcess) -> Result<Vec<ProcessInfo>> {
