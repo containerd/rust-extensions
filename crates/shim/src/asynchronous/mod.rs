@@ -314,7 +314,6 @@ async fn handle_signals(signals: Signals) {
         match sig {
             SIGTERM | SIGINT => {
                 debug!("received {}", sig);
-                return;
             }
             SIGCHLD => {
                 let mut status: c_int = 0;
