@@ -18,7 +18,6 @@ use std::sync::Arc;
 
 use containerd_shim::ExitSignal;
 
-mod cgroup;
 mod container;
 mod io;
 mod runc;

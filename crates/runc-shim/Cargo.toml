@@ -37,6 +37,3 @@ futures = { version = "0.3.21", optional = true }
 
 containerd-shim = { path = "../shim", version = "0.3.0" }
 runc = { path = "../runc", version = "0.2.0" }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.2.9"

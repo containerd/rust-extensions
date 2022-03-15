@@ -293,10 +293,12 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     command
         .spawn()
         .map_err(io_error!(e, "spawn shim"))
-        .map(|_| {
+        .and_then(|child| {
             // Ownership of `listener` has been passed to child.
             std::mem::forget(listener);
-            address
+            #[cfg(target_os = "linux")]
+            crate::cgroup::set_cgroup_and_oom_score(child.id())?;
+            Ok(address)
         })
 }
 

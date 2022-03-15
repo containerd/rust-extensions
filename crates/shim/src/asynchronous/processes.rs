@@ -17,10 +17,12 @@
 use std::os::unix::io::AsRawFd;
 
 use async_trait::async_trait;
+use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::{channel, Receiver, Sender};
 
-use containerd_shim_protos::api::{StateResponse, Status};
+use containerd_shim_protos::api::{ProcessInfo, StateResponse, Status};
+use containerd_shim_protos::cgroups::metrics::Metrics;
 use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
 use crate::io::Stdio;
@@ -40,6 +42,9 @@ pub trait Process {
     async fn exit_code(&self) -> i32;
     async fn exited_at(&self) -> Option<OffsetDateTime>;
     async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()>;
+    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()>;
+    async fn stats(&self) -> crate::Result<Metrics>;
+    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>>;
 }
 
 #[async_trait]
@@ -47,6 +52,9 @@ pub trait ProcessLifecycle<P: Process> {
     async fn start(&self, p: &mut P) -> crate::Result<()>;
     async fn kill(&self, p: &mut P, signal: u32, all: bool) -> crate::Result<()>;
     async fn delete(&self, p: &mut P) -> crate::Result<()>;
+    async fn update(&self, p: &mut P, resources: &LinuxResources) -> crate::Result<()>;
+    async fn stats(&self, p: &P) -> crate::Result<Metrics>;
+    async fn ps(&self, p: &P) -> crate::Result<Vec<ProcessInfo>>;
 }
 
 pub struct ProcessTemplate<S> {
@@ -163,5 +171,17 @@ where
             },
             None => Err(other!("there is no console")),
         }
+    }
+
+    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()> {
+        self.lifecycle.clone().update(&mut self, resources).await
+    }
+
+    async fn stats(&self) -> crate::Result<Metrics> {
+        self.lifecycle.stats(self).await
+    }
+
+    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>> {
+        self.lifecycle.ps(self).await
     }
 }

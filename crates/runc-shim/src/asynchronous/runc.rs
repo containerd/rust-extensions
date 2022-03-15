@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use log::{debug, error};
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
-use oci_spec::runtime::{LinuxNamespaceType, Process};
+use oci_spec::runtime::{LinuxNamespaceType, LinuxResources, Process};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
@@ -40,6 +40,8 @@ use containerd_shim::asynchronous::monitor::{
 use containerd_shim::asynchronous::processes::{ProcessLifecycle, ProcessTemplate};
 use containerd_shim::io::Stdio;
 use containerd_shim::monitor::{ExitEvent, Subject, Topic};
+use containerd_shim::protos::api::ProcessInfo;
+use containerd_shim::protos::cgroups::metrics::Metrics;
 use containerd_shim::protos::protobuf::{CodedInputStream, Message};
 use containerd_shim::util::{
     asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
@@ -270,6 +272,41 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             })
             .map_err(other_error!(e, "failed delete"))
     }
+
+    async fn update(&self, p: &mut InitProcess, resources: &LinuxResources) -> Result<()> {
+        if p.pid <= 0 {
+            return Err(other!(
+                "failed to update resources because init process is {}",
+                p.pid
+            ));
+        }
+        containerd_shim::cgroup::update_resources(p.pid as u32, resources)
+    }
+
+    async fn stats(&self, p: &InitProcess) -> Result<Metrics> {
+        if p.pid <= 0 {
+            return Err(other!(
+                "failed to collect metrics because init process is {}",
+                p.pid
+            ));
+        }
+        containerd_shim::cgroup::collect_metrics(p.pid as u32)
+    }
+
+    async fn ps(&self, p: &InitProcess) -> Result<Vec<ProcessInfo>> {
+        let pids = self
+            .runtime
+            .ps(&*p.id)
+            .await
+            .map_err(other_error!(e, "failed to execute runc ps"))?;
+        Ok(pids
+            .iter()
+            .map(|&x| ProcessInfo {
+                pid: x as u32,
+                ..Default::default()
+            })
+            .collect())
+    }
 }
 
 impl RuncInitLifecycle {
@@ -386,6 +423,18 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
 
     async fn delete(&self, _p: &mut ExecProcess) -> containerd_shim::Result<()> {
         Ok(())
+    }
+
+    async fn update(&self, _p: &mut ExecProcess, _resources: &LinuxResources) -> Result<()> {
+        Err(Error::Unimplemented("exec update".to_string()))
+    }
+
+    async fn stats(&self, _p: &ExecProcess) -> Result<Metrics> {
+        Err(Error::Unimplemented("exec stats".to_string()))
+    }
+
+    async fn ps(&self, _p: &ExecProcess) -> Result<Vec<ProcessInfo>> {
+        Err(Error::Unimplemented("exec ps".to_string()))
     }
 }
 

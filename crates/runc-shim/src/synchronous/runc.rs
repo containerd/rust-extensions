@@ -294,7 +294,7 @@ impl Container for RuncContainer {
     #[cfg(target_os = "linux")]
     fn stats(&self) -> Result<Metrics> {
         let pid = self.common.init.pid() as u32;
-        crate::synchronous::cgroup::collect_metrics(pid)
+        containerd_shim::cgroup::collect_metrics(pid)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -305,7 +305,7 @@ impl Container for RuncContainer {
     #[cfg(target_os = "linux")]
     fn update(&mut self, resources: &LinuxResources) -> Result<()> {
         let pid = self.common.init.pid() as u32;
-        crate::synchronous::cgroup::update_metrics(pid, resources)
+        containerd_shim::cgroup::update_resources(pid, resources)
     }
 
     #[cfg(not(target_os = "linux"))]
