@@ -93,7 +93,7 @@ where
     S: ProcessLifecycle<Self> + Clone + Sync + Send,
 {
     async fn start(&mut self) -> crate::Result<()> {
-        self.lifecycle.clone().start(&mut self).await?;
+        self.lifecycle.clone().start(self).await?;
         Ok(())
     }
 
@@ -129,11 +129,11 @@ where
     }
 
     async fn kill(&mut self, signal: u32, all: bool) -> crate::Result<()> {
-        self.lifecycle.clone().kill(&mut self, signal, all).await
+        self.lifecycle.clone().kill(self, signal, all).await
     }
 
     async fn delete(&mut self) -> crate::Result<()> {
-        self.lifecycle.clone().delete(&mut self).await
+        self.lifecycle.clone().delete(self).await
     }
 
     async fn wait_channel(&mut self) -> crate::Result<Receiver<()>> {
@@ -170,7 +170,7 @@ where
     }
 
     async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()> {
-        self.lifecycle.clone().update(&mut self, resources).await
+        self.lifecycle.clone().update(self, resources).await
     }
 
     async fn stats(&self) -> crate::Result<Metrics> {

@@ -112,7 +112,7 @@ where
 
     let ttrpc_address = env::var(TTRPC_ADDRESS)?;
     // Create shim instance
-    let mut config = opts.unwrap_or_else(Config::default);
+    let mut config = opts.unwrap_or_default();
 
     // Setup signals
     let signals = setup_signals_tokio(&config);
@@ -280,16 +280,11 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     }
     command.envs(vars);
 
-    command
-        .spawn()
-        .map_err(io_error!(e, "spawn shim"))
-        .and_then(|_child| {
-            // Ownership of `listener` has been passed to child.
-            std::mem::forget(listener);
-            #[cfg(target_os = "linux")]
-            crate::cgroup::set_cgroup_and_oom_score(_child.id())?;
-            Ok(address)
-        })
+    let _child = command.spawn().map_err(io_error!(e, "spawn shim"))?;
+    #[cfg(target_os = "linux")]
+    crate::cgroup::set_cgroup_and_oom_score(_child.id())?;
+    std::mem::forget(listener);
+    Ok(address)
 }
 
 fn setup_signals_tokio(config: &Config) -> Signals {

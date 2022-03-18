@@ -116,7 +116,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         let mut init = InitProcess::new(
             id,
             stdio,
-            RuncInitLifecycle::new(runc.clone(), opts.clone(), rootfs, bundle),
+            RuncInitLifecycle::new(runc.clone(), opts.clone(), bundle),
         );
 
         let config = CreateConfig::default();
@@ -149,7 +149,7 @@ impl RuncFactory {
         let bundle = &init.lifecycle.bundle;
         let pid_path = Path::new(bundle).join(INIT_PID_FILE);
         let mut create_opts = runc::options::CreateOpts::new()
-            .pid_file(pid_path.to_owned())
+            .pid_file(&pid_path)
             .no_pivot(opts.no_pivot_root)
             .no_new_keyring(opts.no_new_keyring)
             .detach(false);
@@ -223,8 +223,6 @@ pub struct RuncInitLifecycle {
     runtime: Runc,
     opts: Options,
     bundle: String,
-    rootfs: PathBuf,
-    work_dir: PathBuf,
 }
 
 #[async_trait]
@@ -320,7 +318,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
 }
 
 impl RuncInitLifecycle {
-    pub fn new(runtime: Runc, opts: Options, rootfs: PathBuf, bundle: &str) -> Self {
+    pub fn new(runtime: Runc, opts: Options, bundle: &str) -> Self {
         let work_dir = Path::new(bundle).join("work");
         let mut opts = opts;
         if opts.get_criu_path().is_empty() {
@@ -330,8 +328,6 @@ impl RuncInitLifecycle {
             runtime,
             opts,
             bundle: bundle.to_string(),
-            rootfs,
-            work_dir,
         }
     }
 

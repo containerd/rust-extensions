@@ -437,7 +437,7 @@ impl InitProcess {
         let bundle = self.bundle.to_string();
         let pid_path = Path::new(&bundle).join(INIT_PID_FILE);
         let mut create_opts = runc::options::CreateOpts::new()
-            .pid_file(pid_path.to_owned())
+            .pid_file(&pid_path)
             .no_pivot(self.no_pivot_root)
             .no_new_keyring(self.no_new_key_ring)
             .detach(false);

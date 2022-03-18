@@ -146,7 +146,7 @@ where
     let ttrpc_address = env::var(TTRPC_ADDRESS)?;
 
     // Create shim instance
-    let mut config = opts.unwrap_or_else(Config::default);
+    let mut config = opts.unwrap_or_default();
 
     // Setup signals
     let signals = setup_signals(&config);
