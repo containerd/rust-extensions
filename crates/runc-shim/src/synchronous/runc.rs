@@ -47,7 +47,9 @@ use shim::Console;
 use shim::{other, other_error};
 
 use crate::common;
-use crate::common::{create_io, CreateConfig, ShimExecutor, INIT_PID_FILE};
+use crate::common::{
+    create_io, has_shared_pid_namespace, CreateConfig, ShimExecutor, INIT_PID_FILE,
+};
 use crate::synchronous::container::{
     CommonContainer, CommonProcess, Container, ContainerFactory, Process,
 };
@@ -353,20 +355,7 @@ impl Container for RuncContainer {
 impl RuncContainer {
     pub(crate) fn should_kill_all_on_exit(&mut self, bundle_path: &str) -> bool {
         match read_spec_from_file(bundle_path) {
-            Ok(spec) => match spec.linux() {
-                None => true,
-                Some(linux) => match linux.namespaces() {
-                    None => true,
-                    Some(namespaces) => {
-                        for ns in namespaces {
-                            if ns.typ() == LinuxNamespaceType::Pid && ns.path().is_none() {
-                                return false;
-                            }
-                        }
-                        true
-                    }
-                },
-            },
+            Ok(spec) => has_shared_pid_namespace(&spec),
             Err(e) => {
                 error!("should_kill_all_on_exit: {}", e);
                 false

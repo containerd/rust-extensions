@@ -15,6 +15,7 @@
 */
 
 use std::os::unix::io::AsRawFd;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use oci_spec::runtime::LinuxResources;
@@ -65,16 +66,13 @@ pub struct ProcessTemplate<S> {
     pub exited_at: Option<OffsetDateTime>,
     pub wait_chan_tx: Vec<Sender<()>>,
     pub console: Option<Console>,
-    pub lifecycle: S,
+    pub lifecycle: Arc<S>,
 }
 
-impl<S> ProcessTemplate<S>
-where
-    S: Clone,
-{
+impl<S> ProcessTemplate<S> {
     pub fn new(id: &str, stdio: Stdio, lifecycle: S) -> Self {
         Self {
-            state: Default::default(),
+            state: Status::CREATED,
             id: id.to_string(),
             stdio,
             pid: 0,
@@ -82,7 +80,7 @@ where
             exited_at: None,
             wait_chan_tx: vec![],
             console: None,
-            lifecycle,
+            lifecycle: Arc::new(lifecycle),
         }
     }
 }
@@ -90,7 +88,7 @@ where
 #[async_trait]
 impl<S> Process for ProcessTemplate<S>
 where
-    S: ProcessLifecycle<Self> + Clone + Sync + Send,
+    S: ProcessLifecycle<Self> + Sync + Send,
 {
     async fn start(&mut self) -> crate::Result<()> {
         self.lifecycle.clone().start(self).await?;

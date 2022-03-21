@@ -39,7 +39,7 @@ use containerd_shim::util::{read_options, read_runtime, read_spec, write_str_to_
 use containerd_shim::{io_error, Config, Context, DeleteResponse, Error, StartOpts};
 
 use crate::asynchronous::runc::{RuncContainer, RuncFactory};
-use crate::common::create_runc;
+use crate::common::{create_runc, has_shared_pid_namespace};
 use crate::common::{ShimExecutor, GROUP_LABELS};
 
 mod runc;
@@ -142,7 +142,7 @@ async fn process_exits(
                     // pid belongs to container init process
                     if cont.init.pid == pid {
                         // kill all children process if the container has a private PID namespace
-                        if cont.init.lifecycle.should_kill_all_on_exit(&bundle).await {
+                        if should_kill_all_on_exit(&bundle).await {
                             cont.kill(None, 9, true).await.unwrap_or_else(|e| {
                                 error!("failed to kill init's children: {}", e)
                             });
@@ -202,4 +202,17 @@ async fn forward(
                 .unwrap_or_else(|e| warn!("publish {} to containerd: {}", topic, e));
         }
     });
+}
+
+async fn should_kill_all_on_exit(bundle_path: &str) -> bool {
+    match read_spec(bundle_path).await {
+        Ok(spec) => has_shared_pid_namespace(&spec),
+        Err(e) => {
+            error!(
+                "failed to read spec when call should_kill_all_on_exit: {}",
+                e
+            );
+            false
+        }
+    }
 }

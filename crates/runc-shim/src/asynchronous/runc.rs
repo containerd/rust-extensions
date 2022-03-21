@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use log::{debug, error};
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
-use oci_spec::runtime::{LinuxNamespaceType, LinuxResources, Process};
+use oci_spec::runtime::{LinuxResources, Process};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
@@ -44,9 +44,9 @@ use containerd_shim::protos::api::ProcessInfo;
 use containerd_shim::protos::cgroups::metrics::Metrics;
 use containerd_shim::protos::protobuf::{CodedInputStream, Message};
 use containerd_shim::util::{
-    asyncify, mkdir, mount_rootfs, read_file_to_str, read_spec, write_options, write_runtime,
+    asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime,
 };
-use containerd_shim::{io_error, other, other_error, Console, Error, Result};
+use containerd_shim::{io_error, other, other_error, Console, Error, ExitSignal, Result};
 use runc::{Command, Runc, Spawner};
 
 use crate::common::receive_socket;
@@ -174,7 +174,7 @@ impl RuncFactory {
             }
             return Err(other!("failed to create runc container: {}", e));
         }
-        copy_io_or_console(init, socket, pio).await?;
+        copy_io_or_console(init, socket, pio, init.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         init.pid = pid;
         Ok(())
@@ -206,23 +206,24 @@ impl ProcessFactory<ExecProcess> for RuncExecFactory {
             exited_at: None,
             wait_chan_tx: vec![],
             console: None,
-            lifecycle: RuncExecLifecycle {
+            lifecycle: Arc::from(RuncExecLifecycle {
                 runtime: self.runtime.clone(),
                 bundle: self.bundle.to_string(),
                 container_id: req.id.to_string(),
                 io_uid: self.io_uid,
                 io_gid: self.io_gid,
                 spec: p,
-            },
+                exit_signal: Default::default(),
+            }),
         })
     }
 }
 
-#[derive(Clone)]
 pub struct RuncInitLifecycle {
     runtime: Runc,
     opts: Options,
     bundle: String,
+    exit_signal: Arc<ExitSignal>,
 }
 
 #[async_trait]
@@ -266,7 +267,9 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                     Ok(())
                 }
             })
-            .map_err(other_error!(e, "failed delete"))
+            .map_err(other_error!(e, "failed delete"))?;
+        self.exit_signal.signal();
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
@@ -328,37 +331,11 @@ impl RuncInitLifecycle {
             runtime,
             opts,
             bundle: bundle.to_string(),
-        }
-    }
-
-    pub(crate) async fn should_kill_all_on_exit(&mut self, bundle_path: &str) -> bool {
-        match read_spec(bundle_path).await {
-            Ok(spec) => match spec.linux() {
-                None => true,
-                Some(linux) => match linux.namespaces() {
-                    None => true,
-                    Some(namespaces) => {
-                        for ns in namespaces {
-                            if ns.typ() == LinuxNamespaceType::Pid && ns.path().is_none() {
-                                return false;
-                            }
-                        }
-                        true
-                    }
-                },
-            },
-            Err(e) => {
-                error!(
-                    "failed to read spec when call should_kill_all_on_exit: {}",
-                    e
-                );
-                false
-            }
+            exit_signal: Default::default(),
         }
     }
 }
 
-#[derive(Clone)]
 pub struct RuncExecLifecycle {
     runtime: Runc,
     bundle: String,
@@ -366,6 +343,7 @@ pub struct RuncExecLifecycle {
     io_uid: u32,
     io_gid: u32,
     spec: Process,
+    exit_signal: Arc<ExitSignal>,
 }
 
 #[async_trait]
@@ -398,7 +376,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             }
             return Err(other!("failed to start runc exec: {}", e));
         }
-        copy_io_or_console(p, socket, pio).await?;
+        copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         p.pid = pid;
         p.state = Status::RUNNING;
@@ -428,6 +406,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     }
 
     async fn delete(&self, _p: &mut ExecProcess) -> containerd_shim::Result<()> {
+        self.exit_signal.signal();
         Ok(())
     }
 
@@ -444,7 +423,11 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     }
 }
 
-async fn copy_console(console_socket: &ConsoleSocket, stdio: &Stdio) -> Result<Console> {
+async fn copy_console(
+    console_socket: &ConsoleSocket,
+    stdio: &Stdio,
+    exit_signal: Arc<ExitSignal>,
+) -> Result<Console> {
     debug!("copy_console: waiting for runtime to send console fd");
     let stream = console_socket.accept().await?;
     let fd = asyncify(move || -> Result<RawFd> { receive_socket(stream.as_raw_fd()) }).await?;
@@ -455,13 +438,28 @@ async fn copy_console(console_socket: &ConsoleSocket, stdio: &Stdio) -> Result<C
             .try_clone()
             .await
             .map_err(io_error!(e, "failed to clone console file"))?;
-        let stdin = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(stdio.stdin.as_str())
-            .await
-            .map_err(io_error!(e, "open stdin"))?;
-        spawn_copy(stdin, console_stdin, None::<fn()>);
+        let stdin_fut = async {
+            OpenOptions::new()
+                .read(true)
+                .open(stdio.stdin.as_str())
+                .await
+        };
+        let stdin_w_fut = async {
+            OpenOptions::new()
+                .write(true)
+                .open(stdio.stdin.as_str())
+                .await
+        };
+        let (stdin, stdin_w) =
+            tokio::try_join!(stdin_fut, stdin_w_fut).map_err(io_error!(e, "open stdin"))?;
+        spawn_copy(
+            stdin,
+            console_stdin,
+            exit_signal.clone(),
+            Some(move || {
+                drop(stdin_w);
+            }),
+        );
     }
 
     if !stdio.stdout.is_empty() {
@@ -485,6 +483,7 @@ async fn copy_console(console_socket: &ConsoleSocket, stdio: &Stdio) -> Result<C
         spawn_copy(
             console_stdout,
             stdout,
+            exit_signal,
             Some(move || {
                 drop(stdout_r);
             }),
@@ -496,7 +495,7 @@ async fn copy_console(console_socket: &ConsoleSocket, stdio: &Stdio) -> Result<C
     Ok(console)
 }
 
-pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio) -> Result<()> {
+pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal>) -> Result<()> {
     if !pio.copy {
         return Ok(());
     };
@@ -509,8 +508,7 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio) -> Result<()> {
                     .open(stdio.stdin.as_str())
                     .await
                     .map_err(io_error!(e, "open stdin"))?;
-                //let closer = io.stdin().unwrap();
-                spawn_copy(stdin, w, None::<fn()>);
+                spawn_copy(stdin, w, exit_signal.clone(), None::<fn()>);
             }
         }
 
@@ -532,6 +530,7 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio) -> Result<()> {
                 spawn_copy(
                     r,
                     stdout,
+                    exit_signal.clone(),
                     Some(move || {
                         drop(stdout_r);
                     }),
@@ -557,6 +556,7 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio) -> Result<()> {
                 spawn_copy(
                     r,
                     stderr,
+                    exit_signal,
                     Some(move || {
                         drop(stderr_r);
                     }),
@@ -568,7 +568,7 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio) -> Result<()> {
     Ok(())
 }
 
-fn spawn_copy<R, W, F>(from: R, to: W, on_close: Option<F>)
+fn spawn_copy<R, W, F>(from: R, to: W, exit_signal: Arc<ExitSignal>, on_close: Option<F>)
 where
     R: AsyncRead + Send + Unpin + 'static,
     W: AsyncWrite + Send + Unpin + 'static,
@@ -577,12 +577,16 @@ where
     let mut src = from;
     let mut dst = to;
     tokio::spawn(async move {
-        tokio::io::copy(&mut src, &mut dst)
-            .await
-            .unwrap_or_else(|e| {
-                error!("copy io failed {}", e);
-                0
-            });
+        tokio::select! {
+            _ = exit_signal.wait() => {
+                debug!("container exit, copy task should exit too");
+            },
+            res = tokio::io::copy(&mut src, &mut dst) => {
+               if let Err(e) = res {
+                    error!("copy io failed {}", e);
+                }
+            }
+        }
         if let Some(f) = on_close {
             f();
         }
@@ -593,22 +597,23 @@ async fn copy_io_or_console<P>(
     p: &mut ProcessTemplate<P>,
     socket: Option<ConsoleSocket>,
     pio: Option<ProcessIO>,
+    exit_signal: Arc<ExitSignal>,
 ) -> Result<()> {
     if p.stdio.terminal {
         if let Some(console_socket) = socket {
-            let console_result = copy_console(&console_socket, &p.stdio).await;
+            let console_result = copy_console(&console_socket, &p.stdio, exit_signal).await;
+            console_socket.clean().await;
             match console_result {
                 Ok(c) => {
                     p.console = Some(c);
                 }
                 Err(e) => {
-                    console_socket.clean().await;
                     return Err(e);
                 }
             }
         }
     } else if let Some(pio) = pio {
-        copy_io(&pio, &p.stdio).await?;
+        copy_io(&pio, &p.stdio, exit_signal).await?;
     }
     Ok(())
 }

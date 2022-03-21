@@ -135,12 +135,13 @@ where
             };
 
             let address = shim.start_shim(args).await?;
-
-            tokio::io::stdout()
+            let mut stdout = tokio::io::stdout();
+            stdout
                 .write_all(address.as_bytes())
                 .await
                 .map_err(io_error!(e, "write stdout"))?;
-
+            // containerd occasionally read an empty string without flushing the stdout
+            stdout.flush().await.map_err(io_error!(e, "flush stdout"))?;
             Ok(())
         }
         "delete" => {

@@ -23,6 +23,7 @@ use nix::cmsg_space;
 use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
 use nix::sys::termios::tcgetattr;
 use nix::sys::uio::IoVec;
+use oci_spec::runtime::{LinuxNamespaceType, Spec};
 
 use containerd_shim::api::{ExecProcessRequest, Options};
 use containerd_shim::io::Stdio;
@@ -199,4 +200,21 @@ pub fn receive_socket(stream_fd: RawFd) -> containerd_shim::Result<RawFd> {
     );
     tcgetattr(fds[0])?;
     Ok(fds[0])
+}
+
+pub fn has_shared_pid_namespace(spec: &Spec) -> bool {
+    match spec.linux() {
+        None => true,
+        Some(linux) => match linux.namespaces() {
+            None => true,
+            Some(namespaces) => {
+                for ns in namespaces {
+                    if ns.typ() == LinuxNamespaceType::Pid && ns.path().is_none() {
+                        return false;
+                    }
+                }
+                true
+            }
+        },
+    }
 }
