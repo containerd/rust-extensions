@@ -19,10 +19,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{debug, info, warn};
+use oci_spec::runtime::LinuxResources;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
-use containerd_shim_protos::api::DeleteResponse;
+use containerd_shim_protos::api::{
+    CloseIORequest, ConnectRequest, ConnectResponse, DeleteResponse, PidsRequest, PidsResponse,
+    StatsRequest, StatsResponse, UpdateTaskRequest,
+};
 use containerd_shim_protos::events::task::{
     TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
 };
@@ -39,7 +43,7 @@ use crate::api::{
 use crate::asynchronous::container::{Container, ContainerFactory};
 use crate::asynchronous::ExitSignal;
 use crate::event::Event;
-use crate::util::{convert_to_timestamp, AsOption};
+use crate::util::{convert_to_any, convert_to_timestamp, AsOption};
 use crate::TtrpcResult;
 
 type EventSender = Sender<(String, Box<dyn Message>)>;
@@ -215,6 +219,17 @@ where
         Ok(resp)
     }
 
+    async fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
+        debug!("Pids request for {:?}", req);
+        let container = self.get_container(req.get_id()).await?;
+        let procs = container.all_processes().await?;
+        debug!("Pids request for {:?} returns successfully", req);
+        Ok(PidsResponse {
+            processes: procs.into(),
+            ..Default::default()
+        })
+    }
+
     async fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
         let mut container = self.get_container(req.get_id()).await?;
@@ -253,6 +268,25 @@ where
         Ok(Empty::new())
     }
 
+    async fn close_io(&self, _ctx: &TtrpcContext, _req: CloseIORequest) -> TtrpcResult<Empty> {
+        // TODO call close_io of container
+        Ok(Empty::new())
+    }
+
+    async fn update(&self, _ctx: &TtrpcContext, req: UpdateTaskRequest) -> TtrpcResult<Empty> {
+        debug!("Update request for {:?}", req);
+        let resources: LinuxResources = serde_json::from_slice(req.get_resources().get_value())
+            .map_err(|e| {
+                ttrpc::Error::RpcStatus(ttrpc::get_status(
+                    ttrpc::Code::INVALID_ARGUMENT,
+                    format!("failed to parse resource spec: {}", e),
+                ))
+            })?;
+        let mut container = self.get_container(req.get_id()).await?;
+        container.update(&resources).await?;
+        Ok(Empty::new())
+    }
+
     async fn wait(&self, _ctx: &TtrpcContext, req: WaitRequest) -> TtrpcResult<WaitResponse> {
         info!("Wait request for {:?}", req);
         let exec_id = req.exec_id.as_str().as_option();
@@ -281,6 +315,31 @@ where
         resp.exited_at = SingularPtrField::some(ts);
         info!("Wait request for {:?} returns {:?}", req, &resp);
         Ok(resp)
+    }
+
+    async fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
+        debug!("Stats request for {:?}", req);
+        let container = self.get_container(req.get_id()).await?;
+        let stats = container.stats().await?;
+
+        let mut resp = StatsResponse::new();
+        resp.set_stats(convert_to_any(Box::new(stats))?);
+        Ok(resp)
+    }
+
+    async fn connect(
+        &self,
+        _ctx: &TtrpcContext,
+        req: ConnectRequest,
+    ) -> TtrpcResult<ConnectResponse> {
+        info!("Connect request for {:?}", req);
+        let container = self.get_container(req.get_id()).await?;
+
+        Ok(ConnectResponse {
+            shim_pid: std::process::id() as u32,
+            task_pid: container.pid().await as u32,
+            ..Default::default()
+        })
     }
 
     async fn shutdown(&self, _ctx: &TtrpcContext, _req: ShutdownRequest) -> TtrpcResult<Empty> {

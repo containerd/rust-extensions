@@ -24,15 +24,14 @@ use cgroups_rs::cgroup::get_cgroups_relative_paths_by_pid;
 use cgroups_rs::{hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem};
 use oci_spec::runtime::LinuxResources;
 
-use containerd_shim as shim;
-use containerd_shim::api::Options;
-use containerd_shim::protos::cgroups::metrics::{
+use containerd_shim_protos::cgroups::metrics::{
     CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics,
 };
-use containerd_shim::protos::protobuf::well_known_types::Any;
-use containerd_shim::protos::protobuf::Message;
-use shim::error::{Error, Result};
-use shim::{io_error, other_error};
+use containerd_shim_protos::protobuf::well_known_types::Any;
+use containerd_shim_protos::protobuf::Message;
+use containerd_shim_protos::shim::oci::Options;
+
+use crate::error::{Error, Result};
 
 // OOM_SCORE_ADJ_MAX is from https://github.com/torvalds/linux/blob/master/include/uapi/linux/oom.h#L10
 const OOM_SCORE_ADJ_MAX: i64 = 1000;
@@ -131,7 +130,7 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
 }
 
 /// Update process cgroup limits
-pub fn update_metrics(pid: u32, resources: &LinuxResources) -> Result<()> {
+pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
     // get container main process cgroup
     let path =
         get_cgroups_relative_paths_by_pid(pid).map_err(other_error!(e, "get process cgroup"))?;
@@ -225,7 +224,7 @@ pub fn update_metrics(pid: u32, resources: &LinuxResources) -> Result<()> {
 mod tests {
     use cgroups_rs::{hierarchies, Cgroup, CgroupPid};
 
-    use crate::synchronous::cgroup::{
+    use crate::cgroup::{
         add_task_to_cgroup, adjust_oom_score, read_process_oom_score, OOM_SCORE_ADJ_MAX,
     };
 

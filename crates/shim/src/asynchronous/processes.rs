@@ -15,17 +15,19 @@
 */
 
 use std::os::unix::io::AsRawFd;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::{channel, Receiver, Sender};
 
-use containerd_shim_protos::api::{StateResponse, Status};
+use containerd_shim_protos::api::{ProcessInfo, StateResponse, Status};
+use containerd_shim_protos::cgroups::metrics::Metrics;
 use containerd_shim_protos::protobuf::well_known_types::Timestamp;
 
 use crate::io::Stdio;
 use crate::util::asyncify;
-use crate::Error;
 use crate::{ioctl_set_winsz, Console};
 
 #[async_trait]
@@ -40,6 +42,9 @@ pub trait Process {
     async fn exit_code(&self) -> i32;
     async fn exited_at(&self) -> Option<OffsetDateTime>;
     async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()>;
+    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()>;
+    async fn stats(&self) -> crate::Result<Metrics>;
+    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>>;
 }
 
 #[async_trait]
@@ -47,6 +52,9 @@ pub trait ProcessLifecycle<P: Process> {
     async fn start(&self, p: &mut P) -> crate::Result<()>;
     async fn kill(&self, p: &mut P, signal: u32, all: bool) -> crate::Result<()>;
     async fn delete(&self, p: &mut P) -> crate::Result<()>;
+    async fn update(&self, p: &mut P, resources: &LinuxResources) -> crate::Result<()>;
+    async fn stats(&self, p: &P) -> crate::Result<Metrics>;
+    async fn ps(&self, p: &P) -> crate::Result<Vec<ProcessInfo>>;
 }
 
 pub struct ProcessTemplate<S> {
@@ -58,16 +66,13 @@ pub struct ProcessTemplate<S> {
     pub exited_at: Option<OffsetDateTime>,
     pub wait_chan_tx: Vec<Sender<()>>,
     pub console: Option<Console>,
-    pub lifecycle: S,
+    pub lifecycle: Arc<S>,
 }
 
-impl<S> ProcessTemplate<S>
-where
-    S: Clone,
-{
+impl<S> ProcessTemplate<S> {
     pub fn new(id: &str, stdio: Stdio, lifecycle: S) -> Self {
         Self {
-            state: Default::default(),
+            state: Status::CREATED,
             id: id.to_string(),
             stdio,
             pid: 0,
@@ -75,7 +80,7 @@ where
             exited_at: None,
             wait_chan_tx: vec![],
             console: None,
-            lifecycle,
+            lifecycle: Arc::new(lifecycle),
         }
     }
 }
@@ -83,10 +88,10 @@ where
 #[async_trait]
 impl<S> Process for ProcessTemplate<S>
 where
-    S: ProcessLifecycle<Self> + Clone + Sync + Send,
+    S: ProcessLifecycle<Self> + Sync + Send,
 {
     async fn start(&mut self) -> crate::Result<()> {
-        self.lifecycle.clone().start(&mut self).await?;
+        self.lifecycle.clone().start(self).await?;
         Ok(())
     }
 
@@ -122,11 +127,11 @@ where
     }
 
     async fn kill(&mut self, signal: u32, all: bool) -> crate::Result<()> {
-        self.lifecycle.clone().kill(&mut self, signal, all).await
+        self.lifecycle.clone().kill(self, signal, all).await
     }
 
     async fn delete(&mut self) -> crate::Result<()> {
-        self.lifecycle.clone().delete(&mut self).await
+        self.lifecycle.clone().delete(self).await
     }
 
     async fn wait_channel(&mut self) -> crate::Result<Receiver<()>> {
@@ -146,22 +151,31 @@ where
     }
 
     async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()> {
-        match self.console.as_ref() {
-            Some(console) => unsafe {
-                let w = libc::winsize {
-                    ws_row: height as u16,
-                    ws_col: width as u16,
-                    ws_xpixel: 0,
-                    ws_ypixel: 0,
-                };
-                let fd = console.file.as_raw_fd();
-                asyncify(move || -> crate::Result<()> {
-                    ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into)
-                })
-                .await?;
-                Ok(())
-            },
-            None => Err(other!("there is no console")),
+        if let Some(console) = self.console.as_ref() {
+            let w = libc::winsize {
+                ws_row: height as u16,
+                ws_col: width as u16,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let fd = console.file.as_raw_fd();
+            asyncify(move || -> crate::Result<()> {
+                unsafe { ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into) }
+            })
+            .await?;
         }
+        Ok(())
+    }
+
+    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()> {
+        self.lifecycle.clone().update(self, resources).await
+    }
+
+    async fn stats(&self) -> crate::Result<Metrics> {
+        self.lifecycle.stats(self).await
+    }
+
+    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>> {
+        self.lifecycle.ps(self).await
     }
 }

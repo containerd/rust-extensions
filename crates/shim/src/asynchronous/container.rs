@@ -18,10 +18,14 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use log::debug;
+use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
 
-use containerd_shim_protos::api::{CreateTaskRequest, ExecProcessRequest, StateResponse};
+use containerd_shim_protos::api::{
+    CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse,
+};
+use containerd_shim_protos::cgroups::metrics::Metrics;
 
 use crate::asynchronous::processes::Process;
 use crate::error::Result;
@@ -45,6 +49,9 @@ pub trait Container {
     async fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
     async fn pid(&self) -> i32;
     async fn id(&self) -> String;
+    async fn update(&mut self, resources: &LinuxResources) -> Result<()>;
+    async fn stats(&self) -> Result<Metrics>;
+    async fn all_processes(&self) -> Result<Vec<ProcessInfo>>;
 }
 
 #[async_trait]
@@ -153,6 +160,30 @@ where
 
     async fn id(&self) -> String {
         self.id.to_string()
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+        self.init.update(resources).await
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
+        Err(Error::Unimplemented("update".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn stats(&self) -> Result<Metrics> {
+        self.init.stats().await
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn stats(&self) -> Result<Metrics> {
+        Err(Error::Unimplemented("stats".to_string()))
+    }
+
+    async fn all_processes(&self) -> Result<Vec<ProcessInfo>> {
+        self.init.ps().await
     }
 }
 

@@ -39,8 +39,9 @@ use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
-pub use containerd_shim_protos as protos;
 use nix::ioctl_write_ptr_bad;
+
+pub use containerd_shim_protos as protos;
 pub use protos::shim::shim::DeleteResponse;
 pub use protos::ttrpc::{context::Context, Result as TtrpcResult};
 
@@ -56,6 +57,7 @@ pub mod error;
 mod args;
 #[cfg(feature = "async")]
 pub mod asynchronous;
+pub mod cgroup;
 pub mod event;
 pub mod io;
 mod logger;

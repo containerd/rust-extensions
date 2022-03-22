@@ -21,9 +21,9 @@ use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
-use containerd_shim as shim;
-
 use log::{debug, error};
+
+use containerd_shim as shim;
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
 use shim::api::*;
 use shim::error::{Error, Result};
@@ -73,7 +73,7 @@ impl Shim for Service {
         let (child_id, address) = spawn(opts, &grouping, Vec::new())?;
 
         #[cfg(target_os = "linux")]
-        crate::synchronous::cgroup::set_cgroup_and_oom_score(child_id)?;
+        containerd_shim::cgroup::set_cgroup_and_oom_score(child_id)?;
 
         write_address(&address)?;
         Ok(address)
