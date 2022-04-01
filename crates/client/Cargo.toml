@@ -11,7 +11,7 @@ categories = ["api-bindings", "asynchronous"]
 homepage = "https://containerd.io"
 
 [dependencies]
-tonic = "0.6"
+tonic = "0.7"
 prost = "0.9"
 prost-types = "0.9"
 tokio = { version = "1.15.0", optional = true }

@@ -12,7 +12,7 @@ description = "Remote snapshotter extension for containerd"
 
 [dependencies]
 thiserror = "1.0"
-tonic = "0.6"
+tonic = "0.7"
 prost = "0.9"
 prost-types = "0.9"
 tokio = { version = "1.15", features = ["sync"] }
