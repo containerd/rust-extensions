@@ -243,8 +243,10 @@ fn handle_signals(mut signals: Signals) {
                                 .unwrap_or_else(|e| error!("failed to send exit event {}", e))
                         }
                         Ok(WaitStatus::Signaled(pid, sig, _)) => {
-                            // TODO: add signal notification for monitor
                             debug!("child {} terminated({})", pid, sig);
+                            let exit_code = 128 + sig as i32;
+                            monitor_notify_by_pid(pid.as_raw(), exit_code)
+                                .unwrap_or_else(|e| error!("failed to send signal event {}", e))
                         }
                         Err(Errno::ECHILD) => {
                             break;

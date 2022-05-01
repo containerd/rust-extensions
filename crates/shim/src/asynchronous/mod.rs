@@ -325,6 +325,10 @@ async fn handle_signals(signals: Signals) {
                     }
                     Ok(WaitStatus::Signaled(pid, sig, _)) => {
                         debug!("child {} terminated({})", pid, sig);
+                        let exit_code = 128 + sig as i32;
+                        monitor_notify_by_pid(pid.as_raw(), exit_code)
+                            .await
+                            .unwrap_or_else(|e| error!("failed to send signal event {}", e))
                     }
                     Err(Error::Nix(Errno::ECHILD)) => {
                         break;
