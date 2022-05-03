@@ -16,8 +16,7 @@ This repository contains the following crates:
 | [containerd-client](crates/client) | GRPC bindings to containerd APIs | [![Crates.io](https://img.shields.io/crates/v/containerd-client)](https://crates.io/crates/containerd-client) [![docs.rs](https://img.shields.io/docsrs/containerd-client)](https://docs.rs/containerd-client/latest/containerd_client/) |
 | [containerd-snapshots](crates/snapshots) | Remote snapshotter for containerd | [![Crates.io](https://img.shields.io/crates/v/containerd-snapshots)](https://crates.io/crates/containerd-snapshots) [![docs.rs](https://img.shields.io/docsrs/containerd-snapshots)](https://docs.rs/containerd-snapshots/latest/containerd_snapshots/) |
 | [runc](crates/runc) | Rust wrapper for runc CLI | [![Crates.io](https://img.shields.io/crates/v/runc)](https://crates.io/crates/runc) [![docs.rs](https://img.shields.io/docsrs/runc)](https://docs.rs/runc/latest/runc/) |
-| [containerd-runc-shim](crates/runc-shim) | Runtime v2 runc shim implementation | [![Crates.io](https://img.shields.io/crates/v/containerd-runc-shim)](https://crates.io/crates/containerd-runc-shim) [![docs.rs](https://img.shields.io/docsrs/containerd-runc-shim)](https://docs.rs/containerd-runc-shim/latest/containerd-runc-shim/) |
-
+| [containerd-runc-shim](crates/runc-shim) | Runtime v2 runc shim implementation | [![Crates.io](https://img.shields.io/crates/v/containerd-runc-shim)](https://crates.io/crates/containerd-runc-shim) |
 
 ## How to build
 The build process as easy as:
