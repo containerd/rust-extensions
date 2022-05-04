@@ -19,7 +19,7 @@ use std::io::Result;
 #[cfg(not(feature = "async"))]
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::os::unix::io::AsRawFd;
 use std::process::Stdio;
 use std::sync::Mutex;
 
@@ -253,12 +253,8 @@ pub struct NullIo {
 
 impl NullIo {
     pub fn new() -> std::io::Result<Self> {
-        let fd = nix::fcntl::open(
-            "/dev/null",
-            nix::fcntl::OFlag::O_RDONLY,
-            nix::sys::stat::Mode::empty(),
-        )?;
-        let dev_null = unsafe { Mutex::new(Some(std::fs::File::from_raw_fd(fd))) };
+        let f = OpenOptions::new().read(true).open("/dev/null")?;
+        let dev_null = Mutex::new(Some(f));
         Ok(Self { dev_null })
     }
 }
