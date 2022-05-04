@@ -40,6 +40,22 @@ jobs:
           sudo -E $(command -v cargo) test
           sudo -E $(command -v cargo) test --all-features
 
+  # Collect build timings
+  # See https://blog.rust-lang.org/2022/04/07/Rust-1.60.0.html#cargo---timings
+  timings:
+    name: Timings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v2
+      - run: cargo build --all-features --timings
+      - uses: actions/upload-artifact@v3
+        with:
+          name: cargo-timing
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: error
+
   deny:
     name: Deny
     runs-on: ubuntu-latest
