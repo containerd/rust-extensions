@@ -32,6 +32,7 @@
 //! ```
 //!
 
+use std::convert::TryFrom;
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -42,8 +43,12 @@ use std::process::{self, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 
 use command_fds::{CommandFdExt, FdMapping};
-use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
+use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 pub use log::{debug, error, info, warn};
+use nix::errno::Errno;
+use nix::sys::signal::Signal;
+use nix::sys::wait::{self, WaitPidFlag, WaitStatus};
+use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 
 use crate::protos::protobuf::Message;
@@ -230,23 +235,34 @@ fn handle_signals(mut signals: Signals) {
                     debug!("received {}", sig);
                 }
                 SIGCHLD => loop {
-                    unsafe {
-                        let pid: pid_t = -1;
-                        let mut status: c_int = 0;
-                        let options: c_int = libc::WNOHANG;
-                        let res_pid = libc::waitpid(pid, &mut status, options);
-                        let status = libc::WEXITSTATUS(status);
-                        if res_pid <= 0 {
-                            break;
-                        } else {
-                            monitor::monitor_notify_by_pid(res_pid, status).unwrap_or_else(|e| {
-                                error!("failed to send exit event {}", e);
-                            });
+                    // Note that this thread sticks to child even it is suspended.
+                    match wait::waitpid(Some(Pid::from_raw(-1)), Some(WaitPidFlag::WNOHANG)) {
+                        Ok(WaitStatus::Exited(pid, status)) => {
+                            monitor::monitor_notify_by_pid(pid.as_raw(), status)
+                                .unwrap_or_else(|e| error!("failed to send exit event {}", e))
                         }
+                        Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                            debug!("child {} terminated({})", pid, sig);
+                            let exit_code = 128 + sig as i32;
+                            monitor::monitor_notify_by_pid(pid.as_raw(), exit_code)
+                                .unwrap_or_else(|e| error!("failed to send signal event {}", e))
+                        }
+                        Err(Errno::ECHILD) => {
+                            break;
+                        }
+                        Err(e) => {
+                            // stick until all children will be successfully waited, even some unexpected error occurs.
+                            warn!("error occurred in signal handler: {}", e);
+                        }
+                        _ => {} // stick until exit
                     }
                 },
                 _ => {
-                    debug!("received {}", sig);
+                    if let Ok(sig) = Signal::try_from(sig) {
+                        debug!("received {}", sig);
+                    } else {
+                        warn!("received invalid signal {}", sig);
+                    }
                 }
             }
         }

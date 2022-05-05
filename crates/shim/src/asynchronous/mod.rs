@@ -14,6 +14,7 @@
    limitations under the License.
 */
 
+use std::convert::TryFrom;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixListener;
@@ -27,8 +28,12 @@ use std::{env, process};
 use async_trait::async_trait;
 use command_fds::{CommandFdExt, FdMapping};
 use futures::StreamExt;
-use libc::{c_int, pid_t, SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
+use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 use log::{debug, error, info, warn};
+use nix::errno::Errno;
+use nix::sys::signal::Signal;
+use nix::sys::wait::{self, WaitPidFlag, WaitStatus};
+use nix::unistd::Pid;
 use signal_hook_tokio::Signals;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Notify;
@@ -304,28 +309,43 @@ async fn handle_signals(signals: Signals) {
                 debug!("received {}", sig);
             }
             SIGCHLD => loop {
-                let result = asyncify(move || -> Result<(pid_t, c_int)> {
-                    let mut status: c_int = -1;
-                    let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
-                    if pid <= 0 {
-                        return Err(other!("wait finished"));
-                    }
-                    let status = libc::WEXITSTATUS(status);
-                    Ok((pid, status))
+                // Note: see comment at the counterpart in synchronous/mod.rs for details.
+                match asyncify(move || {
+                    Ok(wait::waitpid(
+                        Some(Pid::from_raw(-1)),
+                        Some(WaitPidFlag::WNOHANG),
+                    )?)
                 })
-                .await;
-
-                if let Ok((res_pid, status)) = result {
-                    monitor_notify_by_pid(res_pid, status)
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!("failed to send pid exit event {}", e);
-                        })
-                } else {
-                    break;
+                .await
+                {
+                    Ok(WaitStatus::Exited(pid, status)) => {
+                        monitor_notify_by_pid(pid.as_raw(), status)
+                            .await
+                            .unwrap_or_else(|e| error!("failed to send exit event {}", e))
+                    }
+                    Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                        debug!("child {} terminated({})", pid, sig);
+                        let exit_code = 128 + sig as i32;
+                        monitor_notify_by_pid(pid.as_raw(), exit_code)
+                            .await
+                            .unwrap_or_else(|e| error!("failed to send signal event {}", e))
+                    }
+                    Err(Error::Nix(Errno::ECHILD)) => {
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("error occurred in signal handler: {}", e);
+                    }
+                    _ => {}
                 }
             },
-            _ => {}
+            _ => {
+                if let Ok(sig) = Signal::try_from(sig) {
+                    debug!("received {}", sig);
+                } else {
+                    warn!("received invalid signal {}", sig);
+                }
+            }
         }
     }
 }
