@@ -101,7 +101,6 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     use nix::unistd::close;
 
     let unix_addr = UnixAddr::new(address.as_ref())?;
-    let sock_addr = SockAddr::Unix(unix_addr);
 
     // SOCK_CLOEXEC flag is Linux specific
     #[cfg(target_os = "linux")]
@@ -123,7 +122,7 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
         })?;
     }
 
-    connect(fd, &sock_addr).map_err(|e| {
+    connect(fd, &unix_addr).map_err(|e| {
         let _ = close(fd);
         e
     })?;
