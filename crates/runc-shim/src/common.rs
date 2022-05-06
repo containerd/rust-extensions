@@ -14,15 +14,16 @@
    limitations under the License.
 */
 
+use std::io::IoSliceMut;
+use std::ops::Deref;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::sync::Arc;
 
 use log::{debug, warn};
 use nix::cmsg_space;
-use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags};
+use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags, UnixAddr};
 use nix::sys::termios::tcgetattr;
-use nix::sys::uio::IoVec;
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 
 use containerd_shim::api::{ExecProcessRequest, Options};
@@ -171,21 +172,22 @@ pub(crate) struct CreateConfig {}
 
 pub fn receive_socket(stream_fd: RawFd) -> containerd_shim::Result<RawFd> {
     let mut buf = [0u8; 4096];
-    let iovec = [IoVec::from_mut_slice(&mut buf)];
+    let mut iovec = [IoSliceMut::new(&mut buf)];
     let mut space = cmsg_space!([RawFd; 2]);
-    let (path, fds) = match recvmsg(stream_fd, &iovec, Some(&mut space), MsgFlags::empty()) {
-        Ok(msg) => {
-            let mut iter = msg.cmsgs();
-            if let Some(ControlMessageOwned::ScmRights(fds)) = iter.next() {
-                (iovec[0].as_slice(), fds)
-            } else {
-                return Err(other!("received message is empty"));
+    let (path, fds) =
+        match recvmsg::<UnixAddr>(stream_fd, &mut iovec, Some(&mut space), MsgFlags::empty()) {
+            Ok(msg) => {
+                let mut iter = msg.cmsgs();
+                if let Some(ControlMessageOwned::ScmRights(fds)) = iter.next() {
+                    (iovec[0].deref(), fds)
+                } else {
+                    return Err(other!("received message is empty"));
+                }
             }
-        }
-        Err(e) => {
-            return Err(other!("failed to receive message: {}", e));
-        }
-    };
+            Err(e) => {
+                return Err(other!("failed to receive message: {}", e));
+            }
+        };
     if fds.is_empty() {
         return Err(other!("received message is empty"));
     }
