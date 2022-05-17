@@ -15,7 +15,7 @@
 */
 
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::thread::JoinHandle;
 
 use crossbeam::sync::WaitGroup;
@@ -28,6 +28,8 @@ use containerd_shim::{
 };
 
 use crate::common::ProcessIO;
+
+const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
     mut from: R,
@@ -47,6 +49,48 @@ pub fn spawn_copy<R: Read + Send + 'static, W: Write + Send + 'static>(
             std::mem::drop(x)
         };
     })
+}
+
+// Special copy io stream form/to tty
+pub fn spawn_copy_for_tty<R: Read + Send + 'static, W: Write + Send + 'static>(
+    mut from: R,
+    mut to: W,
+    wg_opt: Option<&WaitGroup>,
+    on_close_opt: Option<Box<dyn FnOnce() + Send + Sync>>,
+) -> JoinHandle<()> {
+    let wg_opt_clone = wg_opt.cloned();
+    std::thread::spawn(move || {
+        if let Err(e) = copy(&mut from, &mut to) {
+            debug!("copy io error: {}", e);
+        }
+        if let Some(x) = on_close_opt {
+            x()
+        };
+        if let Some(x) = wg_opt_clone {
+            std::mem::drop(x)
+        };
+    })
+}
+
+pub fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> std::io::Result<u64>
+where
+    R: Read,
+    W: Write,
+{
+    let mut buf = [0u8; DEFAULT_BUF_SIZE];
+    let mut written = 0;
+
+    loop {
+        let len = match reader.read(&mut buf) {
+            Ok(0) => return Ok(written),
+            Ok(len) => len,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+
+        written += len as u64;
+        writer.write_all(&buf[..len])?;
+    }
 }
 
 impl ProcessIO {
