@@ -38,7 +38,7 @@ use shim::{io_error, other, other_error};
 
 use crate::common::receive_socket;
 use crate::common::ProcessIO;
-use crate::synchronous::io::spawn_copy;
+use crate::synchronous::io::spawn_copy_for_tty;
 
 pub trait ContainerFactory<C> {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<C>;
@@ -260,7 +260,7 @@ impl Process for CommonProcess {
                 .write(true)
                 .open(self.stdio.stdin.as_str())
                 .map_err(io_error!(e, "open stdin"))?;
-            spawn_copy(stdin, f, None, None);
+            spawn_copy_for_tty(stdin, f, None, None);
         }
 
         if !self.stdio.stdout.is_empty() {
@@ -276,7 +276,7 @@ impl Process for CommonProcess {
                 .read(true)
                 .open(self.stdio.stdout.as_str())
                 .map_err(io_error!(e, "open stdout for read"))?;
-            spawn_copy(
+            spawn_copy_for_tty(
                 f,
                 stdout,
                 None,
