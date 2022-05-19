@@ -32,6 +32,8 @@ uuid = { version = "1.0.0", features = ["v4"] }
 signal-hook = "0.3.13"
 oci-spec = "0.5.4"
 prctl = "1.0.0"
+page_size = "0.4.2"
+regex = "1"
 
 containerd-shim-protos = { path = "../shim-protos", version = "0.2.0" }
 
