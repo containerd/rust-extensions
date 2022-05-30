@@ -36,7 +36,7 @@ use shim::api::*;
 use shim::console::ConsoleSocket;
 use shim::error::{Error, Result};
 use shim::io::Stdio;
-use shim::monitor::{monitor_subscribe, ExitEvent, Subject, Subscription, Topic};
+use shim::monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscription, Topic};
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::Metrics;
@@ -671,18 +671,4 @@ where
         return out;
     }
     "".to_string()
-}
-
-fn wait_pid(pid: i32, s: Subscription) -> i32 {
-    loop {
-        if let Ok(ExitEvent {
-            subject: Subject::Pid(epid),
-            exit_code: code,
-        }) = s.rx.recv()
-        {
-            if pid == epid {
-                return code;
-            }
-        }
-    }
 }

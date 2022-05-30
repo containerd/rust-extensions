@@ -135,3 +135,17 @@ impl Drop for Subscription {
         });
     }
 }
+
+pub fn wait_pid(pid: i32, s: Subscription) -> i32 {
+    loop {
+        if let Ok(ExitEvent {
+            subject: Subject::Pid(epid),
+            exit_code: code,
+        }) = s.rx.recv()
+        {
+            if pid == epid {
+                return code;
+            }
+        }
+    }
+}

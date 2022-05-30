@@ -5,7 +5,7 @@ jobs:
   checks:
     name: Checks
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     strategy:
       matrix:
@@ -45,7 +45,7 @@ jobs:
   timings:
     name: Timings
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v2
