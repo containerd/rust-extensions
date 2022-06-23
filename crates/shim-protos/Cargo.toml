@@ -11,7 +11,7 @@ categories = ["api-bindings"]
 homepage = "https://containerd.io"
 
 [dependencies]
-protobuf = "2.23.0"
+protobuf = "3.1.0"
 ttrpc = "0.6.0"
 async-trait = { version = "0.1.48", optional = true}
 
