@@ -20,7 +20,7 @@ $ sudo yum install systemd-devel
 $ cargo build --example journal
 
 # Run
-$ ctr pull docker.io/library/hello-world:latest
+$ ctr i pull docker.io/library/hello-world:latest
 $ ctr run --rm --log-uri=binary:////path/to/journal_binary docker.io/library/hello-world:latest hello
 $ journalctl -f _COMM=journal
 -- Logs begin at Thu 2021-05-20 15:47:51 PDT. --
