@@ -490,16 +490,22 @@ pub fn mount_rootfs(
             }
             // change the propagation type
             if flags.bitand(*PROPAGATION_TYPES).ne(&zero) {
-                mount::<str, Path, str, str>(None, target.as_ref(), None, *MS_PROPAGATION, None)
-                    .unwrap_or_else(|err| {
-                        error!(
-                            "Change {} mount propagation faied: {}",
-                            target.as_ref().display(),
-                            err
-                        );
-                        let code: MountExitCode = err.into();
-                        unsafe { libc::_exit(code.into()) };
-                    });
+                mount::<str, Path, str, str>(
+                    None,
+                    target.as_ref(),
+                    None,
+                    flags.bitand(*MS_PROPAGATION),
+                    None,
+                )
+                .unwrap_or_else(|err| {
+                    error!(
+                        "Change {} mount propagation faied: {}",
+                        target.as_ref().display(),
+                        err
+                    );
+                    let code: MountExitCode = err.into();
+                    unsafe { libc::_exit(code.into()) };
+                });
             }
             if oflags.bitand(*MS_BIND_RO).eq(&MS_BIND_RO) {
                 mount::<str, Path, str, str>(
