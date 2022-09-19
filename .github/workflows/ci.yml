@@ -13,6 +13,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo check --examples --tests --all-targets
       - run: cargo check --examples --tests --all-targets --all-features
       - run: cargo fmt --all -- --check --files-with-diff
@@ -30,13 +33,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
-        run:
-        # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup
-          |
+        run: |
+          # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup
           mkdir -p /tmp/dummy-xdr
+          export PROTOC=$(which protoc)
           sudo -E $(command -v cargo) test
           sudo -E $(command -v cargo) test --all-features
 
@@ -49,6 +55,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+      - uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo build --all-features --timings
       - uses: actions/upload-artifact@v3
         with:
