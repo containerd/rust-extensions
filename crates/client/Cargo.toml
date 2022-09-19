@@ -11,14 +11,14 @@ categories = ["api-bindings", "asynchronous"]
 homepage = "https://containerd.io"
 
 [dependencies]
-tonic = "0.7"
-prost = "0.10"
-prost-types = "0.10"
-tokio = { version = "1.17", optional = true }
+tonic = "0.8"
+prost = "0.11"
+prost-types = "0.11"
+tokio = { version = "1.18", optional = true }
 tower = { version = "0.4", optional = true }
 
 [build-dependencies]
-tonic-build = "0.7"
+tonic-build = "0.8"
 
 [features]
 connect = ["tokio", "tower"]
