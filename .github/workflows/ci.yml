@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        containerd: [v1.5.11, v1.6.2]
+        containerd: [v1.5.13, v1.6.8]
 
     steps:
       - name: Checkout extensions
