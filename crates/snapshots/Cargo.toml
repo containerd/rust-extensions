@@ -12,10 +12,10 @@ description = "Remote snapshotter extension for containerd"
 
 [dependencies]
 thiserror = "1.0"
-tonic = "0.7"
-prost = "0.10"
-prost-types = "0.10"
-tokio = { version = "1.17", features = ["sync"] }
+tonic = "0.8"
+prost = "0.11"
+prost-types = "0.11"
+tokio = { version = "1.18", features = ["sync"] }
 tokio-stream = "0.1.8"
 
 [dev-dependencies]
@@ -25,4 +25,4 @@ futures = "0.3.17"
 simple_logger = { version  = "2.0", default-features = false }
 
 [build-dependencies]
-tonic-build = "0.7"
+tonic-build = "0.8"
