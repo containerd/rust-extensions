@@ -11,14 +11,25 @@ categories = ["api-bindings", "asynchronous"]
 homepage = "https://containerd.io"
 
 [dependencies]
-tonic = "0.7"
-prost = "0.10"
-prost-types = "0.10"
-tokio = { version = "1.17", optional = true }
+tonic = "0.8"
+prost = "0.11"
+prost-types = "0.11"
+tokio = { version = "1.18", optional = true }
 tower = { version = "0.4", optional = true }
 
+# tonic v0.8.1 depends on axum-core v0.2.2, which has security vulnerability:
+#  = ID: RUSTSEC-2022-0055
+#  = Advisory: https://rustsec.org/advisories/RUSTSEC-2022-0055
+#  = `<bytes::Bytes as axum_core::extract::FromRequest>::from_request` would not, by
+#    default, set a limit for the size of the request body. That meant if a malicious
+#    peer would send a very large (or infinite) body your server might run out of
+#    memory and crash.
+#
+# This needs to be removed once newer version of tonic is released.
+axum-core = ">=0.2.8"
+
 [build-dependencies]
-tonic-build = "0.7"
+tonic-build = "0.8"
 
 [features]
 connect = ["tokio", "tower"]

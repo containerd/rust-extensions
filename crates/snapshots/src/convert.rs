@@ -80,7 +80,7 @@ impl From<Info> for grpc::Info {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Failed to convert GRPC timestamp: {0}")]
-    Timestamp(#[from] prost_types::TimestampOutOfSystemRangeError),
+    Timestamp(#[from] prost_types::TimestampError),
 
     #[error("Invalid enum value: {0}")]
     InvalidEnumValue(i32),
