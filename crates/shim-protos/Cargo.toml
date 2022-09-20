@@ -12,7 +12,7 @@ homepage = "https://containerd.io"
 
 [dependencies]
 protobuf = "2.23.0"
-ttrpc = "0.6.0"
+ttrpc = "0.7.1"
 async-trait = { version = "0.1.48", optional = true}
 
 [build-dependencies]
