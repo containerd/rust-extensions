@@ -23,7 +23,7 @@ async = ["containerd-shim/async", "runc/async", "tokio", "futures", "async-trait
 
 [dependencies]
 log = "0.4"
-nix = "0.24.1"
+nix = "0.25"
 libc = "0.2.95"
 time = { version = "0.3.7", features = ["serde", "std"] }
 serde = { version = "1.0.133", features = ["derive"] }
