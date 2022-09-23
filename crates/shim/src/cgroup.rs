@@ -27,7 +27,7 @@ use oci_spec::runtime::LinuxResources;
 use containerd_shim_protos::cgroups::metrics::{
     CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics,
 };
-use containerd_shim_protos::protobuf::well_known_types::Any;
+use containerd_shim_protos::protobuf::well_known_types::any::Any;
 use containerd_shim_protos::protobuf::Message;
 use containerd_shim_protos::shim::oci::Options;
 
@@ -48,8 +48,8 @@ pub fn set_cgroup_and_oom_score(pid: u32) -> Result<()> {
         .map_err(io_error!(e, "read stdin"))?;
 
     if !data.is_empty() {
-        let opts = Any::parse_from_bytes(&data)
-            .and_then(|any| Options::parse_from_bytes(any.get_value()))?;
+        let opts =
+            Any::parse_from_bytes(&data).and_then(|any| Options::parse_from_bytes(&any.value))?;
 
         if !opts.shim_cgroup.is_empty() {
             add_task_to_cgroup(opts.shim_cgroup.as_str(), pid)?;

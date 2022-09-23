@@ -221,7 +221,7 @@ impl Process for CommonProcess {
     fn state(&self) -> StateResponse {
         let mut resp = StateResponse::new();
         resp.id = self.id.to_string();
-        resp.status = self.state;
+        resp.set_status(self.state);
         resp.pid = self.pid as u32;
         resp.terminal = self.stdio.terminal;
         resp.stdin = self.stdio.stdin.to_string();

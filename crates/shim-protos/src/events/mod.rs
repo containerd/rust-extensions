@@ -6,3 +6,6 @@ pub mod snapshot;
 pub mod task;
 
 pub(crate) mod mount;
+
+mod fieldpath;
+mod gogo;

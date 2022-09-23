@@ -30,7 +30,7 @@ use containerd_shim_protos::api::{
 use containerd_shim_protos::events::task::{
     TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
 };
-use containerd_shim_protos::protobuf::{Message, SingularPtrField};
+use containerd_shim_protos::protobuf::MessageDyn;
 use containerd_shim_protos::shim_async::Task;
 use containerd_shim_protos::ttrpc;
 use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
@@ -46,7 +46,7 @@ use crate::event::Event;
 use crate::util::{convert_to_any, convert_to_timestamp, AsOption};
 use crate::TtrpcResult;
 
-type EventSender = Sender<(String, Box<dyn Message>)>;
+type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 
 /// TaskService is a Task template struct, it is considered a helper struct,
 /// which has already implemented `Task` trait, so that users can make it the type `T`
@@ -103,8 +103,8 @@ where
     C: Container + Sync + Send + 'static,
 {
     async fn state(&self, _ctx: &TtrpcContext, req: StateRequest) -> TtrpcResult<StateResponse> {
-        let container = self.get_container(req.get_id()).await?;
-        let exec_id = req.get_exec_id().as_option();
+        let container = self.get_container(req.id()).await?;
+        let exec_id = req.exec_id().as_option();
         let resp = container.state(exec_id).await?;
         Ok(resp)
     }
@@ -133,14 +133,14 @@ where
             container_id: req.id.to_string(),
             bundle: req.bundle.to_string(),
             rootfs: req.rootfs,
-            io: SingularPtrField::some(TaskIO {
+            io: Some(TaskIO {
                 stdin: req.stdin.to_string(),
                 stdout: req.stdout.to_string(),
                 stderr: req.stderr.to_string(),
                 terminal: req.terminal,
-                unknown_fields: Default::default(),
-                cached_size: Default::default(),
-            }),
+                ..Default::default()
+            })
+            .into(),
             checkpoint: req.checkpoint.to_string(),
             pid,
             ..Default::default()
@@ -152,7 +152,7 @@ where
 
     async fn start(&self, _ctx: &TtrpcContext, req: StartRequest) -> TtrpcResult<StartResponse> {
         info!("Start request for {:?}", &req);
-        let mut container = self.get_container(req.get_id()).await?;
+        let mut container = self.get_container(req.id()).await?;
         let pid = container.start(req.exec_id.as_str().as_option()).await?;
 
         let mut resp = StartResponse::new();
@@ -175,25 +175,25 @@ where
             .await;
         };
 
-        info!("Start request for {:?} returns pid {}", req, resp.get_pid());
+        info!("Start request for {:?} returns pid {}", req, resp.pid());
         Ok(resp)
     }
 
     async fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
         let mut containers = self.containers.lock().await;
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
+        let container = containers.get_mut(req.id()).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
                 ttrpc::Code::NOT_FOUND,
-                format!("can not find container by id {}", req.get_id()),
+                format!("can not find container by id {}", req.id()),
             ))
         })?;
         let id = container.id().await;
-        let exec_id_opt = req.get_exec_id().as_option();
+        let exec_id_opt = req.exec_id().as_option();
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
         self.factory.cleanup(&*self.namespace, container).await?;
-        if req.get_exec_id().is_empty() {
-            containers.remove(req.get_id());
+        if req.exec_id().is_empty() {
+            containers.remove(req.id());
         }
 
         let ts = convert_to_timestamp(exited_at);
@@ -201,7 +201,7 @@ where
             container_id: id,
             pid: pid as u32,
             exit_status: exit_status as u32,
-            exited_at: SingularPtrField::some(ts.clone()),
+            exited_at: Some(ts.clone()).into(),
             ..Default::default()
         })
         .await;
@@ -212,8 +212,8 @@ where
         resp.set_exit_status(exit_status as u32);
         info!(
             "Delete request for {} {} returns {:?}",
-            req.get_id(),
-            req.get_exec_id(),
+            req.id(),
+            req.exec_id(),
             resp
         );
         Ok(resp)
@@ -221,20 +221,20 @@ where
 
     async fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
         debug!("Pids request for {:?}", req);
-        let container = self.get_container(req.get_id()).await?;
-        let procs = container.all_processes().await?;
+        let container = self.get_container(req.id()).await?;
+        let processes = container.all_processes().await?;
         debug!("Pids request for {:?} returns successfully", req);
         Ok(PidsResponse {
-            processes: procs.into(),
+            processes,
             ..Default::default()
         })
     }
 
     async fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
-        let mut container = self.get_container(req.get_id()).await?;
+        let mut container = self.get_container(req.id()).await?;
         container
-            .kill(req.get_exec_id().as_option(), req.signal, req.all)
+            .kill(req.exec_id().as_option(), req.signal, req.all)
             .await?;
         info!("Kill request for {:?} returns successfully", req);
         Ok(Empty::new())
@@ -242,8 +242,8 @@ where
 
     async fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
         info!("Exec request for {:?}", req);
-        let exec_id = req.get_exec_id().to_string();
-        let mut container = self.get_container(req.get_id()).await?;
+        let exec_id = req.exec_id().to_string();
+        let mut container = self.get_container(req.id()).await?;
         container.exec(req).await?;
 
         self.send_event(TaskExecAdded {
@@ -261,9 +261,9 @@ where
             "Resize pty request for container {}, exec_id: {}",
             &req.id, &req.exec_id
         );
-        let mut container = self.get_container(req.get_id()).await?;
+        let mut container = self.get_container(req.id()).await?;
         container
-            .resize_pty(req.get_exec_id().as_option(), req.height, req.width)
+            .resize_pty(req.exec_id().as_option(), req.height, req.width)
             .await?;
         Ok(Empty::new())
     }
@@ -273,16 +273,25 @@ where
         Ok(Empty::new())
     }
 
-    async fn update(&self, _ctx: &TtrpcContext, req: UpdateTaskRequest) -> TtrpcResult<Empty> {
+    async fn update(&self, _ctx: &TtrpcContext, mut req: UpdateTaskRequest) -> TtrpcResult<Empty> {
         debug!("Update request for {:?}", req);
-        let resources: LinuxResources = serde_json::from_slice(req.get_resources().get_value())
-            .map_err(|e| {
-                ttrpc::Error::RpcStatus(ttrpc::get_status(
-                    ttrpc::Code::INVALID_ARGUMENT,
-                    format!("failed to parse resource spec: {}", e),
-                ))
-            })?;
-        let mut container = self.get_container(req.get_id()).await?;
+
+        let id = req.take_id();
+
+        let data = req
+            .resources
+            .into_option()
+            .map(|r| r.value)
+            .unwrap_or_default();
+
+        let resources: LinuxResources = serde_json::from_slice(&data).map_err(|e| {
+            ttrpc::Error::RpcStatus(ttrpc::get_status(
+                ttrpc::Code::INVALID_ARGUMENT,
+                format!("failed to parse resource spec: {}", e),
+            ))
+        })?;
+
+        let mut container = self.get_container(&id).await?;
         container.update(&resources).await?;
         Ok(Empty::new())
     }
@@ -291,35 +300,33 @@ where
         info!("Wait request for {:?}", req);
         let exec_id = req.exec_id.as_str().as_option();
         let wait_rx = {
-            let mut container = self.get_container(req.get_id()).await?;
+            let mut container = self.get_container(req.id()).await?;
             let state = container.state(exec_id).await?;
-            if state.status != Status::RUNNING && state.status != Status::CREATED {
+            if state.status() != Status::RUNNING && state.status() != Status::CREATED {
                 let mut resp = WaitResponse::new();
                 resp.exit_status = state.exit_status;
                 resp.exited_at = state.exited_at;
                 info!("Wait request for {:?} returns {:?}", req, &resp);
                 return Ok(resp);
             }
-            container
-                .wait_channel(req.get_exec_id().as_option())
-                .await?
+            container.wait_channel(req.exec_id().as_option()).await?
         };
 
         wait_rx.await.unwrap_or_default();
         // get lock again.
-        let container = self.get_container(req.get_id()).await?;
+        let container = self.get_container(req.id()).await?;
         let (_, code, exited_at) = container.get_exit_info(exec_id).await?;
         let mut resp = WaitResponse::new();
-        resp.exit_status = code as u32;
+        resp.set_exit_status(code as u32);
         let ts = convert_to_timestamp(exited_at);
-        resp.exited_at = SingularPtrField::some(ts);
+        resp.set_exited_at(ts);
         info!("Wait request for {:?} returns {:?}", req, &resp);
         Ok(resp)
     }
 
     async fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
         debug!("Stats request for {:?}", req);
-        let container = self.get_container(req.get_id()).await?;
+        let container = self.get_container(req.id()).await?;
         let stats = container.stats().await?;
 
         let mut resp = StatsResponse::new();
@@ -333,7 +340,7 @@ where
         req: ConnectRequest,
     ) -> TtrpcResult<ConnectResponse> {
         info!("Connect request for {:?}", req);
-        let container = self.get_container(req.get_id()).await?;
+        let container = self.get_container(req.id()).await?;
 
         Ok(ConnectResponse {
             shim_pid: std::process::id() as u32,

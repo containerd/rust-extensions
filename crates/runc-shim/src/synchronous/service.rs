@@ -30,7 +30,7 @@ use shim::error::{Error, Result};
 use shim::event::Event;
 use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
 use shim::protos::events::task::TaskExit;
-use shim::protos::protobuf::{Message, SingularPtrField};
+use shim::protos::protobuf::{Message, MessageDyn};
 use shim::publisher::RemotePublisher;
 use shim::util::{
     convert_to_timestamp, read_options, read_runtime, read_spec_from_file, timestamp, write_address,
@@ -97,8 +97,8 @@ impl Shim for Service {
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
         let mut resp = DeleteResponse::new();
         // sigkill
-        resp.exit_status = 137;
-        resp.exited_at = SingularPtrField::some(timestamp()?);
+        resp.set_exit_status(137);
+        resp.set_exited_at(timestamp()?);
         Ok(resp)
     }
 
@@ -127,7 +127,7 @@ impl Service {
         &self,
         s: Subscription,
         task: &ShimTask<RuncFactory, RuncContainer>,
-        tx: Sender<(String, Box<dyn Message>)>,
+        tx: Sender<(String, Box<dyn MessageDyn>)>,
     ) {
         let containers = task.containers.clone();
         std::thread::spawn(move || {
@@ -160,7 +160,7 @@ impl Service {
                                 id: cont.id(),
                                 pid: cont.pid() as u32,
                                 exit_status: code as u32,
-                                exited_at: SingularPtrField::some(ts),
+                                exited_at: Some(ts).into(),
                                 ..Default::default()
                             };
                             let topic = event.topic();
@@ -186,7 +186,7 @@ impl Service {
     }
 }
 
-fn forward(publisher: RemotePublisher, ns: String, rx: Receiver<(String, Box<dyn Message>)>) {
+fn forward(publisher: RemotePublisher, ns: String, rx: Receiver<(String, Box<dyn MessageDyn>)>) {
     std::thread::spawn(move || {
         for (topic, e) in rx.iter() {
             publisher

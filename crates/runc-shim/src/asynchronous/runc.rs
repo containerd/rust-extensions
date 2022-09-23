@@ -71,7 +71,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         ns: &str,
         req: &CreateTaskRequest,
     ) -> containerd_shim::Result<RuncContainer> {
-        let bundle = req.get_bundle();
+        let bundle = req.bundle();
         let mut opts = Options::new();
         if let Some(any) = req.options.as_ref() {
             let mut input = CodedInputStream::from_bytes(any.value.as_ref());
@@ -84,7 +84,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         write_options(bundle, &opts).await?;
         write_runtime(bundle, runtime).await?;
 
-        let rootfs_vec = req.get_rootfs().to_vec();
+        let rootfs_vec = req.rootfs().to_vec();
         let rootfs = if !rootfs_vec.is_empty() {
             let tmp_rootfs = Path::new(bundle).join("rootfs");
             mkdir(&tmp_rootfs, 0o711).await?;
@@ -105,13 +105,8 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             Some(Arc::new(ShimExecutor::default())),
         )?;
 
-        let id = req.get_id();
-        let stdio = Stdio::new(
-            req.get_stdin(),
-            req.get_stdout(),
-            req.get_stderr(),
-            req.get_terminal(),
-        );
+        let id = req.id();
+        let stdio = Stdio::new(req.stdin(), req.stdout(), req.stderr(), req.terminal());
 
         let mut init = InitProcess::new(
             id,
@@ -324,7 +319,7 @@ impl RuncInitLifecycle {
     pub fn new(runtime: Runc, opts: Options, bundle: &str) -> Self {
         let work_dir = Path::new(bundle).join("work");
         let mut opts = opts;
-        if opts.get_criu_path().is_empty() {
+        if opts.criu_path().is_empty() {
             opts.criu_path = work_dir.to_string_lossy().to_string();
         }
         Self {

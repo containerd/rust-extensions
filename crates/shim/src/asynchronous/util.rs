@@ -116,7 +116,7 @@ pub async fn write_runtime(bundle: impl AsRef<Path>, binary_name: &str) -> Resul
 }
 
 pub async fn mount_rootfs(m: &Mount, target: impl AsRef<Path>) -> Result<()> {
-    let mount_type = m.field_type.to_string();
+    let mount_type = m.type_.to_string();
     let source = m.source.to_string();
     let options = m.options.to_vec();
     let rootfs = target.as_ref().to_owned();

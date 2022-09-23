@@ -25,8 +25,8 @@ use crate::api::Options;
 #[cfg(feature = "async")]
 pub use crate::asynchronous::util::*;
 use crate::error::Result;
-use crate::protos::protobuf::well_known_types::{Any, Timestamp};
-use crate::protos::protobuf::Message;
+use crate::protos::protobuf::well_known_types::{any::Any, timestamp::Timestamp};
+use crate::protos::protobuf::MessageDyn;
 #[cfg(not(feature = "async"))]
 pub use crate::synchronous::util::*;
 
@@ -90,8 +90,7 @@ impl From<JsonOptions> for Options {
             systemd_cgroup: j.systemd_cgroup,
             criu_image_path: j.criu_image_path,
             criu_work_path: j.criu_work_path,
-            unknown_fields: Default::default(),
-            cached_size: Default::default(),
+            ..Default::default()
         }
     }
 }
@@ -133,9 +132,11 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
 pub fn timestamp() -> Result<Timestamp> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
 
-    let mut ts = Timestamp::default();
-    ts.set_seconds(now.as_secs() as _);
-    ts.set_nanos(now.subsec_nanos() as _);
+    let ts = Timestamp {
+        seconds: now.as_secs() as _,
+        nanos: now.subsec_nanos() as _,
+        ..Default::default()
+    };
 
     Ok(ts)
 }
@@ -149,13 +150,13 @@ pub fn convert_to_timestamp(exited_at: Option<OffsetDateTime>) -> Timestamp {
     ts
 }
 
-pub fn convert_to_any(obj: Box<dyn Message>) -> Result<Any> {
+pub fn convert_to_any(obj: Box<dyn MessageDyn>) -> Result<Any> {
     let mut data = Vec::new();
-    obj.write_to_vec(&mut data)?;
+    obj.write_to_vec_dyn(&mut data)?;
 
     let mut any = Any::new();
-    any.set_value(data);
-    any.set_type_url(obj.descriptor().full_name().to_string());
+    any.value = data;
+    any.type_url = obj.descriptor_dyn().full_name().to_string();
 
     Ok(any)
 }

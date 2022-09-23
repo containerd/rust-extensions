@@ -107,7 +107,7 @@ pub fn get_spec_from_request(
     req: &ExecProcessRequest,
 ) -> containerd_shim::Result<oci_spec::runtime::Process> {
     if let Some(val) = req.spec.as_ref() {
-        let mut p = serde_json::from_slice::<oci_spec::runtime::Process>(val.get_value())?;
+        let mut p = serde_json::from_slice::<oci_spec::runtime::Process>(val.value.as_slice())?;
         p.set_terminal(Some(req.terminal));
         Ok(p)
     } else {

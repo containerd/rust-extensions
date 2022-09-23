@@ -16,11 +16,9 @@
 
 //! Implements a client to publish events from the shim back to containerd.
 
-use protobuf::Message;
-
 use containerd_shim_protos as client;
 
-use client::protobuf;
+use client::protobuf::MessageDyn;
 use client::shim::events;
 use client::ttrpc::{self, context::Context};
 use client::types::empty;
@@ -60,7 +58,7 @@ impl RemotePublisher {
         ctx: Context,
         topic: &str,
         namespace: &str,
-        event: Box<dyn Message>,
+        event: Box<dyn MessageDyn>,
     ) -> Result<()> {
         let mut envelope = events::Envelope::new();
         envelope.set_topic(topic.to_owned());
@@ -104,8 +102,8 @@ mod tests {
 
     impl Events for FakeServer {
         fn forward(&self, _ctx: &ttrpc::TtrpcContext, req: ForwardRequest) -> ttrpc::Result<Empty> {
-            let env = req.get_envelope();
-            assert_eq!(env.get_topic(), "/tasks/oom");
+            let env = req.envelope();
+            assert_eq!(env.topic(), "/tasks/oom");
             Ok(Empty::default())
         }
     }

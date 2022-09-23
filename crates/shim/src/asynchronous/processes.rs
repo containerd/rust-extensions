@@ -24,7 +24,7 @@ use tokio::sync::oneshot::{channel, Receiver, Sender};
 
 use containerd_shim_protos::api::{ProcessInfo, StateResponse, Status};
 use containerd_shim_protos::cgroups::metrics::Metrics;
-use containerd_shim_protos::protobuf::well_known_types::Timestamp;
+use containerd_shim_protos::protobuf::well_known_types::timestamp::Timestamp;
 
 use crate::io::Stdio;
 use crate::util::asyncify;
@@ -110,7 +110,7 @@ where
     async fn state(&self) -> crate::Result<StateResponse> {
         let mut resp = StateResponse::new();
         resp.id = self.id.to_string();
-        resp.status = self.state;
+        resp.set_status(self.state);
         resp.pid = self.pid as u32;
         resp.terminal = self.stdio.terminal;
         resp.stdin = self.stdio.stdin.to_string();
@@ -119,9 +119,9 @@ where
         resp.exit_status = self.exit_code as u32;
         if let Some(exit_at) = self.exited_at {
             let mut time_stamp = Timestamp::new();
-            time_stamp.set_seconds(exit_at.unix_timestamp());
-            time_stamp.set_nanos(exit_at.nanosecond() as i32);
-            resp.set_exited_at(time_stamp);
+            time_stamp.seconds = exit_at.unix_timestamp();
+            time_stamp.nanos = exit_at.nanosecond() as i32;
+            resp.exited_at = Some(time_stamp).into();
         }
         Ok(resp)
     }
