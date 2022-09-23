@@ -18,7 +18,7 @@
 //!
 //! Snapshots crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying
 //! complexity of GRPC interfaces, streaming and request/response conversions and provide one
-//! [Snapshots] trait to implement.
+//! [crate::Snapshotter] trait to implement.
 //!
 //! # Proxy plugins
 //! A proxy plugin is configured using containerd's config file and will be loaded alongside the
@@ -195,10 +195,10 @@ pub trait Snapshotter: Send + Sync + 'static {
     /// Changes to the mounted destination will be captured in relation to the parent.
     /// The default parent, "", is an empty directory.
     ///
-    /// The changes may be saved to a committed snapshot by calling [commit]. When
-    /// one is done with the transaction, [remove] should be called on the key.
+    /// The changes may be saved to a committed snapshot by calling [Snapshotter::commit]. When
+    /// one is done with the transaction, [Snapshotter::remove] should be called on the key.
     ///
-    /// Multiple calls to [prepare] or [view] with the same key should fail.
+    /// Multiple calls to [Snapshotter::prepare] or [Snapshotter::view] with the same key should fail.
     async fn prepare(
         &self,
         key: String,
@@ -206,17 +206,17 @@ pub trait Snapshotter: Send + Sync + 'static {
         labels: HashMap<String, String>,
     ) -> Result<Vec<api::types::Mount>, Self::Error>;
 
-    /// [view] behaves identically to [prepare] except the result may not be
-    /// committed back to the snapshot snapshotter. [view] returns a readonly view on
+    /// View behaves identically to [Snapshotter::prepare] except the result may not be
+    /// committed back to the snapshot snapshotter. View call returns a readonly view on
     /// the parent, with the active snapshot being tracked by the given key.
     ///
-    /// This method operates identically to [prepare], except that mounts returned
+    /// This method operates identically to [Snapshotter::prepare], except that mounts returned
     /// may have the readonly flag set. Any modifications to the underlying
     /// filesystem will be ignored. Implementations may perform this in a more
-    /// efficient manner that differs from what would be attempted with [prepare].
+    /// efficient manner that differs from what would be attempted with [Snapshotter::prepare].
     ///
-    /// [commit] may not be called on the provided key and will return an error.
-    /// To collect the resources associated with key, [remove] must be called with
+    /// Commit may not be called on the provided key and will return an error.
+    /// To collect the resources associated with key, [Snapshotter::remove] must be called with
     /// key as the argument.
     async fn view(
         &self,
@@ -225,9 +225,9 @@ pub trait Snapshotter: Send + Sync + 'static {
         labels: HashMap<String, String>,
     ) -> Result<Vec<api::types::Mount>, Self::Error>;
 
-    /// [commit] captures the changes between key and its parent into a snapshot
-    /// identified by name. The name can then be used with the snapshotter's other
-    /// methods to create subsequent snapshots.
+    /// Capture the changes between key and its parent into a snapshot identified by name.
+    ///
+    /// The name can then be used with the snapshotter's other methods to create subsequent snapshots.
     ///
     /// A committed snapshot will be created under name with the parent of the
     /// active snapshot.
