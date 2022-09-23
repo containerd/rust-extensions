@@ -116,7 +116,7 @@ pub trait Shim {
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
     ///
-    /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
+    /// See <https://github.com/containerd/containerd/tree/master/runtime/v2#start>
     fn start_shim(&mut self, opts: StartOpts) -> Result<String>;
 
     /// Delete shim will be called by containerd after shim shutdown to cleanup any leftovers.
