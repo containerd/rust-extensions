@@ -33,7 +33,7 @@ use containerd_shim::asynchronous::{spawn, ExitSignal, Shim};
 use containerd_shim::event::Event;
 use containerd_shim::monitor::{Subject, Topic};
 use containerd_shim::protos::events::task::TaskExit;
-use containerd_shim::protos::protobuf::{Message, SingularPtrField};
+use containerd_shim::protos::protobuf::MessageDyn;
 use containerd_shim::util::{convert_to_timestamp, timestamp};
 use containerd_shim::util::{read_options, read_runtime, read_spec, write_str_to_file};
 use containerd_shim::{io_error, Config, Context, DeleteResponse, Error, StartOpts};
@@ -103,8 +103,8 @@ impl Shim for Service {
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
         let mut resp = DeleteResponse::new();
         // sigkill
-        resp.exit_status = 137;
-        resp.exited_at = SingularPtrField::some(timestamp()?);
+        resp.set_exit_status(137);
+        resp.set_exited_at(timestamp()?);
         Ok(resp)
     }
 
@@ -128,7 +128,7 @@ impl Shim for Service {
 async fn process_exits(
     s: Subscription,
     task: &TaskService<RuncFactory, RuncContainer>,
-    tx: Sender<(String, Box<dyn Message>)>,
+    tx: Sender<(String, Box<dyn MessageDyn>)>,
 ) {
     let containers = task.containers.clone();
     let mut s = s;
@@ -162,7 +162,7 @@ async fn process_exits(
                             id: cont.id.to_string(),
                             pid: cont.pid().await as u32,
                             exit_status: code as u32,
-                            exited_at: SingularPtrField::some(ts),
+                            exited_at: Some(ts).into(),
                             ..Default::default()
                         };
                         let topic = event.topic();
@@ -192,7 +192,7 @@ async fn process_exits(
 async fn forward(
     publisher: RemotePublisher,
     ns: String,
-    mut rx: Receiver<(String, Box<dyn Message>)>,
+    mut rx: Receiver<(String, Box<dyn MessageDyn>)>,
 ) {
     tokio::spawn(async move {
         while let Some((topic, e)) = rx.recv().await {

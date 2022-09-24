@@ -29,13 +29,13 @@ use shim::event::Event;
 use shim::protos::events::task::{
     TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
 };
-use shim::protos::protobuf::{Message, SingularPtrField};
+use shim::protos::protobuf::MessageDyn;
 use shim::util::{convert_to_any, convert_to_timestamp, IntoOption};
 use shim::{other_error, Error, ExitSignal, Task, TtrpcContext, TtrpcResult};
 
 use crate::synchronous::container::{Container, ContainerFactory};
 
-type EventSender = Sender<(String, Box<dyn Message>)>;
+type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 
 pub struct ShimTask<F, C> {
     pub containers: Arc<Mutex<HashMap<String, C>>>,
@@ -113,14 +113,14 @@ where
             container_id: req.id.to_string(),
             bundle: req.bundle.to_string(),
             rootfs: req.rootfs,
-            io: SingularPtrField::some(TaskIO {
+            io: Some(TaskIO {
                 stdin: req.stdin.to_string(),
                 stdout: req.stdout.to_string(),
                 stderr: req.stderr.to_string(),
                 terminal: req.terminal,
-                unknown_fields: Default::default(),
-                cached_size: Default::default(),
-            }),
+                ..Default::default()
+            })
+            .into(),
             checkpoint: req.checkpoint.to_string(),
             pid,
             ..Default::default()
@@ -133,8 +133,8 @@ where
     fn start(&self, _ctx: &TtrpcContext, req: StartRequest) -> TtrpcResult<StartResponse> {
         info!("Start request for {:?}", &req);
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
+        let container = containers.get_mut(req.id()).ok_or_else(|| {
+            Error::NotFoundError(format!("can not find container by id {}", req.id()))
         })?;
         let pid = container.start(req.exec_id.as_str().none_if(|&x| x.is_empty()))?;
 
@@ -156,20 +156,20 @@ where
             });
         };
 
-        info!("Start request for {:?} returns pid {}", req, resp.get_pid());
+        info!("Start request for {:?} returns pid {}", req, resp.pid());
         Ok(resp)
     }
 
     fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
+        let container = containers.get_mut(req.id()).ok_or_else(|| {
+            Error::NotFoundError(format!("can not find container by id {}", req.id()))
         })?;
         let id = container.id();
-        let exec_id_opt = req.get_exec_id().none_if(|x| x.is_empty());
+        let exec_id_opt = req.exec_id().none_if(|x| x.is_empty());
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt)?;
-        if req.get_exec_id().is_empty() {
+        if req.exec_id().is_empty() {
             containers.remove(req.id.as_str());
         }
 
@@ -178,7 +178,7 @@ where
             container_id: id,
             pid: pid as u32,
             exit_status: exit_status as u32,
-            exited_at: SingularPtrField::some(ts.clone()),
+            exited_at: Some(ts.clone()).into(),
             ..Default::default()
         });
 
@@ -188,8 +188,8 @@ where
         resp.set_exit_status(exit_status as u32);
         info!(
             "Delete request for {} {} returns {:?}",
-            req.get_id(),
-            req.get_exec_id(),
+            req.id(),
+            req.exec_id(),
             resp
         );
         Ok(resp)
@@ -198,9 +198,9 @@ where
     fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
         debug!("Pids request for {:?}", req);
         let containers = self.containers.lock().unwrap();
-        let container = containers.get(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get(&req.id)
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", &req.id)))?;
 
         let resp = container.pids()?;
         Ok(resp)
@@ -209,8 +209,8 @@ where
     fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
+        let container = containers.get_mut(req.id()).ok_or_else(|| {
+            Error::NotFoundError(format!("can not find container by id {}", req.id()))
         })?;
         container.kill(
             req.exec_id.as_str().none_if(|&x| x.is_empty()),
@@ -222,16 +222,16 @@ where
     }
 
     fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
-        let exec_id = req.get_exec_id().to_string();
+        let exec_id = req.exec_id().to_string();
         info!(
             "Exec request for id: {} exec_id: {}",
-            req.get_id(),
-            req.get_exec_id()
+            req.id(),
+            req.exec_id()
         );
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get_mut(req.id())
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", req.id())))?;
         container.exec(req)?;
 
         self.send_event(TaskExecAdded {
@@ -249,11 +249,11 @@ where
             &req.id, &req.exec_id
         );
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get_mut(req.id())
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", req.id())))?;
         container.resize_pty(
-            req.get_exec_id().none_if(|&x| x.is_empty()),
+            req.exec_id.as_str().none_if(|&x| x.is_empty()),
             req.height,
             req.width,
         )?;
@@ -268,25 +268,32 @@ where
     fn update(&self, _ctx: &TtrpcContext, req: UpdateTaskRequest) -> TtrpcResult<Empty> {
         debug!("Update request for {:?}", req);
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get_mut(&req.id)
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", &req.id)))?;
 
-        let resources: LinuxResources = serde_json::from_slice(req.get_resources().get_value())
-            .map_err(other_error!(e, "failed to parse spec"))?;
+        let data = req
+            .resources
+            .into_option()
+            .map(|r| r.value)
+            .unwrap_or_default();
+
+        let resources: LinuxResources =
+            serde_json::from_slice(&data).map_err(other_error!(e, "failed to parse spec"))?;
         container.update(&resources)?;
+
         Ok(Empty::new())
     }
 
     fn wait(&self, _ctx: &TtrpcContext, req: WaitRequest) -> TtrpcResult<WaitResponse> {
         info!("Wait request for {:?}", req);
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get_mut(&req.id)
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", &req.id)))?;
         let exec_id = req.exec_id.as_str().none_if(|&x| x.is_empty());
         let state = container.state(exec_id)?;
-        if state.status != Status::RUNNING && state.status != Status::CREATED {
+        if state.status() != Status::RUNNING && state.status() != Status::CREATED {
             let mut resp = WaitResponse::new();
             resp.exit_status = state.exit_status;
             resp.exited_at = state.exited_at;
@@ -301,14 +308,16 @@ where
             .expect_err("wait channel should be closed directly");
         // get lock again.
         let mut containers = self.containers.lock().unwrap();
-        let container = containers.get_mut(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get_mut(req.id())
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", req.id())))?;
         let (_, code, exited_at) = container.get_exit_info(exec_id)?;
+
         let mut resp = WaitResponse::new();
-        resp.exit_status = code as u32;
+        resp.set_exit_status(code as u32);
         let ts = convert_to_timestamp(exited_at);
-        resp.exited_at = SingularPtrField::some(ts);
+        resp.set_exited_at(ts);
+
         info!("Wait request for {:?} returns {:?}", req, &resp);
         Ok(resp)
     }
@@ -316,9 +325,9 @@ where
     fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
         debug!("Stats request for {:?}", req);
         let containers = self.containers.lock().unwrap();
-        let container = containers.get(req.get_id()).ok_or_else(|| {
-            Error::Other(format!("can not find container by id {}", req.get_id()))
-        })?;
+        let container = containers
+            .get(req.id())
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", req.id())))?;
         let stats = container.stats()?;
 
         let mut resp = StatsResponse::new();
@@ -344,8 +353,8 @@ where
         info!("Connect request for {:?}", req);
 
         let containers = self.containers.lock().unwrap();
-        let container = containers.get(req.get_id()).ok_or_else(|| {
-            Error::NotFoundError(format!("can not find container by id {}", req.get_id()))
+        let container = containers.get(req.id()).ok_or_else(|| {
+            Error::NotFoundError(format!("can not find container by id {}", req.id()))
         })?;
 
         let resp = ConnectResponse {

@@ -40,7 +40,7 @@ use shim::monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscriptio
 use shim::mount::mount_rootfs;
 use shim::protos::api::ProcessInfo;
 use shim::protos::cgroups::metrics::Metrics;
-use shim::protos::protobuf::{CodedInputStream, Message, RepeatedField};
+use shim::protos::protobuf::{CodedInputStream, Message};
 use shim::protos::shim::oci::ProcessDetails;
 use shim::util::{convert_to_any, read_spec_from_file, write_options, write_runtime, IntoOption};
 use shim::Console;
@@ -72,7 +72,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         write_options(bundle, &opts)?;
         write_runtime(bundle, runtime)?;
 
-        let rootfs_vec = req.get_rootfs().to_vec();
+        let rootfs_vec = req.rootfs().to_vec();
         let rootfs = if !rootfs_vec.is_empty() {
             let tmp_rootfs = Path::new(bundle).join("rootfs");
             if !tmp_rootfs.as_path().exists() {
@@ -87,7 +87,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             .to_str()
             .ok_or_else(|| other!("failed to convert rootfs to str"))?;
         for m in rootfs_vec {
-            let mount_type = m.field_type.as_str().none_if(|&x| x.is_empty());
+            let mount_type = m.type_.as_str().none_if(|&x| x.is_empty());
             let source = m.source.as_str().none_if(|&x| x.is_empty());
             mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
         }
@@ -100,12 +100,12 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             Some(Arc::new(ShimExecutor::default())),
         )?;
 
-        let id = req.get_id();
+        let id = req.id();
         let stdio = Stdio {
-            stdin: req.get_stdin().to_string(),
-            stdout: req.get_stdout().to_string(),
-            stderr: req.get_stderr().to_string(),
-            terminal: req.get_terminal(),
+            stdin: req.stdin().to_string(),
+            stdout: req.stdout().to_string(),
+            stderr: req.stderr().to_string(),
+            terminal: req.terminal(),
         };
 
         let mut init = InitProcess::new(id, bundle, runc, stdio);
@@ -116,14 +116,14 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             .to_str()
             .ok_or_else(|| other!("failed to get work_dir str"))?;
         init.work_dir = work_dir.to_string();
-        init.io_uid = opts.get_io_uid();
-        init.io_gid = opts.get_io_gid();
-        init.no_pivot_root = opts.get_no_pivot_root();
-        init.no_new_key_ring = opts.get_no_new_keyring();
-        init.criu_work_path = if opts.get_criu_path().is_empty() {
+        init.io_uid = opts.io_uid();
+        init.io_gid = opts.io_gid();
+        init.no_pivot_root = opts.no_pivot_root();
+        init.no_new_key_ring = opts.no_new_keyring();
+        init.criu_work_path = if opts.criu_path().is_empty() {
             work_dir.to_string()
         } else {
-            opts.get_criu_path().to_string()
+            opts.criu_path().to_string()
         };
 
         let config = CreateConfig::default();
@@ -341,7 +341,7 @@ impl Container for RuncContainer {
             processes.push(p_info);
         }
         let resp = PidsResponse {
-            processes: RepeatedField::from(processes),
+            processes,
             ..Default::default()
         };
         Ok(resp)

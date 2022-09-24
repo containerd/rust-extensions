@@ -11,18 +11,18 @@ categories = ["api-bindings"]
 homepage = "https://containerd.io"
 
 [dependencies]
-protobuf = "2.23.0"
-ttrpc = "0.6.0"
+protobuf = "3.1"
+ttrpc = "0.7"
 async-trait = { version = "0.1.48", optional = true}
 
 [build-dependencies]
-ttrpc-codegen = { version = "0.3.0", optional = true }
+ttrpc-codegen = { version = "0.4", optional = true }
 
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 log = "0.4"
 simple_logger = { version = "2.0", default-features = false, features = ["stderr"] }
-tokio = { version = "1.17.0", features = ["full"] }
+tokio = { version = "1.18", features = ["full"] }
 
 [features]
 default = []

@@ -29,7 +29,10 @@ fn main() {}
 fn main() {
     codegen(
         "src/cgroups",
-        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
+        &[
+            "vendor/gogoproto/gogo.proto",
+            "vendor/github.com/containerd/cgroups/stats/v1/metrics.proto",
+        ],
         true,
         false,
     );
@@ -37,6 +40,8 @@ fn main() {
     codegen(
         "src/events",
         &[
+            "vendor/gogoproto/gogo.proto",
+            "vendor/github.com/containerd/containerd/protobuf/plugin/fieldpath.proto",
             "vendor/github.com/containerd/containerd/api/events/container.proto",
             "vendor/github.com/containerd/containerd/api/events/content.proto",
             "vendor/github.com/containerd/containerd/api/events/image.proto",
@@ -52,6 +57,8 @@ fn main() {
     codegen(
         "src/shim",
         &[
+            "vendor/gogoproto/gogo.proto",
+            "vendor/github.com/containerd/containerd/protobuf/plugin/fieldpath.proto",
             "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
@@ -75,6 +82,7 @@ fn main() {
     codegen(
         "src/types",
         &[
+            "vendor/gogoproto/gogo.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
             "vendor/google/protobuf/empty.proto",
@@ -99,10 +107,11 @@ fn codegen(
         .inputs(inputs)
         .include("vendor/")
         .rust_protobuf()
-        .rust_protobuf_customize(ProtobufCustomize {
-            gen_mod_rs: Some(gen_mod_rs),
-            ..Default::default()
-        })
+        .rust_protobuf_customize(
+            ProtobufCustomize::default()
+                .gen_mod_rs(gen_mod_rs)
+                .generate_accessors(true),
+        )
         .customize(Customize {
             async_all,
             ..Default::default()

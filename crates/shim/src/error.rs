@@ -32,7 +32,7 @@ pub enum Error {
     Ttrpc(#[from] ttrpc::Error),
 
     #[error("Protobuf error: {0}")]
-    Protobuf(#[from] protobuf::error::ProtobufError),
+    Protobuf(#[from] protobuf::Error),
 
     #[error("{context} error: {err}")]
     IoError {

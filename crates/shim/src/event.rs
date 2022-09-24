@@ -1,7 +1,7 @@
 use containerd_shim_protos::events::task::*;
-use containerd_shim_protos::protobuf::Message;
+use containerd_shim_protos::protobuf::MessageDyn;
 
-pub trait Event: Message {
+pub trait Event: MessageDyn {
     fn topic(&self) -> String;
 }
 

@@ -13,3 +13,6 @@ pub mod shim_ttrpc_async;
 pub(crate) mod empty;
 pub(crate) mod mount;
 pub(crate) mod task;
+
+mod fieldpath;
+mod gogo;

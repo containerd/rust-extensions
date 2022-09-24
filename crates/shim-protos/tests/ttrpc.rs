@@ -76,9 +76,11 @@ fn test_create_task() {
     let mut req = CreateTaskRequest::default();
     req.set_id("test1".to_owned());
     let mut buf = Vec::with_capacity(req.compute_size() as usize);
-    let mut s = CodedOutputStream::vec(&mut buf);
-    req.write_to(&mut s).unwrap();
-    s.flush().unwrap();
+    {
+        let mut s = CodedOutputStream::vec(&mut buf);
+        req.write_to(&mut s).unwrap();
+        s.flush().unwrap();
+    }
     assert_eq!(buf.len(), 7);
 
     let (ctx, rx) = create_ttrpc_context();
@@ -103,7 +105,7 @@ fn test_create_task() {
     let mut s = CodedInputStream::from_bytes(&msg);
     let mut response = Response::new();
     response.merge_from(&mut s).unwrap();
-    assert_eq!(response.status.as_ref().unwrap().code, Code::OK);
+    assert_eq!(response.status().code(), Code::OK);
 
     let mut s = CodedInputStream::from_bytes(&response.payload);
     let mut resp = CreateTaskResponse::new();
@@ -116,9 +118,11 @@ fn test_delete_task() {
     let mut req = DeleteRequest::default();
     req.set_id("test1".to_owned());
     let mut buf = Vec::with_capacity(req.compute_size() as usize);
-    let mut s = CodedOutputStream::vec(&mut buf);
-    req.write_to(&mut s).unwrap();
-    s.flush().unwrap();
+    {
+        let mut s = CodedOutputStream::vec(&mut buf);
+        req.write_to(&mut s).unwrap();
+        s.flush().unwrap();
+    }
     assert_eq!(buf.len(), 7);
 
     let (ctx, rx) = create_ttrpc_context();
@@ -143,5 +147,5 @@ fn test_delete_task() {
     let mut s = CodedInputStream::from_bytes(&msg);
     let mut response = Response::new();
     response.merge_from(&mut s).unwrap();
-    assert_ne!(response.status.as_ref().unwrap().code, Code::OK);
+    assert_ne!(response.status().code(), Code::OK);
 }

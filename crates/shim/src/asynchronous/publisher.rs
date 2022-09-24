@@ -19,7 +19,7 @@ use std::os::unix::io::RawFd;
 use async_trait::async_trait;
 
 use containerd_shim_protos::api::Empty;
-use containerd_shim_protos::protobuf::Message;
+use containerd_shim_protos::protobuf::MessageDyn;
 use containerd_shim_protos::shim::events;
 use containerd_shim_protos::shim_async::{Client, Events, EventsClient};
 use containerd_shim_protos::ttrpc;
@@ -67,7 +67,7 @@ impl RemotePublisher {
         ctx: Context,
         topic: &str,
         namespace: &str,
-        event: Box<dyn Message>,
+        event: Box<dyn MessageDyn>,
     ) -> Result<()> {
         let mut envelope = events::Envelope::new();
         envelope.set_topic(topic.to_owned());
@@ -118,8 +118,8 @@ mod tests {
     #[async_trait]
     impl Events for FakeServer {
         async fn forward(&self, _ctx: &TtrpcContext, req: ForwardRequest) -> ttrpc::Result<Empty> {
-            let env = req.get_envelope();
-            if env.get_topic() == "/tasks/oom" {
+            let env = req.envelope();
+            if env.topic() == "/tasks/oom" {
                 self.tx.send(0).await.unwrap();
             } else {
                 self.tx.send(-1).await.unwrap();

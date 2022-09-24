@@ -21,7 +21,7 @@ go-flag = "0.1.0"
 thiserror = "1.0"
 log = { version = "0.4", features = ["std"] }
 libc = "0.2.95"
-nix = "0.24.1"
+nix = "0.25"
 command-fds = "0.2.1"
 lazy_static = "1.4.0"
 time = { version = "0.3.7", features = ["serde", "std"] }
