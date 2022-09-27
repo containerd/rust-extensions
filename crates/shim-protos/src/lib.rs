@@ -60,20 +60,14 @@
 //! ```
 //!
 
-// Supress warning: redundant field names in struct initialization
-#![allow(clippy::redundant_field_names)]
+#![allow(warnings)]
 
 pub use protobuf;
 pub use ttrpc;
 
-/// Generated event structures.
-#[rustfmt::skip]
-pub mod events;
-#[rustfmt::skip]
 pub mod cgroups;
-#[rustfmt::skip]
+pub mod events;
 pub mod shim;
-#[rustfmt::skip]
 pub mod types;
 
 /// Includes event names shims can publish to containerd.
