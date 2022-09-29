@@ -22,9 +22,13 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo check --examples --tests --all-targets
       - run: cargo check --examples --tests --all-targets --all-features
-      - run: cargo fmt --all -- --check --files-with-diff
+
+      - run: rustup toolchain install nightly --component rustfmt
+      - run: cargo +nightly fmt --all -- --check --files-with-diff
+
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings
+
       - run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -Dwarnings
