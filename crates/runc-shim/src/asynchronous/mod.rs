@@ -14,33 +14,36 @@
    limitations under the License.
 */
 
-use std::env::current_dir;
-use std::sync::Arc;
+use std::{env::current_dir, sync::Arc};
 
+use ::runc::options::DeleteOpts;
 use async_trait::async_trait;
+use containerd_shim::{
+    asynchronous::{
+        container::Container,
+        monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
+        processes::Process,
+        publisher::RemotePublisher,
+        spawn,
+        task::TaskService,
+        ExitSignal, Shim,
+    },
+    event::Event,
+    io_error,
+    monitor::{Subject, Topic},
+    protos::{events::task::TaskExit, protobuf::MessageDyn},
+    util::{
+        convert_to_timestamp, read_options, read_runtime, read_spec, timestamp, write_str_to_file,
+    },
+    Config, Context, DeleteResponse, Error, StartOpts,
+};
 use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use ::runc::options::DeleteOpts;
-use containerd_shim::asynchronous::container::Container;
-use containerd_shim::asynchronous::monitor::{
-    monitor_subscribe, monitor_unsubscribe, Subscription,
+use crate::{
+    asynchronous::runc::{RuncContainer, RuncFactory},
+    common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS},
 };
-use containerd_shim::asynchronous::processes::Process;
-use containerd_shim::asynchronous::publisher::RemotePublisher;
-use containerd_shim::asynchronous::task::TaskService;
-use containerd_shim::asynchronous::{spawn, ExitSignal, Shim};
-use containerd_shim::event::Event;
-use containerd_shim::monitor::{Subject, Topic};
-use containerd_shim::protos::events::task::TaskExit;
-use containerd_shim::protos::protobuf::MessageDyn;
-use containerd_shim::util::{convert_to_timestamp, timestamp};
-use containerd_shim::util::{read_options, read_runtime, read_spec, write_str_to_file};
-use containerd_shim::{io_error, Config, Context, DeleteResponse, Error, StartOpts};
-
-use crate::asynchronous::runc::{RuncContainer, RuncFactory};
-use crate::common::{create_runc, has_shared_pid_namespace};
-use crate::common::{ShimExecutor, GROUP_LABELS};
 
 mod runc;
 

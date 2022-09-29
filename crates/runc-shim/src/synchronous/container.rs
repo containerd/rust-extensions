@@ -14,31 +14,34 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::fs::{File, OpenOptions};
-use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::path::Path;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-
-use log::debug;
-use oci_spec::runtime::LinuxResources;
-use time::OffsetDateTime;
+use std::{
+    collections::HashMap,
+    convert::TryFrom,
+    fs::{File, OpenOptions},
+    os::unix::io::{AsRawFd, FromRawFd},
+    path::Path,
+    sync::mpsc::{sync_channel, Receiver, SyncSender},
+};
 
 use containerd_shim as shim;
-use shim::api::*;
-use shim::console::ConsoleSocket;
-use shim::error::{Error, Result};
-use shim::io::Stdio;
-use shim::ioctl_set_winsz;
-use shim::protos::cgroups::metrics::Metrics;
-use shim::util::{convert_to_timestamp, read_pid_from_file};
-use shim::Console;
-use shim::{io_error, other, other_error};
+use log::debug;
+use oci_spec::runtime::LinuxResources;
+use shim::{
+    api::*,
+    console::ConsoleSocket,
+    error::{Error, Result},
+    io::Stdio,
+    io_error, ioctl_set_winsz, other, other_error,
+    protos::cgroups::metrics::Metrics,
+    util::{convert_to_timestamp, read_pid_from_file},
+    Console,
+};
+use time::OffsetDateTime;
 
-use crate::common::receive_socket;
-use crate::common::ProcessIO;
-use crate::synchronous::io::spawn_copy_for_tty;
+use crate::{
+    common::{receive_socket, ProcessIO},
+    synchronous::io::spawn_copy_for_tty,
+};
 
 pub trait ContainerFactory<C> {
     fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<C>;

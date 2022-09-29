@@ -14,17 +14,14 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::env;
-
-use futures::TryFutureExt;
-use log::info;
-use tokio::net::UnixListener;
+use std::{collections::HashMap, env};
 
 use containerd_snapshots as snapshots;
 use containerd_snapshots::{api, Info, Usage};
-
+use futures::TryFutureExt;
+use log::info;
 use snapshots::tonic::transport::Server;
+use tokio::net::UnixListener;
 
 #[derive(Default)]
 struct Example;

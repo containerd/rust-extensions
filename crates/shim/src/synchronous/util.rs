@@ -14,19 +14,22 @@
    limitations under the License.
 */
 
-use std::fs::{rename, File, OpenOptions};
-use std::io::{Read, Write};
-use std::path::Path;
+use std::{
+    fs::{rename, File, OpenOptions},
+    io::{Read, Write},
+    path::Path,
+};
 
+use containerd_shim_protos::shim::oci::Options;
 use libc::mode_t;
 use log::warn;
 use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
 
-use containerd_shim_protos::shim::oci::Options;
-
-use crate::util::{JsonOptions, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME};
-use crate::Error;
+use crate::{
+    util::{JsonOptions, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME},
+    Error,
+};
 
 pub fn read_file_to_str<P: AsRef<Path>>(filename: P) -> crate::Result<String> {
     let mut file = File::open(&filename).map_err(io_error!(

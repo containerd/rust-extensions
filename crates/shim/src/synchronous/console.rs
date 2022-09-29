@@ -14,15 +14,18 @@
    limitations under the License.
 */
 
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::net::{UnixListener, UnixStream},
+    path::{Path, PathBuf},
+};
 
 use log::warn;
 use uuid::Uuid;
 
-use crate::util::{mkdir, xdg_runtime_dir};
-use crate::Error;
-use crate::Result;
+use crate::{
+    util::{mkdir, xdg_runtime_dir},
+    Error, Result,
+};
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,

@@ -14,10 +14,12 @@
    limitations under the License.
 */
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-use std::{env, fs};
+use std::{
+    env, fs,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+};
 
 use ttrpc_codegen::{Codegen, Customize, ProtobufCustomize};
 

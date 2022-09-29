@@ -77,11 +77,10 @@ pub mod shim_sync {
     /// TTRPC client reexport for easier access.
     pub use ttrpc::Client;
 
-    /// Shim task service.
-    pub use crate::shim::shim_ttrpc::{create_task, Task, TaskClient};
-
     /// Shim events service.
     pub use crate::shim::events_ttrpc::{create_events, Events, EventsClient};
+    /// Shim task service.
+    pub use crate::shim::shim_ttrpc::{create_task, Task, TaskClient};
 }
 
 pub use shim_sync::*;
@@ -91,18 +90,13 @@ pub mod shim_async {
     /// TTRPC client reexport for easier access.
     pub use ttrpc::asynchronous::Client;
 
-    /// Shim task service.
-    pub use crate::shim::shim_ttrpc_async::{create_task, Task, TaskClient};
-
     /// Shim events service.
     pub use crate::shim::events_ttrpc_async::{create_events, Events, EventsClient};
+    /// Shim task service.
+    pub use crate::shim::shim_ttrpc_async::{create_task, Task, TaskClient};
 }
 
 /// Reexport auto-generated public data structures.
 pub mod api {
-    pub use crate::shim::empty::*;
-    pub use crate::shim::events::*;
-    pub use crate::shim::mount::*;
-    pub use crate::shim::shim::*;
-    pub use crate::shim::task::*;
+    pub use crate::shim::{empty::*, events::*, mount::*, shim::*, task::*};
 }

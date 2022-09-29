@@ -14,24 +14,26 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::process;
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex, Once};
-
-use log::{debug, info, warn};
-use oci_spec::runtime::LinuxResources;
+use std::{
+    collections::HashMap,
+    process,
+    sync::{mpsc::Sender, Arc, Mutex, Once},
+};
 
 use containerd_shim as shim;
-
-use shim::api::*;
-use shim::event::Event;
-use shim::protos::events::task::{
-    TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
+use log::{debug, info, warn};
+use oci_spec::runtime::LinuxResources;
+use shim::{
+    api::*,
+    event::Event,
+    other_error,
+    protos::{
+        events::task::{TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart},
+        protobuf::MessageDyn,
+    },
+    util::{convert_to_any, convert_to_timestamp, IntoOption},
+    Error, ExitSignal, Task, TtrpcContext, TtrpcResult,
 };
-use shim::protos::protobuf::MessageDyn;
-use shim::util::{convert_to_any, convert_to_timestamp, IntoOption};
-use shim::{other_error, Error, ExitSignal, Task, TtrpcContext, TtrpcResult};
 
 use crate::synchronous::container::{Container, ContainerFactory};
 

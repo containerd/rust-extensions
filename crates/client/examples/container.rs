@@ -14,24 +14,19 @@
    limitations under the License.
 */
 
+use std::{fs, fs::File};
+
+use client::{
+    services::v1::{
+        container::Runtime, containers_client::ContainersClient, tasks_client::TasksClient,
+        Container, CreateContainerRequest, CreateTaskRequest, DeleteContainerRequest,
+        DeleteTaskRequest, StartRequest, WaitRequest,
+    },
+    with_namespace,
+};
 use containerd_client as client;
-
-use client::services::v1::container::Runtime;
-use client::services::v1::containers_client::ContainersClient;
-use client::services::v1::Container;
-use client::services::v1::{CreateContainerRequest, DeleteContainerRequest};
-
-use client::services::v1::tasks_client::TasksClient;
-use client::services::v1::{CreateTaskRequest, DeleteTaskRequest, StartRequest, WaitRequest};
-
 use prost_types::Any;
-
 use tonic::Request;
-
-use std::fs;
-use std::fs::File;
-
-use client::with_namespace;
 
 const CID: &str = "abc123";
 const NAMESPACE: &str = "default";

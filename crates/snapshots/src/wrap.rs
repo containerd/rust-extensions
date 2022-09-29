@@ -16,16 +16,17 @@
 
 //! Trait wrapper to server GRPC requests.
 
-use std::convert::TryInto;
-use std::fmt::Debug;
+use std::{convert::TryInto, fmt::Debug};
 
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::api::snapshots::v1::{
-    snapshots_server::{Snapshots, SnapshotsServer},
-    *,
+use crate::{
+    api::snapshots::v1::{
+        snapshots_server::{Snapshots, SnapshotsServer},
+        *,
+    },
+    Snapshotter,
 };
-use crate::Snapshotter;
 
 pub struct Wrapper<S: Snapshotter> {
     snapshotter: S,

@@ -15,10 +15,12 @@
 */
 #![allow(unused)]
 
-use std::collections::HashMap;
-use std::env;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    env,
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
+    path::Path,
+};
 
 use lazy_static::lazy_static;
 use log::error;

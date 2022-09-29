@@ -16,33 +16,47 @@
 
 #![allow(unused)]
 
-use std::env::current_dir;
-use std::path::Path;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
-
-use log::{debug, error};
+use std::{
+    env::current_dir,
+    path::Path,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc,
+    },
+};
 
 use containerd_shim as shim;
+use log::{debug, error};
 use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
-use shim::api::*;
-use shim::error::{Error, Result};
-use shim::event::Event;
-use shim::monitor::{monitor_subscribe, Subject, Subscription, Topic};
-use shim::protos::events::task::TaskExit;
-use shim::protos::protobuf::{Message, MessageDyn};
-use shim::publisher::RemotePublisher;
-use shim::util::{
-    convert_to_timestamp, read_options, read_runtime, read_spec_from_file, timestamp, write_address,
+use shim::{
+    api::*,
+    error::{Error, Result},
+    event::Event,
+    io_error,
+    monitor::{monitor_subscribe, Subject, Subscription, Topic},
+    other_error,
+    protos::{
+        events::task::TaskExit,
+        protobuf::{Message, MessageDyn},
+    },
+    publisher::RemotePublisher,
+    spawn,
+    util::{
+        convert_to_timestamp, read_options, read_runtime, read_spec_from_file, timestamp,
+        write_address,
+    },
+    warn, Config, Context, ExitSignal, Shim, StartOpts,
 };
-use shim::{io_error, other_error, warn};
-use shim::{spawn, Config, Context, ExitSignal, Shim, StartOpts};
 
-use crate::common::{create_runc, ShimExecutor, GROUP_LABELS};
-use crate::synchronous::container::{Container, Process};
-use crate::synchronous::runc::{RuncContainer, RuncFactory};
-use crate::synchronous::task::ShimTask;
-use crate::synchronous::Service;
+use crate::{
+    common::{create_runc, ShimExecutor, GROUP_LABELS},
+    synchronous::{
+        container::{Container, Process},
+        runc::{RuncContainer, RuncFactory},
+        task::ShimTask,
+        Service,
+    },
+};
 
 impl Shim for Service {
     type T = ShimTask<RuncFactory, RuncContainer>;

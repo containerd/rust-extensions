@@ -14,9 +14,7 @@
    limitations under the License.
 */
 
-use std::env;
-use std::fs;
-use std::io;
+use std::{env, fs, io};
 
 const PROTO_FILES: &[&str] = &[
     // Types

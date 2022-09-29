@@ -14,46 +14,50 @@
    limitations under the License.
 */
 
-use std::convert::TryFrom;
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
-use std::os::unix::prelude::ExitStatusExt;
-use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
-use std::sync::Arc;
+use std::{
+    convert::TryFrom,
+    os::unix::{
+        io::{AsRawFd, FromRawFd, RawFd},
+        prelude::ExitStatusExt,
+    },
+    path::{Path, PathBuf},
+    process::ExitStatus,
+    sync::Arc,
+};
 
 use async_trait::async_trait;
+use containerd_shim::{
+    api::{CreateTaskRequest, ExecProcessRequest, Options, Status},
+    asynchronous::{
+        console::ConsoleSocket,
+        container::{ContainerFactory, ContainerTemplate, ProcessFactory},
+        monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
+        processes::{ProcessLifecycle, ProcessTemplate},
+    },
+    io::Stdio,
+    io_error,
+    monitor::{ExitEvent, Subject, Topic},
+    other, other_error,
+    protos::{
+        api::ProcessInfo,
+        cgroups::metrics::Metrics,
+        protobuf::{CodedInputStream, Message},
+    },
+    util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
+    Console, Error, ExitSignal, Result,
+};
 use log::{debug, error};
-use nix::sys::signal::kill;
-use nix::unistd::Pid;
+use nix::{sys::signal::kill, unistd::Pid};
 use oci_spec::runtime::{LinuxResources, Process};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
-
-use containerd_shim::api::{CreateTaskRequest, ExecProcessRequest, Options, Status};
-use containerd_shim::asynchronous::console::ConsoleSocket;
-use containerd_shim::asynchronous::container::{
-    ContainerFactory, ContainerTemplate, ProcessFactory,
-};
-use containerd_shim::asynchronous::monitor::{
-    monitor_subscribe, monitor_unsubscribe, Subscription,
-};
-use containerd_shim::asynchronous::processes::{ProcessLifecycle, ProcessTemplate};
-use containerd_shim::io::Stdio;
-use containerd_shim::monitor::{ExitEvent, Subject, Topic};
-use containerd_shim::protos::api::ProcessInfo;
-use containerd_shim::protos::cgroups::metrics::Metrics;
-use containerd_shim::protos::protobuf::{CodedInputStream, Message};
-use containerd_shim::util::{
-    asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime,
-};
-use containerd_shim::{io_error, other, other_error, Console, Error, ExitSignal, Result};
 use runc::{Command, Runc, Spawner};
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite},
+};
 
-use crate::common::receive_socket;
-use crate::common::CreateConfig;
 use crate::common::{
-    check_kill_error, create_io, create_runc, get_spec_from_request, ProcessIO, ShimExecutor,
-    INIT_PID_FILE,
+    check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket, CreateConfig,
+    ProcessIO, ShimExecutor, INIT_PID_FILE,
 };
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;

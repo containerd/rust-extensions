@@ -15,8 +15,7 @@
 */
 use std::env;
 
-use containerd_shim::publisher::RemotePublisher;
-use containerd_shim::Context;
+use containerd_shim::{publisher::RemotePublisher, Context};
 use containerd_shim_protos::events::task::TaskOOM;
 
 #[cfg(not(feature = "async"))]

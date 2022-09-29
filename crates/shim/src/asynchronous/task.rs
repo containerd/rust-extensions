@@ -14,37 +14,38 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use containerd_shim_protos::{
+    api::{
+        CloseIORequest, ConnectRequest, ConnectResponse, DeleteResponse, PidsRequest, PidsResponse,
+        StatsRequest, StatsResponse, UpdateTaskRequest,
+    },
+    events::task::{TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart},
+    protobuf::MessageDyn,
+    shim_async::Task,
+    ttrpc,
+    ttrpc::r#async::TtrpcContext,
+};
 use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
+use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
 
-use containerd_shim_protos::api::{
-    CloseIORequest, ConnectRequest, ConnectResponse, DeleteResponse, PidsRequest, PidsResponse,
-    StatsRequest, StatsResponse, UpdateTaskRequest,
+use crate::{
+    api::{
+        CreateTaskRequest, CreateTaskResponse, DeleteRequest, Empty, ExecProcessRequest,
+        KillRequest, ResizePtyRequest, ShutdownRequest, StartRequest, StartResponse, StateRequest,
+        StateResponse, Status, WaitRequest, WaitResponse,
+    },
+    asynchronous::{
+        container::{Container, ContainerFactory},
+        ExitSignal,
+    },
+    event::Event,
+    util::{convert_to_any, convert_to_timestamp, AsOption},
+    TtrpcResult,
 };
-use containerd_shim_protos::events::task::{
-    TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart,
-};
-use containerd_shim_protos::protobuf::MessageDyn;
-use containerd_shim_protos::shim_async::Task;
-use containerd_shim_protos::ttrpc;
-use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
-
-use crate::api::{
-    CreateTaskRequest, CreateTaskResponse, DeleteRequest, Empty, ExecProcessRequest, KillRequest,
-    ResizePtyRequest, ShutdownRequest, StartRequest, StartResponse, StateRequest, StateResponse,
-    Status, WaitRequest, WaitResponse,
-};
-use crate::asynchronous::container::{Container, ContainerFactory};
-use crate::asynchronous::ExitSignal;
-use crate::event::Event;
-use crate::util::{convert_to_any, convert_to_timestamp, AsOption};
-use crate::TtrpcResult;
 
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 

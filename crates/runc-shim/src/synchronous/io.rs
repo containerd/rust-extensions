@@ -14,18 +14,19 @@
    limitations under the License.
 */
 
-use std::fs::OpenOptions;
-use std::io::{ErrorKind, Read, Write};
-use std::thread::JoinHandle;
+use std::{
+    fs::OpenOptions,
+    io::{ErrorKind, Read, Write},
+    thread::JoinHandle,
+};
 
-use crossbeam::sync::WaitGroup;
-use log::debug;
-
-use containerd_shim::io::Stdio;
 use containerd_shim::{
     error::{Error, Result},
+    io::Stdio,
     io_error,
 };
+use crossbeam::sync::WaitGroup;
+use log::debug;
 
 use crate::common::ProcessIO;
 

@@ -33,9 +33,7 @@
  * limitations under the License.
  */
 
-use std::env;
-use std::io;
-use std::process::ExitStatus;
+use std::{env, io, process::ExitStatus};
 
 use thiserror::Error;
 

@@ -35,10 +35,12 @@
 
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.
-use std::fmt::{self, Debug, Display};
-use std::path::{Path, PathBuf};
-use std::process::{ExitStatus, Stdio};
-use std::sync::Arc;
+use std::{
+    fmt::{self, Debug, Display},
+    path::{Path, PathBuf},
+    process::{ExitStatus, Stdio},
+    sync::Arc,
+};
 
 #[cfg(feature = "async")]
 use async_trait::async_trait;
@@ -46,10 +48,7 @@ use async_trait::async_trait;
 use log::debug;
 use oci_spec::runtime::{LinuxResources, Process};
 
-use crate::container::Container;
-use crate::error::Error;
-use crate::options::*;
-use crate::utils::write_value_to_temp_file;
+use crate::{container::Container, error::Error, options::*, utils::write_value_to_temp_file};
 
 pub mod container;
 pub mod error;
@@ -603,8 +602,10 @@ impl Runc {
 mod tests {
     use std::sync::Arc;
 
-    use super::io::{InheritedStdIo, PipedStdIo};
-    use super::*;
+    use super::{
+        io::{InheritedStdIo, PipedStdIo},
+        *,
+    };
 
     fn ok_client() -> Runc {
         GlobalOpts::new()
@@ -786,8 +787,10 @@ mod tests {
 mod tests {
     use std::sync::Arc;
 
-    use super::io::{InheritedStdIo, PipedStdIo};
-    use super::*;
+    use super::{
+        io::{InheritedStdIo, PipedStdIo},
+        *,
+    };
 
     fn ok_client() -> Runc {
         GlobalOpts::new()

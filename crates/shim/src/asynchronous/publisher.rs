@@ -17,18 +17,19 @@
 use std::os::unix::io::RawFd;
 
 use async_trait::async_trait;
+use containerd_shim_protos::{
+    api::Empty,
+    protobuf::MessageDyn,
+    shim::events,
+    shim_async::{Client, Events, EventsClient},
+    ttrpc,
+    ttrpc::{context::Context, r#async::TtrpcContext},
+};
 
-use containerd_shim_protos::api::Empty;
-use containerd_shim_protos::protobuf::MessageDyn;
-use containerd_shim_protos::shim::events;
-use containerd_shim_protos::shim_async::{Client, Events, EventsClient};
-use containerd_shim_protos::ttrpc;
-use containerd_shim_protos::ttrpc::context::Context;
-use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
-
-use crate::error::Result;
-use crate::util::asyncify;
-use crate::util::{connect, convert_to_any, timestamp};
+use crate::{
+    error::Result,
+    util::{asyncify, connect, convert_to_any, timestamp},
+};
 
 /// Async Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -97,17 +98,21 @@ impl Events for RemotePublisher {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::io::AsRawFd;
-    use std::os::unix::net::UnixListener;
-    use std::sync::Arc;
+    use std::{
+        os::unix::{io::AsRawFd, net::UnixListener},
+        sync::Arc,
+    };
 
-    use tokio::sync::mpsc::{channel, Sender};
-    use tokio::sync::Barrier;
-
-    use containerd_shim_protos::api::{Empty, ForwardRequest};
-    use containerd_shim_protos::events::task::TaskOOM;
-    use containerd_shim_protos::shim_async::create_events;
-    use containerd_shim_protos::ttrpc::asynchronous::Server;
+    use containerd_shim_protos::{
+        api::{Empty, ForwardRequest},
+        events::task::TaskOOM,
+        shim_async::create_events,
+        ttrpc::asynchronous::Server,
+    };
+    use tokio::sync::{
+        mpsc::{channel, Sender},
+        Barrier,
+    };
 
     use super::*;
 

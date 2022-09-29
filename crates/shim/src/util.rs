@@ -14,21 +14,27 @@
    limitations under the License.
 */
 
-use std::env;
-use std::os::unix::io::RawFd;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    env,
+    os::unix::io::RawFd,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::Options;
 #[cfg(feature = "async")]
 pub use crate::asynchronous::util::*;
-use crate::error::Result;
-use crate::protos::protobuf::well_known_types::{any::Any, timestamp::Timestamp};
-use crate::protos::protobuf::MessageDyn;
 #[cfg(not(feature = "async"))]
 pub use crate::synchronous::util::*;
+use crate::{
+    api::Options,
+    error::Result,
+    protos::protobuf::{
+        well_known_types::{any::Any, timestamp::Timestamp},
+        MessageDyn,
+    },
+};
 
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const OPTIONS_FILE_NAME: &str = "options.json";
@@ -96,8 +102,7 @@ impl From<JsonOptions> for Options {
 }
 
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
-    use nix::sys::socket::*;
-    use nix::unistd::close;
+    use nix::{sys::socket::*, unistd::close};
 
     let unix_addr = UnixAddr::new(address.as_ref())?;
 

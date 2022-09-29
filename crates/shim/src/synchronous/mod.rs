@@ -32,35 +32,42 @@
 //! ```
 //!
 
-use std::convert::TryFrom;
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::os::unix::fs::FileTypeExt;
-use std::os::unix::io::AsRawFd;
-use std::path::Path;
-use std::process::{self, Command, Stdio};
-use std::sync::{Arc, Condvar, Mutex};
+use std::{
+    convert::TryFrom,
+    env, fs,
+    io::Write,
+    os::unix::{fs::FileTypeExt, io::AsRawFd},
+    path::Path,
+    process::{self, Command, Stdio},
+    sync::{Arc, Condvar, Mutex},
+};
 
 use command_fds::{CommandFdExt, FdMapping};
 use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 pub use log::{debug, error, info, warn};
-use nix::errno::Errno;
-use nix::sys::signal::Signal;
-use nix::sys::wait::{self, WaitPidFlag, WaitStatus};
-use nix::unistd::Pid;
+use nix::{
+    errno::Errno,
+    sys::{
+        signal::Signal,
+        wait::{self, WaitPidFlag, WaitStatus},
+    },
+    unistd::Pid,
+};
 use signal_hook::iterator::Signals;
-
-use crate::protos::protobuf::Message;
-use crate::protos::shim::shim_ttrpc::{create_task, Task};
-use crate::protos::ttrpc::{Client, Server};
 use util::{read_address, write_address};
 
-use crate::api::DeleteResponse;
-use crate::synchronous::publisher::RemotePublisher;
-use crate::Error;
-use crate::{args, logger, reap, Result, TTRPC_ADDRESS};
-use crate::{parse_sockaddr, socket_address, start_listener, Config, StartOpts, SOCKET_FD};
+use crate::{
+    api::DeleteResponse,
+    args, logger, parse_sockaddr,
+    protos::{
+        protobuf::Message,
+        shim::shim_ttrpc::{create_task, Task},
+        ttrpc::{Client, Server},
+    },
+    reap, socket_address, start_listener,
+    synchronous::publisher::RemotePublisher,
+    Config, Error, Result, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
+};
 
 pub mod monitor;
 pub mod publisher;

@@ -16,19 +16,20 @@
 
 use std::path::Path;
 
+use containerd_shim_protos::{api::Mount, shim::oci::Options};
 use libc::mode_t;
 use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::task::spawn_blocking;
+use tokio::{
+    fs::OpenOptions,
+    io::{AsyncReadExt, AsyncWriteExt},
+    task::spawn_blocking,
+};
 
-use containerd_shim_protos::api::Mount;
-use containerd_shim_protos::shim::oci::Options;
-
-use crate::error::Error;
-use crate::error::Result;
-use crate::util::{AsOption, JsonOptions, CONFIG_FILE_NAME, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME};
+use crate::{
+    error::{Error, Result},
+    util::{AsOption, JsonOptions, CONFIG_FILE_NAME, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME},
+};
 
 pub async fn asyncify<F, T>(f: F) -> Result<T>
 where

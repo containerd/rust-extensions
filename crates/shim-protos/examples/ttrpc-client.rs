@@ -14,9 +14,10 @@
 // limitations under the License.
 
 use containerd_shim_protos::{api::CreateTaskRequest, TaskClient};
-
-use ttrpc::context::{self, Context};
-use ttrpc::Client;
+use ttrpc::{
+    context::{self, Context},
+    Client,
+};
 
 fn main() {
     let c = Client::connect("unix:///tmp/shim-proto-ttrpc-001").unwrap();

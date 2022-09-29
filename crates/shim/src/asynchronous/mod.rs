@@ -14,42 +14,48 @@
    limitations under the License.
 */
 
-use std::convert::TryFrom;
-use std::os::unix::fs::FileTypeExt;
-use std::os::unix::io::AsRawFd;
-use std::os::unix::net::UnixListener;
-use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::{env, process};
+use std::{
+    convert::TryFrom,
+    env,
+    os::unix::{fs::FileTypeExt, io::AsRawFd, net::UnixListener},
+    path::Path,
+    process,
+    process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use async_trait::async_trait;
 use command_fds::{CommandFdExt, FdMapping};
+use containerd_shim_protos::{
+    api::DeleteResponse,
+    protobuf::Message,
+    shim_async::{create_task, Client, Task},
+    ttrpc::r#async::Server,
+};
 use futures::StreamExt;
 use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 use log::{debug, error, info, warn};
-use nix::errno::Errno;
-use nix::sys::signal::Signal;
-use nix::sys::wait::{self, WaitPidFlag, WaitStatus};
-use nix::unistd::Pid;
+use nix::{
+    errno::Errno,
+    sys::{
+        signal::Signal,
+        wait::{self, WaitPidFlag, WaitStatus},
+    },
+    unistd::Pid,
+};
 use signal_hook_tokio::Signals;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::Notify;
+use tokio::{io::AsyncWriteExt, sync::Notify};
 
-use containerd_shim_protos::api::DeleteResponse;
-use containerd_shim_protos::protobuf::Message;
-use containerd_shim_protos::shim_async::{create_task, Client, Task};
-use containerd_shim_protos::ttrpc::r#async::Server;
-
-use crate::asynchronous::monitor::monitor_notify_by_pid;
-use crate::asynchronous::publisher::RemotePublisher;
-use crate::error::Error;
-use crate::error::Result;
-use crate::util::{asyncify, read_file_to_str, write_str_to_file};
 use crate::{
-    args, logger, parse_sockaddr, reap, socket_address, Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
+    args,
+    asynchronous::{monitor::monitor_notify_by_pid, publisher::RemotePublisher},
+    error::{Error, Result},
+    logger, parse_sockaddr, reap, socket_address,
+    util::{asyncify, read_file_to_str, write_str_to_file},
+    Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
 pub mod console;

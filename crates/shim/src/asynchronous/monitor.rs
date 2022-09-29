@@ -18,12 +18,15 @@ use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 use log::error;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::Mutex;
+use tokio::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Mutex,
+};
 
-use crate::error::Error;
-use crate::error::Result;
-use crate::monitor::{ExitEvent, Subject, Topic};
+use crate::{
+    error::{Error, Result},
+    monitor::{ExitEvent, Subject, Topic},
+};
 
 lazy_static! {
     pub static ref MONITOR: Mutex<Monitor> = {
@@ -143,10 +146,12 @@ impl Monitor {
 
 #[cfg(test)]
 mod tests {
-    use crate::asynchronous::monitor::{
-        monitor_notify_by_exec, monitor_notify_by_pid, monitor_subscribe, monitor_unsubscribe,
+    use crate::{
+        asynchronous::monitor::{
+            monitor_notify_by_exec, monitor_notify_by_pid, monitor_subscribe, monitor_unsubscribe,
+        },
+        monitor::{ExitEvent, Subject, Topic},
     };
-    use crate::monitor::{ExitEvent, Subject, Topic};
 
     #[tokio::test]
     async fn test_monitor() {

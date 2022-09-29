@@ -20,11 +20,12 @@ use containerd_shim as shim;
 mod skeleton {
     use std::sync::Arc;
 
-    use log::info;
-
     use containerd_shim as shim;
-    use shim::synchronous::publisher::RemotePublisher;
-    use shim::{api, Config, DeleteResponse, ExitSignal, TtrpcContext, TtrpcResult};
+    use log::info;
+    use shim::{
+        api, synchronous::publisher::RemotePublisher, Config, DeleteResponse, ExitSignal,
+        TtrpcContext, TtrpcResult,
+    };
 
     #[derive(Clone)]
     pub(crate) struct Service {

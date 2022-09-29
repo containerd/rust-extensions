@@ -14,13 +14,9 @@
    limitations under the License.
 */
 
-use std::fs;
-use std::io;
-use std::io::BufRead;
-use std::thread;
+use std::{fs, io, io::BufRead, thread};
 
 use containerd_shim_logging as logging;
-
 use logging::{Config, Driver};
 
 fn pump(reader: fs::File) {

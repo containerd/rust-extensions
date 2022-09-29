@@ -1,5 +1,4 @@
-use containerd_shim_protos::events::task::*;
-use containerd_shim_protos::protobuf::MessageDyn;
+use containerd_shim_protos::{events::task::*, protobuf::MessageDyn};
 
 pub trait Event: MessageDyn {
     fn topic(&self) -> String;
