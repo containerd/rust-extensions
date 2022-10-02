@@ -32,18 +32,20 @@
 //! ```
 //!
 
-use std::collections::hash_map::DefaultHasher;
-use std::fs::File;
-use std::hash::Hasher;
-use std::os::unix::io::RawFd;
-use std::os::unix::net::UnixListener;
-use std::path::{Path, PathBuf};
-
-use nix::ioctl_write_ptr_bad;
+use std::{
+    collections::hash_map::DefaultHasher,
+    fs::File,
+    hash::Hasher,
+    os::unix::{io::RawFd, net::UnixListener},
+    path::{Path, PathBuf},
+};
 
 pub use containerd_shim_protos as protos;
-pub use protos::shim::shim::DeleteResponse;
-pub use protos::ttrpc::{context::Context, Result as TtrpcResult};
+use nix::ioctl_write_ptr_bad;
+pub use protos::{
+    shim::shim::DeleteResponse,
+    ttrpc::{context::Context, Result as TtrpcResult},
+};
 
 #[cfg(feature = "async")]
 pub use crate::asynchronous::*;
@@ -70,10 +72,11 @@ pub mod util;
 
 /// Generated request/response structures.
 pub mod api {
-    pub use super::protos::api::Status;
-    pub use super::protos::shim::oci::Options;
-    pub use super::protos::shim::shim::*;
-    pub use super::protos::types::empty::Empty;
+    pub use super::protos::{
+        api::Status,
+        shim::{oci::Options, shim::*},
+        types::empty::Empty,
+    };
 }
 
 macro_rules! cfg_not_async {

@@ -21,8 +21,7 @@ use std::convert::{TryFrom, TryInto};
 use thiserror::Error;
 use tonic::Status;
 
-use crate::api::snapshots::v1 as grpc;
-use crate::{Info, Kind};
+use crate::{api::snapshots::v1 as grpc, Info, Kind};
 
 impl From<Kind> for i32 {
     fn from(kind: Kind) -> i32 {

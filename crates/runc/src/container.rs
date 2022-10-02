@@ -36,8 +36,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use time::serde::timestamp;
-use time::OffsetDateTime;
+use time::{serde::timestamp, OffsetDateTime};
 
 /// Information for runc container
 #[derive(Debug, Serialize, Deserialize)]

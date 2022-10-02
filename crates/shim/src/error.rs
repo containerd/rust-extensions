@@ -16,8 +16,10 @@
 
 use thiserror::Error;
 
-use crate::monitor::ExitEvent;
-use crate::protos::{protobuf, ttrpc};
+use crate::{
+    monitor::ExitEvent,
+    protos::{protobuf, ttrpc},
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

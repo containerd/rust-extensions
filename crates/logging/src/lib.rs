@@ -23,11 +23,7 @@
 //! This crates replicates APIs provided by Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/README.md#logging).
 //!
 
-use std::env;
-use std::fmt;
-use std::fs;
-use std::os::unix::io::FromRawFd;
-use std::process;
+use std::{env, fmt, fs, os::unix::io::FromRawFd, process};
 
 /// Logging binary configuration received from containerd.
 #[derive(Debug)]

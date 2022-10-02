@@ -14,25 +14,29 @@
    limitations under the License.
 */
 
-use std::io::IoSliceMut;
-use std::ops::Deref;
-use std::os::unix::io::RawFd;
-use std::path::Path;
-use std::sync::Arc;
+use std::{io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync::Arc};
 
+use containerd_shim::{
+    api::{ExecProcessRequest, Options},
+    io::Stdio,
+    io_error, other, other_error,
+    util::IntoOption,
+    Error,
+};
 use log::{debug, warn};
-use nix::cmsg_space;
-use nix::sys::socket::{recvmsg, ControlMessageOwned, MsgFlags, UnixAddr};
-use nix::sys::termios::tcgetattr;
+use nix::{
+    cmsg_space,
+    sys::{
+        socket::{recvmsg, ControlMessageOwned, MsgFlags, UnixAddr},
+        termios::tcgetattr,
+    },
+};
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
-
-use containerd_shim::api::{ExecProcessRequest, Options};
-use containerd_shim::io::Stdio;
-use containerd_shim::util::IntoOption;
-use containerd_shim::{io_error, other, other_error, Error};
-use runc::io::{Io, NullIo, FIFO};
-use runc::options::GlobalOpts;
-use runc::{Runc, Spawner};
+use runc::{
+    io::{Io, NullIo, FIFO},
+    options::GlobalOpts,
+    Runc, Spawner,
+};
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",

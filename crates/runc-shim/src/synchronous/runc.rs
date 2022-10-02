@@ -15,43 +15,51 @@
 */
 #![allow(unused)]
 
-use std::convert::TryFrom;
-use std::io::Read;
-use std::os::unix::prelude::ExitStatusExt;
-use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::Arc;
-
-use log::{debug, error};
-use nix::sys::signal::kill;
-use nix::sys::stat::Mode;
-use nix::unistd::{mkdir, Pid};
-use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
-use time::OffsetDateTime;
+use std::{
+    convert::TryFrom,
+    io::Read,
+    os::unix::prelude::ExitStatusExt,
+    path::{Path, PathBuf},
+    process::ExitStatus,
+    sync::{
+        mpsc::{Receiver, SyncSender},
+        Arc,
+    },
+};
 
 use containerd_shim as shim;
-use runc::{Command, Spawner};
-use shim::api::*;
-use shim::console::ConsoleSocket;
-use shim::error::{Error, Result};
-use shim::io::Stdio;
-use shim::monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscription, Topic};
-use shim::mount::mount_rootfs;
-use shim::protos::api::ProcessInfo;
-use shim::protos::cgroups::metrics::Metrics;
-use shim::protos::protobuf::{CodedInputStream, Message};
-use shim::protos::shim::oci::ProcessDetails;
-use shim::util::{convert_to_any, read_spec_from_file, write_options, write_runtime, IntoOption};
-use shim::Console;
-use shim::{other, other_error};
-
-use crate::common;
-use crate::common::{
-    create_io, has_shared_pid_namespace, CreateConfig, ShimExecutor, INIT_PID_FILE,
+use log::{debug, error};
+use nix::{
+    sys::{signal::kill, stat::Mode},
+    unistd::{mkdir, Pid},
 };
-use crate::synchronous::container::{
-    CommonContainer, CommonProcess, Container, ContainerFactory, Process,
+use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
+use runc::{Command, Spawner};
+use shim::{
+    api::*,
+    console::ConsoleSocket,
+    error::{Error, Result},
+    io::Stdio,
+    monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscription, Topic},
+    mount::mount_rootfs,
+    other, other_error,
+    protos::{
+        api::ProcessInfo,
+        cgroups::metrics::Metrics,
+        protobuf::{CodedInputStream, Message},
+        shim::oci::ProcessDetails,
+    },
+    util::{convert_to_any, read_spec_from_file, write_options, write_runtime, IntoOption},
+    Console,
+};
+use time::OffsetDateTime;
+
+use crate::{
+    common,
+    common::{create_io, has_shared_pid_namespace, CreateConfig, ShimExecutor, INIT_PID_FILE},
+    synchronous::container::{
+        CommonContainer, CommonProcess, Container, ContainerFactory, Process,
+    },
 };
 
 #[derive(Clone, Default)]

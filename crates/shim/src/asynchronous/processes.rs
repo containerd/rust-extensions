@@ -14,21 +14,19 @@
    limitations under the License.
 */
 
-use std::os::unix::io::AsRawFd;
-use std::sync::Arc;
+use std::{os::unix::io::AsRawFd, sync::Arc};
 
 use async_trait::async_trait;
+use containerd_shim_protos::{
+    api::{ProcessInfo, StateResponse, Status},
+    cgroups::metrics::Metrics,
+    protobuf::well_known_types::timestamp::Timestamp,
+};
 use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::{channel, Receiver, Sender};
 
-use containerd_shim_protos::api::{ProcessInfo, StateResponse, Status};
-use containerd_shim_protos::cgroups::metrics::Metrics;
-use containerd_shim_protos::protobuf::well_known_types::timestamp::Timestamp;
-
-use crate::io::Stdio;
-use crate::util::asyncify;
-use crate::{ioctl_set_winsz, Console};
+use crate::{io::Stdio, ioctl_set_winsz, util::asyncify, Console};
 
 #[async_trait]
 pub trait Process {

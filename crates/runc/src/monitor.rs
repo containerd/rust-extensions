@@ -19,8 +19,10 @@ use std::process::{ExitStatus, Output};
 use async_trait::async_trait;
 use log::error;
 use time::OffsetDateTime;
-use tokio::process::Command;
-use tokio::sync::oneshot::{channel, Receiver, Sender};
+use tokio::{
+    process::Command,
+    sync::oneshot::{channel, Receiver, Sender},
+};
 
 use crate::error::Error;
 
@@ -132,8 +134,7 @@ pub async fn execute<T: ProcessMonitor + Send + Sync>(
 mod tests {
     use std::process::Stdio;
 
-    use tokio::process::Command;
-    use tokio::sync::oneshot::channel;
+    use tokio::{process::Command, sync::oneshot::channel};
 
     use super::*;
 

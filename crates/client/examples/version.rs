@@ -14,9 +14,8 @@
    limitations under the License.
 */
 
-use containerd_client as client;
-
 use client::services::v1::version_client::VersionClient;
+use containerd_client as client;
 
 /// Make sure you run containerd before running this example.
 #[tokio::main(flavor = "current_thread")]

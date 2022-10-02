@@ -13,10 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use containerd_shim_protos::api::CreateTaskRequest;
-use containerd_shim_protos::shim::shim_ttrpc_async::TaskClient;
-use ttrpc::asynchronous::Client;
-use ttrpc::context::{self, Context};
+use containerd_shim_protos::{api::CreateTaskRequest, shim::shim_ttrpc_async::TaskClient};
+use ttrpc::{
+    asynchronous::Client,
+    context::{self, Context},
+};
 
 fn default_ctx() -> Context {
     let mut ctx = context::with_timeout(0);

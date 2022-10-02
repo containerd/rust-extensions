@@ -13,15 +13,16 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-use std::fmt::Debug;
-use std::fs::{File, OpenOptions};
-use std::io::Result;
 #[cfg(not(feature = "async"))]
 use std::io::{Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::io::AsRawFd;
-use std::process::Stdio;
-use std::sync::Mutex;
+use std::{
+    fmt::Debug,
+    fs::{File, OpenOptions},
+    io::Result,
+    os::unix::{fs::OpenOptionsExt, io::AsRawFd},
+    process::Stdio,
+    sync::Mutex,
+};
 
 use log::debug;
 use nix::unistd::{Gid, Uid};

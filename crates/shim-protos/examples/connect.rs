@@ -16,9 +16,8 @@
 
 use std::env;
 
-use containerd_shim_protos as client;
-
 use client::api;
+use containerd_shim_protos as client;
 use ttrpc::context::Context;
 
 fn main() {

@@ -17,19 +17,16 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use containerd_shim_protos::{
+    api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
+    cgroups::metrics::Metrics,
+};
 use log::debug;
 use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
 
-use containerd_shim_protos::api::{
-    CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse,
-};
-use containerd_shim_protos::cgroups::metrics::Metrics;
-
-use crate::asynchronous::processes::Process;
-use crate::error::Result;
-use crate::Error;
+use crate::{asynchronous::processes::Process, error::Result, Error};
 
 #[async_trait]
 pub trait Container {

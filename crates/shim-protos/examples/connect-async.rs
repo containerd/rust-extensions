@@ -16,12 +16,9 @@
 
 use std::env;
 
+use client::{api, shim::shim_ttrpc_async::TaskClient};
 use containerd_shim_protos as client;
-
-use client::api;
-use client::shim::shim_ttrpc_async::TaskClient;
-use ttrpc::asynchronous::Client;
-use ttrpc::context::Context;
+use ttrpc::{asynchronous::Client, context::Context};
 
 #[tokio::main]
 async fn main() {

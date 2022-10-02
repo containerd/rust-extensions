@@ -13,12 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use std::thread;
+use std::{sync::Arc, thread};
 
 use async_trait::async_trait;
-use containerd_shim_protos::api::{CreateTaskRequest, CreateTaskResponse};
-use containerd_shim_protos::shim::shim_ttrpc_async::{create_task, Task};
+use containerd_shim_protos::{
+    api::{CreateTaskRequest, CreateTaskResponse},
+    shim::shim_ttrpc_async::{create_task, Task},
+};
 use ttrpc::asynchronous::Server;
 
 #[derive(Debug, PartialEq)]

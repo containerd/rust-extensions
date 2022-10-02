@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use std::thread;
+use std::{sync::Arc, thread};
 
 use containerd_shim_protos::{
     api::{CreateTaskRequest, CreateTaskResponse},

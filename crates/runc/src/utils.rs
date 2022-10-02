@@ -14,10 +14,12 @@
    limitations under the License.
 */
 
-use std::env;
 #[cfg(not(feature = "async"))]
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use path_absolutize::*;
 use serde::Serialize;

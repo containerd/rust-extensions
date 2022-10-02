@@ -16,20 +16,17 @@
 
 #![cfg(target_os = "linux")]
 
-use std::fs;
-use std::io::Read;
-use std::path::Path;
+use std::{fs, io::Read, path::Path};
 
-use cgroups_rs::cgroup::get_cgroups_relative_paths_by_pid;
-use cgroups_rs::{hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem};
-use oci_spec::runtime::LinuxResources;
-
-use containerd_shim_protos::cgroups::metrics::{
-    CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics,
+use cgroups_rs::{
+    cgroup::get_cgroups_relative_paths_by_pid, hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem,
 };
-use containerd_shim_protos::protobuf::well_known_types::any::Any;
-use containerd_shim_protos::protobuf::Message;
-use containerd_shim_protos::shim::oci::Options;
+use containerd_shim_protos::{
+    cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics},
+    protobuf::{well_known_types::any::Any, Message},
+    shim::oci::Options,
+};
+use oci_spec::runtime::LinuxResources;
 
 use crate::error::{Error, Result};
 

@@ -16,16 +16,19 @@
 
 //! Implements a client to publish events from the shim back to containerd.
 
+use client::{
+    protobuf::MessageDyn,
+    shim::events,
+    ttrpc::{self, context::Context},
+    types::empty,
+    Client, Events, EventsClient,
+};
 use containerd_shim_protos as client;
 
-use client::protobuf::MessageDyn;
-use client::shim::events;
-use client::ttrpc::{self, context::Context};
-use client::types::empty;
-use client::{Client, Events, EventsClient};
-
-use crate::error::Result;
-use crate::util::{connect, convert_to_any, timestamp};
+use crate::{
+    error::Result,
+    util::{connect, convert_to_any, timestamp},
+};
 
 /// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -87,14 +90,16 @@ impl Events for RemotePublisher {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::io::AsRawFd;
-    use std::os::unix::net::UnixListener;
-    use std::sync::{Arc, Barrier};
+    use std::{
+        os::unix::{io::AsRawFd, net::UnixListener},
+        sync::{Arc, Barrier},
+    };
 
+    use client::{
+        api::{Empty, ForwardRequest},
+        events::task::TaskOOM,
+    };
     use ttrpc::Server;
-
-    use client::api::{Empty, ForwardRequest};
-    use client::events::task::TaskOOM;
 
     use super::*;
 

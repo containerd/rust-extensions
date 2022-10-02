@@ -3,13 +3,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-use std::collections::HashMap;
-use std::sync::mpsc::channel;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{mpsc::channel, Arc},
+};
 
-use containerd_shim_protos::api::{CreateTaskRequest, CreateTaskResponse, DeleteRequest};
-use containerd_shim_protos::shim::shim_ttrpc::create_task;
-use containerd_shim_protos::Task;
+use containerd_shim_protos::{
+    api::{CreateTaskRequest, CreateTaskResponse, DeleteRequest},
+    shim::shim_ttrpc::create_task,
+    Task,
+};
 use protobuf::{CodedInputStream, CodedOutputStream, Message};
 use ttrpc::{Code, MessageHeader, Request, Response, TtrpcContext};
 

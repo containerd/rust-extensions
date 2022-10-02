@@ -33,14 +33,13 @@
  * limitations under the License.
  */
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
-use crate::error::Error;
-use crate::io::Io;
-use crate::{utils, DefaultExecutor, Spawner};
-use crate::{LogFormat, Runc};
+use crate::{error::Error, io::Io, utils, DefaultExecutor, LogFormat, Runc, Spawner};
 
 // constants for log format
 pub const JSON: &str = "json";

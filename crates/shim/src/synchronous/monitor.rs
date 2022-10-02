@@ -14,15 +14,21 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
+use std::{
+    collections::HashMap,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Mutex,
+    },
+};
 
 use lazy_static::lazy_static;
 use log::{error, warn};
 
-use crate::monitor::{ExitEvent, Subject, Topic};
-use crate::Result;
+use crate::{
+    monitor::{ExitEvent, Subject, Topic},
+    Result,
+};
 
 lazy_static! {
     pub static ref MONITOR: Mutex<Monitor> = {

@@ -20,9 +20,10 @@ use log::warn;
 use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
-use crate::util::{mkdir, xdg_runtime_dir};
-use crate::Error;
-use crate::Result;
+use crate::{
+    util::{mkdir, xdg_runtime_dir},
+    Error, Result,
+};
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,

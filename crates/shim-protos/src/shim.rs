@@ -64,8 +64,7 @@ mod gogo {
     pub use crate::types::gogo::*;
 }
 
-/// Shim task service.
-pub use shim_ttrpc::{create_task, Task, TaskClient};
-
 /// Shim events service.
 pub use events_ttrpc::{create_events, Events, EventsClient};
+/// Shim task service.
+pub use shim_ttrpc::{create_task, Task, TaskClient};

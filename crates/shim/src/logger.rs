@@ -14,12 +14,14 @@
    limitations under the License.
 */
 
-use std::borrow::BorrowMut;
-use std::fs::{File, OpenOptions};
-use std::io;
-use std::io::Write;
-use std::path::Path;
-use std::sync::Mutex;
+use std::{
+    borrow::BorrowMut,
+    fs::{File, OpenOptions},
+    io,
+    io::Write,
+    path::Path,
+    sync::Mutex,
+};
 
 use log::{Metadata, Record};
 

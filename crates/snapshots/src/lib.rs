@@ -49,10 +49,7 @@
 //! ```
 //!
 
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::ops::AddAssign;
-use std::time::SystemTime;
+use std::{collections::HashMap, fmt::Debug, ops::AddAssign, time::SystemTime};
 
 pub use tonic;
 

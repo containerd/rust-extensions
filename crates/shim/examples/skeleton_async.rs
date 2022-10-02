@@ -17,15 +17,15 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use containerd_shim::{
+    asynchronous::{run, spawn, ExitSignal, Shim},
+    publisher::RemotePublisher,
+    Config, Error, StartOpts, TtrpcResult,
+};
+use containerd_shim_protos::{
+    api, api::DeleteResponse, shim_async::Task, ttrpc::r#async::TtrpcContext,
+};
 use log::info;
-
-use containerd_shim::asynchronous::{run, spawn, ExitSignal, Shim};
-use containerd_shim::publisher::RemotePublisher;
-use containerd_shim::{Config, Error, StartOpts, TtrpcResult};
-use containerd_shim_protos::api;
-use containerd_shim_protos::api::DeleteResponse;
-use containerd_shim_protos::shim_async::Task;
-use containerd_shim_protos::ttrpc::r#async::TtrpcContext;
 
 #[derive(Clone)]
 struct Service {
