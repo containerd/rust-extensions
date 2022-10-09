@@ -25,3 +25,21 @@ $ sudo ctr run --rm --runtime io.containerd.runc.v2-rs -t docker.io/library/hell
 ```
 
 You can run a container by `ctr`, `crictl` or kubernetes API.
+
+## Performance test
+
+### Memory overhead
+
+Three different kinds of shim binaries are used to compare memory overhead, first is `containerd-shimv2-runc-v2`
+compiled by golang, next is our sync `containerd-shim-runc-v2-rs` and the last one is our async `containerd-shim-runc-v2-rs`
+but limited to 2 work threads.
+
+We run a *busybox* container inside a pod on a *16U32G Ubuntu20.04* mechine with *containerd v1.6.8* and *runc v1.1.4*.
+To measure the memory size of shim process we parse the output of *smaps* file and add up all RSS segments.
+In addition, we also run 100 pods and collect the total memory overhead.
+
+ |                                                              | Single Process RSS | 100 Processes RSS |
+ | :----------------------------------------------------------- | :----------------- | :---------------- |
+ | containerd-shim-runc-v2                                      | 11.02MB            | 1106.52MB         |
+ | containerd-shim-runc-v2-rs(sync)                             | 3.45MB             | 345.39MB          |
+ | containerd-shim-runc-v2-rs(async, limited to 2 work threads) | 3.90MB             | 396.83MB          |
