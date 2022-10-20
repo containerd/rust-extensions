@@ -20,7 +20,6 @@ use containerd_shim::{
     api::{ExecProcessRequest, Options},
     io::Stdio,
     io_error, other, other_error,
-    util::IntoOption,
     Error,
 };
 use log::{debug, warn};
@@ -33,7 +32,7 @@ use nix::{
 };
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 use runc::{
-    io::{Io, NullIo, FIFO},
+    io::{Io, NullIo, PipedIo, IOOption},
     options::GlobalOpts,
     Runc, Spawner,
 };
@@ -93,13 +92,15 @@ pub fn create_io(
             stdio.stdout.as_str(),
             stdio.stderr.as_str()
         );
-        let io = FIFO {
-            stdin: stdio.stdin.to_string().none_if(|x| x.is_empty()),
-            stdout: stdio.stdout.to_string().none_if(|x| x.is_empty()),
-            stderr: stdio.stderr.to_string().none_if(|x| x.is_empty()),
+        let opts = IOOption {
+            open_stdin: !stdio.stdin.is_empty(),
+            open_stdout: !stdio.stdout.is_empty(),
+            open_stderr: !stdio.stderr.is_empty(),
         };
+        let io = PipedIo::new(_io_uid, _io_gid, &opts).unwrap();
+
         pio.io = Some(Arc::new(io));
-        pio.copy = false;
+        pio.copy = true;
     }
     Ok(pio)
 }

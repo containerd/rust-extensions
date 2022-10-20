@@ -227,7 +227,7 @@ impl Io for PipedIo {
 
         if let Some(p) = self.stderr.as_ref() {
             let pw = p.wr.try_clone()?;
-            cmd.stdout(pw);
+            cmd.stderr(pw);
         }
 
         Ok(())
