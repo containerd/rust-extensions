@@ -21,7 +21,7 @@ ttrpc-codegen = "0.4"
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 log = "0.4"
-simple_logger = { version = "3.0", default-features = false, features = ["stderr"] }
+simple_logger = { version = "4.0", default-features = false, features = ["stderr"] }
 tokio = { version = "1.18", features = ["full"] }
 
 [features]

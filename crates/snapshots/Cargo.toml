@@ -33,7 +33,7 @@ axum-core = ">=0.2.8"
 log = "0.4"
 async-stream = "0.3.2"
 futures = "0.3.17"
-simple_logger = { version  = "3.0", default-features = false }
+simple_logger = { version  = "4.0", default-features = false }
 
 [build-dependencies]
 tonic-build = "0.8"
