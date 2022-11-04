@@ -13,3 +13,11 @@ members = [
 # Keep binary as small as possible
 # https://doc.rust-lang.org/book/ch09-01-unrecoverable-errors-with-panic.html
 panic = 'abort'
+
+# Common for all crates
+# See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#inheriting-a-dependency-from-a-workspace
+[workspace.package]
+license = "Apache-2.0"
+repository = "https://github.com/containerd/rust-extensions"
+homepage = "https://containerd.io"
+edition = "2018"

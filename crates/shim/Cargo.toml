@@ -2,12 +2,13 @@
 name = "containerd-shim"
 version = "0.3.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
-edition = "2018"
-license = "Apache-2.0"
-repository = "https://github.com/containerd/rust-extensions"
 keywords = ["containerd", "shim", "containers"]
 description = "containerd shim extension"
-homepage = "https://containerd.io"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [features]
 async = ["tokio", "containerd-shim-protos/async", "async-trait", "futures", "signal-hook-tokio"]
