@@ -306,7 +306,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
     async fn ps(&self, p: &InitProcess) -> Result<Vec<ProcessInfo>> {
         let pids = self
             .runtime
-            .ps(&*p.id)
+            .ps(&p.id)
             .await
             .map_err(other_error!(e, "failed to execute runc ps"))?;
         Ok(pids

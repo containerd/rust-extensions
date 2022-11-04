@@ -275,7 +275,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
         .stdout(Stdio::null())
         .stdin(Stdio::null())
         .stderr(Stdio::null())
-        .args(&[
+        .args([
             "-namespace",
             &opts.namespace,
             "-id",
@@ -301,9 +301,9 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
 
 fn setup_signals_tokio(config: &Config) -> Signals {
     if config.no_reaper {
-        Signals::new(&[SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed")
+        Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed")
     } else {
-        Signals::new(&[SIGTERM, SIGINT, SIGPIPE, SIGCHLD]).expect("new signal failed")
+        Signals::new([SIGTERM, SIGINT, SIGPIPE, SIGCHLD]).expect("new signal failed")
     }
 }
 

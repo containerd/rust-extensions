@@ -478,7 +478,7 @@ pub fn mount_rootfs(
             // mount with non-propagation first, or remount with changed data
             let oflags = flags.bitand(PROPAGATION_TYPES.not());
             let zero: MsFlags = MsFlags::from_bits(0).unwrap();
-            if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data != None {
+            if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
                 mount(source, target.as_ref(), fs_type, oflags, data).unwrap_or_else(|err| {
                     error!(
                         "Mount {:?} to {} failed: {}",
@@ -567,7 +567,7 @@ pub fn mount_rootfs(
     // mount with non-propagation first, or remount with changed data
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
     let zero: MsFlags = MsFlags::from_bits(0).unwrap();
-    if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data != None {
+    if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
         mount(source, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
             e,
             "Mount {:?} to {}",

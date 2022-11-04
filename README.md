@@ -25,4 +25,5 @@ cargo build --release
 ```
 
 ## Minimum supported Rust version (MSRV)
-Please refer to [rust-toolchain.toml](./rust-toolchain.toml) for minimum supported Rust version.
+The project typically targets the latest stable Rust version.
+Please refer to [rust-toolchain.toml](./rust-toolchain.toml) for exact version currently used by our CIs.
