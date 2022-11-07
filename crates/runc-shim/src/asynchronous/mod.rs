@@ -94,7 +94,7 @@ impl Shim for Service {
         let runtime = read_runtime(&bundle).await?;
 
         let runc = create_runc(
-            &*runtime,
+            &runtime,
             namespace,
             &bundle,
             &opts,
@@ -118,7 +118,7 @@ impl Shim for Service {
     async fn create_task_service(&self, publisher: RemotePublisher) -> Self::T {
         let (tx, rx) = channel(128);
         let exit_clone = self.exit.clone();
-        let task = TaskService::new(&*self.namespace, exit_clone, tx.clone());
+        let task = TaskService::new(&self.namespace, exit_clone, tx.clone());
         let s = monitor_subscribe(Topic::Pid)
             .await
             .expect("monitor subscribe failed");

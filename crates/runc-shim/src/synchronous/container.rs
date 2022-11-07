@@ -140,7 +140,7 @@ where
     pub fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<i8>> {
         let process = self.get_mut_process(exec_id)?;
         let (tx, rx) = sync_channel::<i8>(0);
-        if process.exited_at() == None {
+        if process.exited_at().is_none() {
             process.add_wait(tx);
         }
         Ok(rx)

@@ -2,12 +2,13 @@
 name = "containerd-runc-shim"
 version = "0.1.1"
 authors = ["Shaobao Feng <fshb1988@gmail.com>", "Tianyang Zhang <burning9699@gmail.com>", "The containerd Authors"]
-edition = "2018"
-license = "Apache-2.0"
-repository = "https://github.com/containerd/rust-extensions"
 keywords = ["containerd", "shim", "containers"]
 description = "Rust implementation of containerd's runc v2 shim runtime"
-homepage = "https://containerd.io"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 # Overwrite the binary name so it can be referred as "io.containerd.runc.v2-rs" from containerd.

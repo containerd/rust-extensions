@@ -14,6 +14,10 @@
    limitations under the License.
 */
 
+// No way to derive Eq with tonic :(
+// See https://github.com/hyperium/tonic/issues/1056
+#![allow(clippy::derive_partial_eq_without_eq)]
+
 //! A GRPC client to query containerd's API.
 
 pub use tonic;

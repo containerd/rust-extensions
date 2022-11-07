@@ -49,6 +49,10 @@
 //! ```
 //!
 
+// No way to derive Eq with tonic :(
+// See https://github.com/hyperium/tonic/issues/1056
+#![allow(clippy::derive_partial_eq_without_eq)]
+
 use std::{collections::HashMap, fmt::Debug, ops::AddAssign, time::SystemTime};
 
 pub use tonic;

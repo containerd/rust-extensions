@@ -101,7 +101,7 @@ impl Shim for Service {
         let runtime = read_runtime(&bundle)?;
 
         let runc = create_runc(
-            &*runtime,
+            &runtime,
             namespace,
             &bundle,
             &opts,

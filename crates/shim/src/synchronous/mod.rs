@@ -227,7 +227,7 @@ where
 }
 
 fn setup_signals(config: &Config) -> Signals {
-    let signals = Signals::new(&[SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
+    let signals = Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
     if !config.no_reaper {
         signals.add_signal(SIGCHLD).expect("add signal failed");
     }
@@ -342,7 +342,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
             parent_fd: listener.as_raw_fd(),
             child_fd: SOCKET_FD,
         }])?
-        .args(&[
+        .args([
             "-namespace",
             &opts.namespace,
             "-id",
