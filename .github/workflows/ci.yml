@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: arduino/setup-protoc@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -97,7 +97,7 @@ jobs:
 
     steps:
       - name: Checkout extensions
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - uses: actions/setup-go@v3
         with:
@@ -111,7 +111,7 @@ jobs:
           echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
       - name: Checkout containerd
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: containerd/containerd
           path: src/github.com/containerd/containerd
