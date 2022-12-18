@@ -108,7 +108,7 @@ mod tests {
                 .write(false)
                 .read(true)
                 .create(false)
-                .open(&path1)
+                .open(path1)
                 .unwrap();
         });
 

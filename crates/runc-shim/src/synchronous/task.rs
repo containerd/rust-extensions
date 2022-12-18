@@ -360,7 +360,7 @@ where
         })?;
 
         let resp = ConnectResponse {
-            shim_pid: process::id() as u32,
+            shim_pid: process::id(),
             task_pid: container.pid() as u32,
             ..Default::default()
         };

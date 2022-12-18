@@ -45,7 +45,7 @@ service Events {
 	//
 	// Unlike many other methods in containerd, subscribers will get messages
 	// from all namespaces unless otherwise specified. If this is not desired,
-	// a filter can be provided in the format 'namespace==<namespace>' to
+	// a filter can be provided in the format 'namespace=={namespace}' to
 	// restrict the received events.
 	rpc Subscribe(SubscribeRequest) returns (stream Envelope);
 }

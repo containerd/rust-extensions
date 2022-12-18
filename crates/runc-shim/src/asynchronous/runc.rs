@@ -397,7 +397,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         } else {
             // TODO this is kill from nix crate, it is os specific, maybe have annotated with target os
             kill(
-                Pid::from_raw(p.pid as i32),
+                Pid::from_raw(p.pid),
                 nix::sys::signal::Signal::try_from(signal as i32).unwrap(),
             )
             .map_err(Into::into)
