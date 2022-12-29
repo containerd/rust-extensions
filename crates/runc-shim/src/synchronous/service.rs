@@ -18,7 +18,6 @@
 
 use std::{
     env::current_dir,
-    path::Path,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc,
@@ -27,18 +26,14 @@ use std::{
 
 use containerd_shim as shim;
 use log::{debug, error};
-use runc::options::{DeleteOpts, GlobalOpts, DEFAULT_COMMAND};
+use runc::options::DeleteOpts;
 use shim::{
     api::*,
-    error::{Error, Result},
+    error::Error,
     event::Event,
     io_error,
     monitor::{monitor_subscribe, Subject, Subscription, Topic},
-    other_error,
-    protos::{
-        events::task::TaskExit,
-        protobuf::{Message, MessageDyn},
-    },
+    protos::{events::task::TaskExit, protobuf::MessageDyn},
     publisher::RemotePublisher,
     spawn,
     util::{

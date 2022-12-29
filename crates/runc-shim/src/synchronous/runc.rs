@@ -34,14 +34,14 @@ use nix::{
     sys::{signal::kill, stat::Mode},
     unistd::{mkdir, Pid},
 };
-use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
+use oci_spec::runtime::LinuxResources;
 use runc::{Command, Spawner};
 use shim::{
     api::*,
     console::ConsoleSocket,
     error::{Error, Result},
     io::Stdio,
-    monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscription, Topic},
+    monitor::{monitor_subscribe, wait_pid, Topic},
     mount::mount_rootfs,
     other, other_error,
     protos::{
@@ -345,7 +345,7 @@ impl Container for RuncContainer {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+    fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
         Err(Error::Unimplemented("update".to_string()))
     }
 
