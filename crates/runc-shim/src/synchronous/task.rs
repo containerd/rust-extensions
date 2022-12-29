@@ -262,8 +262,13 @@ where
         Ok(Empty::new())
     }
 
-    fn close_io(&self, _ctx: &TtrpcContext, _req: CloseIORequest) -> TtrpcResult<Empty> {
-        // unnecessary close io here since fd was closed automatically after object was destroyed.
+    fn close_io(&self, _ctx: &TtrpcContext, req: CloseIORequest) -> TtrpcResult<Empty> {
+        let mut containers = self.containers.lock().unwrap();
+        let container = containers
+            .get_mut(&req.id)
+            .ok_or_else(|| Error::Other(format!("can not find container by id {}", &req.id)))?;
+        let exec_id_opt = req.exec_id().none_if(|x| x.is_empty());
+        container.close_io(exec_id_opt)?;
         Ok(Empty::new())
     }
 

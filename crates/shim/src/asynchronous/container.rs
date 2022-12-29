@@ -49,6 +49,7 @@ pub trait Container {
     async fn update(&mut self, resources: &LinuxResources) -> Result<()>;
     async fn stats(&self) -> Result<Metrics>;
     async fn all_processes(&self) -> Result<Vec<ProcessInfo>>;
+    async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()>;
 }
 
 #[async_trait]
@@ -181,6 +182,11 @@ where
 
     async fn all_processes(&self) -> Result<Vec<ProcessInfo>> {
         self.init.ps().await
+    }
+
+    async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
+        let process = self.get_mut_process(exec_id)?;
+        process.close_io().await
     }
 }
 

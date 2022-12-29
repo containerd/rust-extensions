@@ -20,7 +20,10 @@ use std::{
     fs::{File, OpenOptions},
     os::unix::io::{AsRawFd, FromRawFd},
     path::Path,
-    sync::mpsc::{sync_channel, Receiver, SyncSender},
+    sync::{
+        mpsc::{sync_channel, Receiver, SyncSender},
+        Arc, Mutex,
+    },
 };
 
 use containerd_shim as shim;
@@ -65,6 +68,7 @@ pub trait Process {
     fn copy_io(&self) -> Result<()>;
     fn set_pid_from_file(&mut self, pid_path: &Path) -> Result<()>;
     fn resize_pty(&mut self, height: u32, width: u32) -> Result<()>;
+    fn close_io(&self) -> Result<()>;
 }
 
 pub trait Container {
@@ -81,6 +85,7 @@ pub trait Container {
     fn update(&mut self, resources: &LinuxResources) -> Result<()>;
     fn pids(&self) -> Result<PidsResponse>;
     fn id(&self) -> String;
+    fn close_io(&mut self, exec_id: Option<&str>) -> Result<()>;
 }
 
 pub struct CommonContainer<T, E> {
@@ -178,6 +183,7 @@ pub struct CommonProcess {
     pub exited_at: Option<OffsetDateTime>,
     pub wait_chan_tx: Vec<SyncSender<i8>>,
     pub console: Option<Console>,
+    pub stdin: Arc<Mutex<Option<File>>>,
 }
 
 impl Process for CommonProcess {
@@ -260,7 +266,6 @@ impl Process for CommonProcess {
             let f = unsafe { File::from_raw_fd(fd) };
             let stdin = OpenOptions::new()
                 .read(true)
-                .write(true)
                 .open(self.stdio.stdin.as_str())
                 .map_err(io_error!(e, "open stdin"))?;
             spawn_copy_for_tty(stdin, f, None, None);
@@ -322,5 +327,13 @@ impl Process for CommonProcess {
             },
             None => Err(other!("there is no console")),
         }
+    }
+
+    fn close_io(&self) -> Result<()> {
+        let mut lock_guard = self.stdin.lock().unwrap();
+        if let Some(stdin_w) = lock_guard.take() {
+            drop(stdin_w);
+        }
+        Ok(())
     }
 }

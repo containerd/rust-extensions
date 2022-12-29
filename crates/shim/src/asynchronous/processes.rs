@@ -14,7 +14,10 @@
    limitations under the License.
 */
 
-use std::{os::unix::io::AsRawFd, sync::Arc};
+use std::{
+    os::unix::io::AsRawFd,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use containerd_shim_protos::{
@@ -24,7 +27,10 @@ use containerd_shim_protos::{
 };
 use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
-use tokio::sync::oneshot::{channel, Receiver, Sender};
+use tokio::{
+    fs::File,
+    sync::oneshot::{channel, Receiver, Sender},
+};
 
 use crate::{io::Stdio, ioctl_set_winsz, util::asyncify, Console};
 
@@ -43,6 +49,7 @@ pub trait Process {
     async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()>;
     async fn stats(&self) -> crate::Result<Metrics>;
     async fn ps(&self) -> crate::Result<Vec<ProcessInfo>>;
+    async fn close_io(&mut self) -> crate::Result<()>;
 }
 
 #[async_trait]
@@ -65,6 +72,7 @@ pub struct ProcessTemplate<S> {
     pub wait_chan_tx: Vec<Sender<()>>,
     pub console: Option<Console>,
     pub lifecycle: Arc<S>,
+    pub stdin: Arc<Mutex<Option<File>>>,
 }
 
 impl<S> ProcessTemplate<S> {
@@ -79,6 +87,7 @@ impl<S> ProcessTemplate<S> {
             wait_chan_tx: vec![],
             console: None,
             lifecycle: Arc::new(lifecycle),
+            stdin: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -175,5 +184,13 @@ where
 
     async fn ps(&self) -> crate::Result<Vec<ProcessInfo>> {
         self.lifecycle.ps(self).await
+    }
+
+    async fn close_io(&mut self) -> crate::Result<()> {
+        let mut lock_guard = self.stdin.lock().unwrap();
+        if let Some(stdin_w_file) = lock_guard.take() {
+            drop(stdin_w_file);
+        }
+        Ok(())
     }
 }

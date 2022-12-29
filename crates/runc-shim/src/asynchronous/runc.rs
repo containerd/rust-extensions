@@ -22,7 +22,7 @@ use std::{
     },
     path::{Path, PathBuf},
     process::ExitStatus,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
@@ -241,6 +241,7 @@ impl ProcessFactory<ExecProcess> for RuncExecFactory {
                 spec: p,
                 exit_signal: Default::default(),
             }),
+            stdin: Arc::new(Mutex::new(None)),
         })
     }
 }
@@ -402,6 +403,24 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             }
             return Err(runtime_error(&bundle, e, "OCI runtime exec failed").await);
         }
+
+        if !p.stdio.stdin.is_empty() {
+            let stdin_clone = p.stdio.stdin.clone();
+            let stdin_w = p.stdin.clone();
+            // Open the write side in advance to make sure read side will not block,
+            // open it in another thread otherwise it will block too.
+            tokio::spawn(async move {
+                if let Ok(stdin_w_file) = OpenOptions::new()
+                    .write(true)
+                    .open(stdin_clone.as_str())
+                    .await
+                {
+                    let mut lock_guard = stdin_w.lock().unwrap();
+                    *lock_guard = Some(stdin_w_file);
+                }
+            });
+        }
+
         copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         p.pid = pid;
@@ -466,28 +485,12 @@ async fn copy_console(
             .try_clone()
             .await
             .map_err(io_error!(e, "failed to clone console file"))?;
-        let stdin_fut = async {
-            OpenOptions::new()
-                .read(true)
-                .open(stdio.stdin.as_str())
-                .await
-        };
-        let stdin_w_fut = async {
-            OpenOptions::new()
-                .write(true)
-                .open(stdio.stdin.as_str())
-                .await
-        };
-        let (stdin, stdin_w) =
-            tokio::try_join!(stdin_fut, stdin_w_fut).map_err(io_error!(e, "open stdin"))?;
-        spawn_copy(
-            stdin,
-            console_stdin,
-            exit_signal.clone(),
-            Some(move || {
-                drop(stdin_w);
-            }),
-        );
+        let stdin = OpenOptions::new()
+            .read(true)
+            .open(stdio.stdin.as_str())
+            .await
+            .map_err(io_error!(e, "failed to open stdin"))?;
+        spawn_copy(stdin, console_stdin, exit_signal.clone(), None::<fn()>);
     }
 
     if !stdio.stdout.is_empty() {

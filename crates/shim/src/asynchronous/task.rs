@@ -269,8 +269,9 @@ where
         Ok(Empty::new())
     }
 
-    async fn close_io(&self, _ctx: &TtrpcContext, _req: CloseIORequest) -> TtrpcResult<Empty> {
-        // TODO call close_io of container
+    async fn close_io(&self, _ctx: &TtrpcContext, req: CloseIORequest) -> TtrpcResult<Empty> {
+        let mut container = self.get_container(req.id()).await?;
+        container.close_io(req.exec_id().as_option()).await?;
         Ok(Empty::new())
     }
 
