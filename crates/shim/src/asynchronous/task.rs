@@ -344,7 +344,7 @@ where
         let container = self.get_container(req.id()).await?;
 
         Ok(ConnectResponse {
-            shim_pid: std::process::id() as u32,
+            shim_pid: std::process::id(),
             task_pid: container.pid().await as u32,
             ..Default::default()
         })
