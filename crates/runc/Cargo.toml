@@ -17,7 +17,7 @@ async = ["tokio", "async-trait", "futures", "tokio-pipe"]
 [dependencies]
 libc = "0.2.112"
 log = "0.4.14"
-nix = "0.25"
+nix = "0.26"
 oci-spec = "0.5.4"
 path-absolutize = "3.0.11"
 rand = "0.8.4"
