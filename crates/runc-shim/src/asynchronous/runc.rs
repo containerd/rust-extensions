@@ -52,12 +52,12 @@ use oci_spec::runtime::{LinuxResources, Process};
 use runc::{Command, Runc, Spawner};
 use tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncRead, AsyncReadExt, AsyncWrite},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
 };
 
 use crate::common::{
     check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket, CreateConfig,
-    ProcessIO, ShimExecutor, INIT_PID_FILE,
+    Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
 };
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
@@ -171,12 +171,39 @@ impl RuncFactory {
             if let Some(s) = socket {
                 s.clean().await;
             }
-            return Err(other!("failed to create runc container: {}", e));
+            return Err(runtime_error(bundle, e, "OCI runtime create failed").await);
         }
         copy_io_or_console(init, socket, pio, init.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         init.pid = pid;
         Ok(())
+    }
+}
+
+// runtime_error will read the OCI runtime logfile retrieving OCI runtime error
+pub async fn runtime_error(bundle: &str, e: runc::error::Error, msg: &str) -> Error {
+    let mut rt_msg = String::new();
+    match File::open(Path::new(bundle).join(LOG_JSON_FILE)).await {
+        Err(err) => other!("{}: unable to open OCI runtime log file){}", msg, err),
+        Ok(file) => {
+            let mut lines = BufReader::new(file).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Retrieve the last runtime error
+                match serde_json::from_str::<Log>(&line) {
+                    Err(err) => return other!("{}: unable to parse log msg: {}", msg, err),
+                    Ok(log) => {
+                        if log.level == "error" {
+                            rt_msg = log.msg.trim().to_string();
+                        }
+                    }
+                }
+            }
+            if !rt_msg.is_empty() {
+                other!("{}: {}", msg, rt_msg)
+            } else {
+                other!("{}: (no OCI runtime error in logfile) {}", msg, e)
+            }
+        }
     }
 }
 
@@ -228,10 +255,9 @@ pub struct RuncInitLifecycle {
 #[async_trait]
 impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
     async fn start(&self, p: &mut InitProcess) -> containerd_shim::Result<()> {
-        self.runtime
-            .start(p.id.as_str())
-            .await
-            .map_err(other_error!(e, "failed start"))?;
+        if let Err(e) = self.runtime.start(p.id.as_str()).await {
+            return Err(runtime_error(&p.lifecycle.bundle, e, "OCI runtime start failed").await);
+        }
         p.state = Status::RUNNING;
         Ok(())
     }
@@ -253,20 +279,20 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
     }
 
     async fn delete(&self, p: &mut InitProcess) -> containerd_shim::Result<()> {
-        self.runtime
+        if let Err(e) = self
+            .runtime
             .delete(
                 p.id.as_str(),
                 Some(&runc::options::DeleteOpts { force: true }),
             )
             .await
-            .or_else(|e| {
-                if !e.to_string().to_lowercase().contains("does not exist") {
-                    Err(e)
-                } else {
-                    Ok(())
-                }
-            })
-            .map_err(other_error!(e, "failed delete"))?;
+        {
+            if !e.to_string().to_lowercase().contains("does not exist") {
+                return Err(
+                    runtime_error(&p.lifecycle.bundle, e, "OCI runtime delete failed").await,
+                );
+            }
+        }
         self.exit_signal.signal();
         Ok(())
     }
@@ -348,7 +374,8 @@ pub struct RuncExecLifecycle {
 #[async_trait]
 impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
-        let pid_path = Path::new(self.bundle.as_str()).join(format!("{}.pid", &p.id));
+        let bundle = self.bundle.to_string();
+        let pid_path = Path::new(&bundle).join(format!("{}.pid", &p.id));
         let mut exec_opts = runc::options::ExecOpts {
             io: None,
             pid_file: Some(pid_path.to_owned()),
@@ -373,7 +400,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             if let Some(s) = socket {
                 s.clean().await;
             }
-            return Err(other!("failed to start runc exec: {}", e));
+            return Err(runtime_error(&bundle, e, "OCI runtime exec failed").await);
         }
         copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
@@ -673,5 +700,47 @@ async fn wait_pid(pid: i32, s: Subscription) -> i32 {
                 return code;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{os::unix::process::ExitStatusExt, path::Path, process::ExitStatus};
+
+    use containerd_shim::util::{mkdir, write_str_to_file};
+    use runc::error::Error::CommandFailed;
+    use tokio::fs::remove_dir_all;
+
+    use crate::{asynchronous::runc::runtime_error, common::LOG_JSON_FILE};
+
+    #[tokio::test]
+    async fn test_runtime_error() {
+        let empty_err = CommandFailed {
+            status: ExitStatus::from_raw(1),
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+        };
+        let log_json = "\
+        {\"level\":\"info\",\"msg\":\"hello world\",\"time\":\"2022-11-25\"}\n\
+        {\"level\":\"error\",\"msg\":\"failed error\",\"time\":\"2022-11-26\"}\n\
+        {\"level\":\"error\",\"msg\":\"panic\",\"time\":\"2022-11-27\"}\n\
+        ";
+        let test_dir = "/tmp/shim-test";
+        let _ = mkdir(test_dir, 0o744).await;
+        write_str_to_file(Path::new(test_dir).join(LOG_JSON_FILE).as_path(), log_json)
+            .await
+            .expect("write log json should not be error");
+
+        let expectd_msg = "panic";
+        let actual_err = runtime_error(test_dir, empty_err, "").await;
+        remove_dir_all(test_dir)
+            .await
+            .expect("remove test dir should not be error");
+        assert!(
+            actual_err.to_string().contains(expectd_msg),
+            "actual error \"{}\" should contains \"{}\"",
+            actual_err,
+            expectd_msg
+        );
     }
 }

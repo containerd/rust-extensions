@@ -37,12 +37,20 @@ use runc::{
     options::GlobalOpts,
     Runc, Spawner,
 };
+use serde::Deserialize;
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",
     "io.kubernetes.cri.sandbox-id",
 ];
 pub const INIT_PID_FILE: &str = "init.pid";
+pub const LOG_JSON_FILE: &str = "log.json";
+
+#[derive(Deserialize)]
+pub struct Log {
+    pub level: String,
+    pub msg: String,
+}
 
 pub struct ProcessIO {
     pub uri: Option<String>,
@@ -156,7 +164,7 @@ pub fn create_runc(
     })
     .join(namespace);
 
-    let log = bundle.as_ref().join("log.json");
+    let log = bundle.as_ref().join(LOG_JSON_FILE);
     let mut gopts = GlobalOpts::default()
         .command(runtime)
         .root(root)

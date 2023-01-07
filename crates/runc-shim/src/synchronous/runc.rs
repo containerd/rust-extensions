@@ -17,7 +17,8 @@
 
 use std::{
     convert::TryFrom,
-    io::Read,
+    fs::File,
+    io::{BufRead, BufReader, Read},
     os::unix::prelude::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -56,7 +57,10 @@ use time::OffsetDateTime;
 
 use crate::{
     common,
-    common::{create_io, has_shared_pid_namespace, CreateConfig, ShimExecutor, INIT_PID_FILE},
+    common::{
+        create_io, has_shared_pid_namespace, CreateConfig, Log, ShimExecutor, INIT_PID_FILE,
+        LOG_JSON_FILE,
+    },
     synchronous::container::{
         CommonContainer, CommonProcess, Container, ContainerFactory, Process,
     },
@@ -155,6 +159,7 @@ pub(crate) struct RuncContainer {
 impl Container for RuncContainer {
     fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
         let id = self.id();
+        let bundle = self.common.bundle.to_string();
         match exec_id {
             Some(exec_id) => {
                 let process = self
@@ -162,8 +167,7 @@ impl Container for RuncContainer {
                     .processes
                     .get_mut(exec_id)
                     .ok_or_else(|| other!("can not find the exec by id"))?;
-                let pid_path = Path::new(self.common.bundle.as_str())
-                    .join(format!("{}.pid", &process.common.id));
+                let pid_path = Path::new(&bundle).join(format!("{}.pid", &process.common.id));
 
                 let mut exec_opts = runc::options::ExecOpts {
                     io: None,
@@ -199,7 +203,7 @@ impl Container for RuncContainer {
                     .init
                     .runtime
                     .exec(&id, &process.spec, Some(&exec_opts))
-                    .map_err(other_error!(e, "failed exec"))?;
+                    .map_err(|e| runtime_error(&bundle, e, "OCI runtime exec failed"))?;
                 if process.common.stdio.terminal {
                     let console_socket =
                         socket.ok_or_else(|| other!("failed to get console socket"))?;
@@ -217,7 +221,7 @@ impl Container for RuncContainer {
                     .init
                     .runtime
                     .start(&id)
-                    .map_err(other_error!(e, "failed start"))?;
+                    .map_err(|e| runtime_error(&bundle, e, "OCI runtime start failed"))?;
                 self.common.init.common.set_status(Status::RUNNING);
                 Ok(self.pid())
             }
@@ -274,12 +278,15 @@ impl Container for RuncContainer {
                     )
                     .or_else(|e| {
                         if !e.to_string().to_lowercase().contains("does not exist") {
-                            Err(e)
+                            Err(runtime_error(
+                                &self.common.bundle,
+                                e,
+                                "OCI runtime delete failed",
+                            ))
                         } else {
                             Ok(())
                         }
-                    })
-                    .map_err(other_error!(e, "failed delete"))?;
+                    })?;
             }
         };
         Ok((pid, code, exited_at))
@@ -457,7 +464,7 @@ impl InitProcess {
 
         self.runtime
             .create(&id, &bundle, Some(&create_opts))
-            .map_err(other_error!(e, "failed create"))?;
+            .map_err(|e| runtime_error(&bundle, e, "OCI runtime create failed"))?;
         if terminal {
             let console_socket = socket.ok_or_else(|| other!("failed to get console socket"))?;
             let console = self.common.copy_console(&console_socket)?;
@@ -679,4 +686,72 @@ where
         return out;
     }
     "".to_string()
+}
+
+// runtime_error will read the OCI runtime logfile retrieving OCI runtime error
+pub fn runtime_error(bundle: &str, e: runc::error::Error, msg: &str) -> Error {
+    let mut rt_msg = String::new();
+    match File::open(Path::new(bundle).join(LOG_JSON_FILE)) {
+        Err(err) => other!("{}: unable to open OCI runtime log file){}", msg, err),
+        Ok(file) => {
+            let mut lines = BufReader::new(file).lines();
+            while let Some(Ok(line)) = lines.next() {
+                // Retrieve the last runtime error
+                match serde_json::from_str::<Log>(&line) {
+                    Err(err) => return other!("{}: unable to parse log msg: {}", msg, err),
+                    Ok(log) => {
+                        if log.level == "error" {
+                            rt_msg = log.msg.trim().to_string();
+                        }
+                    }
+                }
+            }
+            if !rt_msg.is_empty() {
+                other!("{}: {}", msg, rt_msg)
+            } else {
+                other!("{}: (no OCI runtime error in logfile) {}", msg, e)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::remove_dir_all, os::unix::process::ExitStatusExt, path::Path, process::ExitStatus,
+    };
+
+    use containerd_shim::util::{mkdir, write_str_to_path};
+    use nix::sys::stat::Mode;
+    use runc::error::Error::CommandFailed;
+
+    use crate::{common::LOG_JSON_FILE, synchronous::runc::runtime_error};
+
+    #[test]
+    fn test_runtime_error() {
+        let empty_err = CommandFailed {
+            status: ExitStatus::from_raw(1),
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+        };
+        let log_json = "\
+        {\"level\":\"info\",\"msg\":\"hello world\",\"time\":\"2022-11-25\"}\n\
+        {\"level\":\"error\",\"msg\":\"failed error\",\"time\":\"2022-11-26\"}\n\
+        {\"level\":\"error\",\"msg\":\"panic\",\"time\":\"2022-11-27\"}\n\
+        ";
+        let test_dir = "/tmp/shim-test";
+        mkdir(test_dir, 0o744);
+        write_str_to_path(Path::new(test_dir).join(LOG_JSON_FILE).as_path(), log_json)
+            .expect("write log json should not be error");
+
+        let expectd_msg = "panic";
+        let actual_err = runtime_error(test_dir, empty_err, "");
+        remove_dir_all(test_dir).expect("remove test dir should not be error");
+        assert!(
+            actual_err.to_string().contains(expectd_msg),
+            "actual error \"{}\" should contains \"{}\"",
+            actual_err,
+            expectd_msg
+        );
+    }
 }
