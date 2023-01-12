@@ -51,7 +51,7 @@ use nix::{sys::signal::kill, unistd::Pid};
 use oci_spec::runtime::{LinuxResources, Process};
 use runc::{Command, Runc, Spawner};
 use tokio::{
-    fs::{File, OpenOptions},
+    fs::{remove_file, File, OpenOptions},
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
 };
 
@@ -431,8 +431,10 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         }
     }
 
-    async fn delete(&self, _p: &mut ExecProcess) -> containerd_shim::Result<()> {
+    async fn delete(&self, p: &mut ExecProcess) -> Result<()> {
         self.exit_signal.signal();
+        let exec_pid_path = Path::new(self.bundle.as_str()).join(format!("{}.pid", p.id));
+        remove_file(exec_pid_path).await.unwrap_or_default();
         Ok(())
     }
 

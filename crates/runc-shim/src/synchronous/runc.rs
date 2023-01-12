@@ -17,7 +17,7 @@
 
 use std::{
     convert::TryFrom,
-    fs::File,
+    fs::{remove_file, File},
     io::{BufRead, BufReader, Read},
     os::unix::prelude::ExitStatusExt,
     path::{Path, PathBuf},
@@ -267,6 +267,9 @@ impl Container for RuncContainer {
         match exec_id_opt {
             Some(exec_id) => {
                 self.common.processes.remove(exec_id);
+                let exec_pid_path =
+                    Path::new(self.common.bundle.as_str()).join(format!("{}.pid", exec_id));
+                remove_file(exec_pid_path).unwrap_or_default();
             }
             None => {
                 self.common
