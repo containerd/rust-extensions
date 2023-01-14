@@ -79,7 +79,7 @@ pub mod api {
 }
 
 /// Snapshot kinds.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum Kind {
     Unknown,
     View,
