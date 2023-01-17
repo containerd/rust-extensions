@@ -17,14 +17,14 @@
 
 use std::{
     convert::TryFrom,
-    fs::{remove_file, File},
+    fs::{remove_file, File, OpenOptions},
     io::{BufRead, BufReader, Read},
     os::unix::prelude::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
     sync::{
         mpsc::{Receiver, SyncSender},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -34,14 +34,14 @@ use nix::{
     sys::{signal::kill, stat::Mode},
     unistd::{mkdir, Pid},
 };
-use oci_spec::runtime::{LinuxNamespaceType, LinuxResources};
+use oci_spec::runtime::LinuxResources;
 use runc::{Command, Spawner};
 use shim::{
     api::*,
     console::ConsoleSocket,
     error::{Error, Result},
     io::Stdio,
-    monitor::{monitor_subscribe, wait_pid, ExitEvent, Subject, Subscription, Topic},
+    monitor::{monitor_subscribe, wait_pid, Topic},
     mount::mount_rootfs,
     other, other_error,
     protos::{
@@ -203,7 +203,23 @@ impl Container for RuncContainer {
                     .init
                     .runtime
                     .exec(&id, &process.spec, Some(&exec_opts))
-                    .map_err(|e| runtime_error(&bundle, e, "OCI runtime exec failed"))?;
+                    .map_err(other_error!(e, "failed exec"))?;
+
+                if !process.common.stdio.stdin.is_empty() {
+                    let stdin_clone = process.common.stdio.stdin.clone();
+                    let stdin_w = process.common.stdin.clone();
+                    // Open the write side in advance to make sure read side will not block,
+                    // open it in another thread otherwise it will block too.
+                    std::thread::spawn(move || {
+                        if let Ok(stdin_w_file) =
+                            OpenOptions::new().write(true).open(stdin_clone.as_str())
+                        {
+                            let mut lock_guard = stdin_w.lock().unwrap();
+                            *lock_guard = Some(stdin_w_file);
+                        }
+                    });
+                }
+
                 if process.common.stdio.terminal {
                     let console_socket =
                         socket.ok_or_else(|| other!("failed to get console socket"))?;
@@ -329,7 +345,7 @@ impl Container for RuncContainer {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+    fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
         Err(Error::Unimplemented("update".to_string()))
     }
 
@@ -367,6 +383,11 @@ impl Container for RuncContainer {
 
     fn id(&self) -> String {
         self.common.id.to_string()
+    }
+
+    fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
+        let p = self.common.get_mut_process(exec_id)?;
+        p.close_io()
     }
 }
 
@@ -424,6 +445,7 @@ impl InitProcess {
                 exited_at: None,
                 wait_chan_tx: vec![],
                 console: None,
+                stdin: Arc::new(Mutex::new(None)),
             },
             bundle: bundle.to_string(),
             runtime,
@@ -548,6 +570,10 @@ impl Process for InitProcess {
     fn resize_pty(&mut self, height: u32, width: u32) -> Result<()> {
         self.common.resize_pty(height, width)
     }
+
+    fn close_io(&self) -> Result<()> {
+        self.common.close_io()
+    }
 }
 
 pub(crate) struct ExecProcess {
@@ -623,6 +649,10 @@ impl Process for ExecProcess {
     fn resize_pty(&mut self, height: u32, width: u32) -> Result<()> {
         self.common.resize_pty(height, width)
     }
+
+    fn close_io(&self) -> Result<()> {
+        self.common.close_io()
+    }
 }
 
 impl TryFrom<ExecProcessRequest> for ExecProcess {
@@ -645,6 +675,7 @@ impl TryFrom<ExecProcessRequest> for ExecProcess {
                 exited_at: None,
                 wait_chan_tx: vec![],
                 console: None,
+                stdin: Arc::new(Mutex::new(None)),
             },
             spec: p,
         };
