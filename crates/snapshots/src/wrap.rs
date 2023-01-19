@@ -16,9 +16,9 @@
 
 //! Trait wrapper to server GRPC requests.
 
-use std::convert::TryInto;
+use std::{convert::TryInto, mem, sync::Arc};
 
-use tokio_stream::wrappers::ReceiverStream;
+use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
     api::snapshots::v1::{
@@ -29,11 +29,11 @@ use crate::{
 };
 
 pub struct Wrapper<S: Snapshotter> {
-    snapshotter: S,
+    snapshotter: Arc<S>,
 }
 
 /// Helper to create snapshots server from any object that implements [Snapshotter] trait.
-pub fn server<S: Snapshotter>(snapshotter: S) -> SnapshotsServer<Wrapper<S>> {
+pub fn server<S: Snapshotter>(snapshotter: Arc<S>) -> SnapshotsServer<Wrapper<S>> {
     SnapshotsServer::new(Wrapper { snapshotter })
 }
 
@@ -154,13 +154,29 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
         Ok(tonic::Response::new(message))
     }
 
-    type ListStream = ReceiverStream<Result<ListSnapshotsResponse, tonic::Status>>;
+    type ListStream = BoxStream<Result<ListSnapshotsResponse, tonic::Status>, 'static>;
 
     async fn list(
         &self,
         _request: tonic::Request<ListSnapshotsRequest>,
     ) -> Result<tonic::Response<Self::ListStream>, tonic::Status> {
-        Err(tonic::Status::unimplemented("not implemented"))
+        let sn = self.snapshotter.clone();
+        let output = async_stream::try_stream! {
+            let walk_stream = sn.list().await?;
+            pin_utils::pin_mut!(walk_stream);
+            let mut infos = Vec::<Info>::new();
+            while let Some(info) = walk_stream.next().await {
+                infos.push(info?.into());
+                if infos.len() >= 100 {
+                    yield ListSnapshotsResponse { info: mem::take(&mut infos) };
+                }
+            }
+
+            if !infos.is_empty() {
+                yield ListSnapshotsResponse { info: infos };
+            }
+        };
+        Ok(tonic::Response::new(Box::pin(output)))
     }
 
     async fn usage(
