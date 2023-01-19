@@ -154,7 +154,7 @@ pub trait Snapshotter: Send + Sync + 'static {
     /// Error type returned from the underlying snapshotter implementation.
     ///
     /// This type must be convertable to GRPC status.
-    type Error: Debug;
+    type Error: Debug + Into<tonic::Status>;
 
     /// Returns the info for an active or committed snapshot by name or key.
     ///
