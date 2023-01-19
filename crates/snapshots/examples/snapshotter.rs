@@ -28,7 +28,7 @@ struct Example;
 
 #[snapshots::tonic::async_trait]
 impl snapshots::Snapshotter for Example {
-    type Error = String;
+    type Error = snapshots::tonic::Status;
 
     async fn stat(&self, key: String) -> Result<Info, Self::Error> {
         info!("Stat: {}", key);

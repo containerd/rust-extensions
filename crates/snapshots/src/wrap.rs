@@ -16,7 +16,7 @@
 
 //! Trait wrapper to server GRPC requests.
 
-use std::{convert::TryInto, fmt::Debug};
+use std::{convert::TryInto};
 
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -54,7 +54,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
                 let message = PrepareSnapshotResponse { mounts };
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -73,7 +73,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
                 let message = ViewSnapshotResponse { mounts };
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -88,7 +88,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
                 let message = MountsResponse { mounts };
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -104,7 +104,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
             .await
         {
             Ok(_) => Ok(tonic::Response::new(())),
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -116,7 +116,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
 
         match self.snapshotter.remove(request.key).await {
             Ok(_) => Ok(tonic::Response::new(())),
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -134,7 +134,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
 
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -167,7 +167,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
 
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -195,7 +195,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
 
                 Ok(tonic::Response::new(message))
             }
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -205,12 +205,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
     ) -> Result<tonic::Response<()>, tonic::Status> {
         match self.snapshotter.clear().await {
             Ok(_) => Ok(tonic::Response::new(())),
-            Err(err) => Err(status(err)),
+            Err(err) => Err(err.into()),
         }
     }
-}
-
-fn status<E: Debug>(err: E) -> tonic::Status {
-    let message = format!("{:?}", err);
-    tonic::Status::internal(message)
 }
