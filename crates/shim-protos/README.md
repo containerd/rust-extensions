@@ -11,7 +11,7 @@ TTRPC bindings for containerd's shim events and interfaces.
 
 The `containerd-shim-protos` crate provides [Protobuf](https://github.com/protocolbuffers/protobuf.git) message
 and [TTRPC](https://github.com/containerd/ttrpc.git) service definitions for the
-[Containerd shim v2](https://github.com/containerd/containerd/blob/main/runtime/v2/task/shim.proto) protocol.
+[Containerd shim v2](https://github.com/containerd/containerd/blob/main/api/runtime/task/v2/shim.proto) protocol.
 
 ## Usage
 Add `containerd-shim-client` as a dependency in your `Cargo.toml`
