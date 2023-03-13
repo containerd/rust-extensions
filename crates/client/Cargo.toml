@@ -15,8 +15,8 @@ homepage.workspace = true
 tonic = "0.8"
 prost = "0.11"
 prost-types = "0.11"
-tokio = { version = "1.18", optional = true }
-tower = { version = "0.4", optional = true }
+tokio = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
 
 # tonic v0.8.1 depends on axum-core v0.2.2, which has security vulnerability:
 #  = ID: RUSTSEC-2022-0055

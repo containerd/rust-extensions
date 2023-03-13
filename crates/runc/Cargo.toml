@@ -30,7 +30,7 @@ uuid = { version = "1.0.0", features = ["v4"] }
 os_pipe = "1.0.0"
 
 # Async dependencies
-tokio = { version = "1.15.0", features = ["full"], optional = true }
-async-trait = { version = "0.1.52", optional = true }
-futures = { version = "0.3.19", optional = true }
-tokio-pipe = {version="0.2.10", optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+async-trait = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio-pipe = { version="0.2.10", optional = true }

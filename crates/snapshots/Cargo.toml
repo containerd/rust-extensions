@@ -16,7 +16,7 @@ thiserror = "1.0"
 tonic = "0.8"
 prost = "0.11"
 prost-types = "0.11"
-tokio = { version = "1.18", features = ["sync"] }
+tokio = { workspace = true, features = ["sync"] }
 tokio-stream = "0.1.8"
 
 # tonic v0.8.1 depends on axum-core v0.2.2, which has security vulnerability:
@@ -33,7 +33,7 @@ axum-core = ">=0.2.8"
 [dev-dependencies]
 log = "0.4"
 async-stream = "0.3.2"
-futures = "0.3.17"
+futures.workspace = true
 simple_logger = { version  = "4.0", default-features = false }
 
 [build-dependencies]
