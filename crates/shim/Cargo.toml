@@ -31,7 +31,7 @@ serde_derive = "1.0.136"
 serde = "1.0.136"
 uuid = { version = "1.0.0", features = ["v4"] }
 signal-hook = "0.3.13"
-oci-spec = "0.5.8"
+oci-spec = "0.6.0"
 prctl = "1.0.0"
 page_size = "0.5.0"
 regex = "1"
