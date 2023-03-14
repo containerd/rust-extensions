@@ -38,10 +38,10 @@ regex = "1"
 
 containerd-shim-protos = { path = "../shim-protos", version = "0.2.0" }
 
-async-trait = { version = "0.1.51", optional = true }
-tokio = { version = "1.17.0", features = ["full"], optional = true }
-futures = {version = "0.3.21", optional = true}
-signal-hook-tokio = {version = "0.3.1", optional = true, features = ["futures-v0_3"]}
+async-trait = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+futures = { workspace = true, optional = true}
+signal-hook-tokio = { version = "0.3.1", optional = true, features = ["futures-v0_3"]}
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.2.9"
