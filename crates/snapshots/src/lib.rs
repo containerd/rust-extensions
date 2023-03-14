@@ -55,6 +55,7 @@
 
 use std::{collections::HashMap, fmt::Debug, ops::AddAssign, time::SystemTime};
 
+use serde::{Deserialize, Serialize};
 pub use tonic;
 
 mod convert;
@@ -78,7 +79,7 @@ pub mod api {
 }
 
 /// Snapshot kinds.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Kind {
     Unknown,
     View,
@@ -93,7 +94,7 @@ impl Default for Kind {
 }
 
 /// Information about a particular snapshot.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Info {
     /// Active or committed snapshot.
     pub kind: Kind,

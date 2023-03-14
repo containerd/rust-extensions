@@ -18,6 +18,7 @@ prost = "0.11"
 prost-types = "0.11"
 tokio = { workspace = true, features = ["sync"] }
 tokio-stream = "0.1.8"
+serde = { version = "1.0", features = ["derive"] }
 
 # tonic v0.8.1 depends on axum-core v0.2.2, which has security vulnerability:
 #  = ID: RUSTSEC-2022-0055
