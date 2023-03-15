@@ -44,7 +44,7 @@ futures = { workspace = true, optional = true}
 signal-hook-tokio = { version = "0.3.1", optional = true, features = ["futures-v0_3"]}
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.2.9"
+cgroups-rs = "0.3.2"
 
 [dev-dependencies]
 tempfile = "3.0"
