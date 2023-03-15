@@ -59,11 +59,9 @@ use crate::{
 };
 
 pub mod console;
-pub mod container;
 pub mod monitor;
 pub mod processes;
 pub mod publisher;
-pub mod task;
 pub mod util;
 
 /// Asynchronous Main shim interface that must be implemented by all async shims.

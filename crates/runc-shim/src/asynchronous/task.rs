@@ -17,35 +17,33 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use containerd_shim_protos::{
-    api::{
-        CloseIORequest, ConnectRequest, ConnectResponse, DeleteResponse, PidsRequest, PidsResponse,
-        StatsRequest, StatsResponse, UpdateTaskRequest,
-    },
-    events::task::{TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart},
-    protobuf::MessageDyn,
-    shim_async::Task,
-    ttrpc,
-    ttrpc::r#async::TtrpcContext,
-};
-use log::{debug, info, warn};
-use oci_spec::runtime::LinuxResources;
-use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
-
-use crate::{
+use containerd_shim::{
     api::{
         CreateTaskRequest, CreateTaskResponse, DeleteRequest, Empty, ExecProcessRequest,
         KillRequest, ResizePtyRequest, ShutdownRequest, StartRequest, StartResponse, StateRequest,
         StateResponse, Status, WaitRequest, WaitResponse,
     },
-    asynchronous::{
-        container::{Container, ContainerFactory},
-        ExitSignal,
-    },
+    asynchronous::ExitSignal,
     event::Event,
+    protos::{
+        api::{
+            CloseIORequest, ConnectRequest, ConnectResponse, DeleteResponse, PidsRequest,
+            PidsResponse, StatsRequest, StatsResponse, UpdateTaskRequest,
+        },
+        events::task::{TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart},
+        protobuf::MessageDyn,
+        shim_async::Task,
+        ttrpc,
+        ttrpc::r#async::TtrpcContext,
+    },
     util::{convert_to_any, convert_to_timestamp, AsOption},
     TtrpcResult,
 };
+use log::{debug, info, warn};
+use oci_spec::runtime::LinuxResources;
+use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
+
+use super::container::{Container, ContainerFactory};
 
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 
