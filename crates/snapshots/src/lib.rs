@@ -56,6 +56,7 @@
 use std::{collections::HashMap, fmt::Debug, ops::AddAssign, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
+use tokio_stream::Stream;
 pub use tonic;
 
 mod convert;
@@ -155,7 +156,7 @@ pub trait Snapshotter: Send + Sync + 'static {
     /// Error type returned from the underlying snapshotter implementation.
     ///
     /// This type must be convertable to GRPC status.
-    type Error: Debug + Into<tonic::Status>;
+    type Error: Debug + Into<tonic::Status> + Send;
 
     /// Returns the info for an active or committed snapshot by name or key.
     ///
@@ -261,4 +262,26 @@ pub trait Snapshotter: Send + Sync + 'static {
     async fn clear(&self) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    /// The type of the stream that returns all snapshots.
+    ///
+    /// An instance of this type is returned by [`Snapshotter::list`] on success.
+    type InfoStream: Stream<Item = Result<Info, Self::Error>> + Send + 'static;
+
+    /// Returns a stream containing all snapshots.
+    ///
+    /// Once `type_alias_impl_trait` is stabilized or if the implementer is willing to use unstable
+    /// features, this function can be implemented using `try_stream` and `yield`. For example, a
+    /// function that lists a single snapshot with the default values would be implemented as
+    /// follows:
+    ///
+    ///```ignore
+    ///     type InfoStream = impl Stream<Item = Result<Info, Self::Error>> + Send + 'static;
+    ///     fn list(&self) -> Result<Self::InfoStream, Self::Error> {
+    ///         Ok(async_stream::try_stream! {
+    ///             yield Info::default();
+    ///         })
+    ///     }
+    /// ```
+    async fn list(&self) -> Result<Self::InfoStream, Self::Error>;
 }

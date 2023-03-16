@@ -14,7 +14,13 @@
    limitations under the License.
 */
 
-use std::{collections::HashMap, env};
+use std::{
+    collections::HashMap,
+    env,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use containerd_snapshots as snapshots;
 use containerd_snapshots::{api, Info, Usage};
@@ -22,6 +28,7 @@ use futures::TryFutureExt;
 use log::info;
 use snapshots::tonic::transport::Server;
 use tokio::net::UnixListener;
+use tokio_stream::Stream;
 
 #[derive(Default)]
 struct Example;
@@ -91,6 +98,20 @@ impl snapshots::Snapshotter for Example {
         info!("Remove: {}", key);
         Ok(())
     }
+
+    type InfoStream = EmptyStream;
+    async fn list(&self) -> Result<Self::InfoStream, Self::Error> {
+        // Returns no snapshots.
+        Ok(EmptyStream)
+    }
+}
+
+struct EmptyStream;
+impl Stream for EmptyStream {
+    type Item = Result<Info, snapshots::tonic::Status>;
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(None)
+    }
 }
 
 #[cfg(unix)]
@@ -121,7 +142,7 @@ async fn main() {
     };
 
     Server::builder()
-        .add_service(snapshots::server(example))
+        .add_service(snapshots::server(Arc::new(example)))
         .serve_with_incoming(incoming)
         .await
         .expect("Serve failed");
