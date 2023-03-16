@@ -108,7 +108,6 @@ cfg_not_async! {
 
 cfg_async! {
     pub use crate::asynchronous::*;
-    pub use crate::asynchronous::processes;
     pub use crate::asynchronous::publisher;
     pub use protos::shim_async::Task;
     pub use protos::ttrpc::r#async::TtrpcContext;

@@ -21,7 +21,6 @@ use async_trait::async_trait;
 use containerd_shim::{
     asynchronous::{
         monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
-        processes::Process,
         publisher::RemotePublisher,
         spawn, ExitSignal, Shim,
     },
@@ -44,10 +43,12 @@ use crate::{
 
 mod console;
 mod container;
+mod processes;
 mod runc;
 mod task;
 
 use container::Container;
+use processes::Process;
 use task::TaskService;
 
 pub(crate) struct Service {

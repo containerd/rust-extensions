@@ -59,7 +59,6 @@ use crate::{
 };
 
 pub mod monitor;
-pub mod processes;
 pub mod publisher;
 pub mod util;
 
