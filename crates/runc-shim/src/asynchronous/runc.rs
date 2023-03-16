@@ -30,7 +30,6 @@ use containerd_shim::{
     api::{CreateTaskRequest, ExecProcessRequest, Options, Status},
     asynchronous::{
         console::ConsoleSocket,
-        container::{ContainerFactory, ContainerTemplate, ProcessFactory},
         monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
         processes::{ProcessLifecycle, ProcessTemplate},
     },
@@ -55,6 +54,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
 };
 
+use super::container::{ContainerFactory, ContainerTemplate, ProcessFactory};
 use crate::common::{
     check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket, CreateConfig,
     Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
