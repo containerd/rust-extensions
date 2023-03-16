@@ -17,6 +17,7 @@
 #[cfg(feature = "async")]
 mod asynchronous;
 mod common;
+mod io;
 #[cfg(not(feature = "async"))]
 mod synchronous;
 

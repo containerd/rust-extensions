@@ -61,7 +61,6 @@ mod args;
 pub mod asynchronous;
 pub mod cgroup;
 pub mod event;
-pub mod io;
 mod logger;
 pub mod monitor;
 pub mod mount;

@@ -18,7 +18,6 @@ use std::{env, io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
-    io::Stdio,
     io_error, other, other_error,
     util::IntoOption,
     Error,
@@ -38,6 +37,8 @@ use runc::{
     Runc, Spawner,
 };
 use serde::Deserialize;
+
+use super::io::Stdio;
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",

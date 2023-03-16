@@ -22,13 +22,12 @@ use std::{
 
 use containerd_shim::{
     error::{Error, Result},
-    io::Stdio,
     io_error,
 };
 use crossbeam::sync::WaitGroup;
 use log::debug;
 
-use crate::common::ProcessIO;
+use crate::{common::ProcessIO, io::Stdio};
 
 const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 

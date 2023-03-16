@@ -32,7 +32,6 @@ use oci_spec::runtime::LinuxResources;
 use shim::{
     api::*,
     error::{Error, Result},
-    io::Stdio,
     io_error, ioctl_set_winsz, other, other_error,
     protos::cgroups::metrics::Metrics,
     util::{convert_to_timestamp, read_pid_from_file},
@@ -43,6 +42,7 @@ use time::OffsetDateTime;
 use super::console::ConsoleSocket;
 use crate::{
     common::{receive_socket, ProcessIO},
+    io::Stdio,
     synchronous::io::spawn_copy_for_tty,
 };
 

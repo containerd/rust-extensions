@@ -29,7 +29,6 @@ use async_trait::async_trait;
 use containerd_shim::{
     api::{CreateTaskRequest, ExecProcessRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
-    io::Stdio,
     io_error,
     monitor::{ExitEvent, Subject, Topic},
     other, other_error,
@@ -55,9 +54,12 @@ use super::{
     container::{ContainerFactory, ContainerTemplate, ProcessFactory},
     processes::{ProcessLifecycle, ProcessTemplate},
 };
-use crate::common::{
-    check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket, CreateConfig,
-    Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
+use crate::{
+    common::{
+        check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket,
+        CreateConfig, Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
+    },
+    io::Stdio,
 };
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;

@@ -21,7 +21,6 @@ use std::{
 
 use async_trait::async_trait;
 use containerd_shim::{
-    io::Stdio,
     ioctl_set_winsz,
     protos::{
         api::{ProcessInfo, StateResponse, Status},
@@ -37,6 +36,8 @@ use tokio::{
     fs::File,
     sync::oneshot::{channel, Receiver, Sender},
 };
+
+use crate::io::Stdio;
 
 #[async_trait]
 pub trait Process {
