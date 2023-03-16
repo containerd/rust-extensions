@@ -42,6 +42,7 @@ use crate::{
     common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS},
 };
 
+mod console;
 mod container;
 mod runc;
 mod task;

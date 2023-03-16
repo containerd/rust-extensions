@@ -58,7 +58,6 @@ use crate::{
     Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
-pub mod console;
 pub mod monitor;
 pub mod processes;
 pub mod publisher;

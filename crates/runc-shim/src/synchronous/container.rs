@@ -31,7 +31,6 @@ use log::debug;
 use oci_spec::runtime::LinuxResources;
 use shim::{
     api::*,
-    console::ConsoleSocket,
     error::{Error, Result},
     io::Stdio,
     io_error, ioctl_set_winsz, other, other_error,
@@ -41,6 +40,7 @@ use shim::{
 };
 use time::OffsetDateTime;
 
+use super::console::ConsoleSocket;
 use crate::{
     common::{receive_socket, ProcessIO},
     synchronous::io::spawn_copy_for_tty,

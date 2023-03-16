@@ -38,7 +38,6 @@ use oci_spec::runtime::LinuxResources;
 use runc::{Command, Spawner};
 use shim::{
     api::*,
-    console::ConsoleSocket,
     error::{Error, Result},
     io::Stdio,
     monitor::{monitor_subscribe, wait_pid, Topic},
@@ -55,6 +54,7 @@ use shim::{
 };
 use time::OffsetDateTime;
 
+use super::console::ConsoleSocket;
 use crate::{
     common,
     common::{

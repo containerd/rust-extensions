@@ -101,7 +101,6 @@ macro_rules! cfg_async {
 
 cfg_not_async! {
     pub use crate::synchronous::*;
-    pub use crate::synchronous::console;
     pub use crate::synchronous::publisher;
     pub use protos::shim::shim_ttrpc::Task;
     pub use protos::ttrpc::TtrpcContext;
@@ -109,7 +108,6 @@ cfg_not_async! {
 
 cfg_async! {
     pub use crate::asynchronous::*;
-    pub use crate::asynchronous::console;
     pub use crate::asynchronous::processes;
     pub use crate::asynchronous::publisher;
     pub use protos::shim_async::Task;

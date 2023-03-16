@@ -73,8 +73,6 @@ pub mod monitor;
 pub mod publisher;
 pub mod util;
 
-pub mod console;
-
 /// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
 ///
 /// Shim implementations are responsible for calling [`Self::signal`].
