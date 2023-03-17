@@ -18,7 +18,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use containerd_shim::{
-    asynchronous::processes::Process,
     error::Result,
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
@@ -30,6 +29,8 @@ use log::debug;
 use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
+
+use super::processes::Process;
 
 #[async_trait]
 pub trait Container {

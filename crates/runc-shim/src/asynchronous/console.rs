@@ -14,18 +14,14 @@
    limitations under the License.
 */
 
-use std::{
-    os::unix::net::{UnixListener, UnixStream},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
+use containerd_shim::{io_error, util::mkdir, Error, Result};
 use log::warn;
+use tokio::net::{UnixListener, UnixStream};
 use uuid::Uuid;
 
-use crate::{
-    util::{mkdir, xdg_runtime_dir},
-    Error, Result,
-};
+use crate::common::xdg_runtime_dir;
 
 pub struct ConsoleSocket {
     pub listener: UnixListener,
@@ -34,9 +30,9 @@ pub struct ConsoleSocket {
 }
 
 impl ConsoleSocket {
-    pub fn new() -> Result<ConsoleSocket> {
+    pub async fn new() -> Result<ConsoleSocket> {
         let dir = format!("{}/pty{}", xdg_runtime_dir(), Uuid::new_v4());
-        mkdir(&dir, 0o711)?;
+        mkdir(&dir, 0o711).await?;
         let file_name = Path::new(&dir).join("pty.sock");
         let listener = UnixListener::bind(&file_name).map_err(io_error!(
             e,
@@ -50,23 +46,29 @@ impl ConsoleSocket {
         })
     }
 
-    pub fn accept(&self) -> std::io::Result<UnixStream> {
-        let (stream, _addr) = self.listener.accept()?;
+    pub async fn accept(&self) -> Result<UnixStream> {
+        let (stream, _addr) = self
+            .listener
+            .accept()
+            .await
+            .map_err(io_error!(e, "failed to list console socket"))?;
         Ok(stream)
     }
-}
 
-impl Drop for ConsoleSocket {
-    fn drop(&mut self) {
+    // async drop is not supported yet, we can only call clean manually after socket received
+    pub async fn clean(self) {
         if self.rmdir {
-            let tmp_socket_dir = self.path.parent().unwrap();
-            std::fs::remove_dir_all(tmp_socket_dir).unwrap_or_else(|e| {
-                warn!(
-                    "remove tmp console socket path {} : {}",
-                    tmp_socket_dir.to_str().unwrap(),
-                    e
-                )
-            })
+            if let Some(tmp_socket_dir) = self.path.parent() {
+                tokio::fs::remove_dir_all(tmp_socket_dir)
+                    .await
+                    .unwrap_or_else(|e| {
+                        warn!(
+                            "remove tmp console socket path {} : {}",
+                            tmp_socket_dir.display(),
+                            e
+                        )
+                    })
+            }
         }
     }
 }

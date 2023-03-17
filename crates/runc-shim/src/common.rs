@@ -14,11 +14,10 @@
    limitations under the License.
 */
 
-use std::{io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync::Arc};
+use std::{env, io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync::Arc};
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
-    io::Stdio,
     io_error, other, other_error,
     util::IntoOption,
     Error,
@@ -38,6 +37,8 @@ use runc::{
     Runc, Spawner,
 };
 use serde::Deserialize;
+
+use super::io::Stdio;
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",
@@ -231,4 +232,11 @@ pub fn has_shared_pid_namespace(spec: &Spec) -> bool {
             }
         },
     }
+}
+
+/// Returns a temp dir. If the environment variable "XDG_RUNTIME_DIR" is set, return its value.
+/// Otherwise if `std::env::temp_dir()` failed, return current dir or return the temp dir depended on OS.
+pub(crate) fn xdg_runtime_dir() -> String {
+    env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| env::temp_dir().to_str().unwrap_or(".").to_string())
 }

@@ -20,10 +20,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-use containerd_shim_protos::{
-    api::{ProcessInfo, StateResponse, Status},
-    cgroups::metrics::Metrics,
-    protobuf::well_known_types::timestamp::Timestamp,
+use containerd_shim::{
+    ioctl_set_winsz,
+    protos::{
+        api::{ProcessInfo, StateResponse, Status},
+        cgroups::metrics::Metrics,
+        protobuf::well_known_types::timestamp::Timestamp,
+    },
+    util::asyncify,
+    Console, Result,
 };
 use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
@@ -32,34 +37,34 @@ use tokio::{
     sync::oneshot::{channel, Receiver, Sender},
 };
 
-use crate::{io::Stdio, ioctl_set_winsz, util::asyncify, Console};
+use crate::io::Stdio;
 
 #[async_trait]
 pub trait Process {
-    async fn start(&mut self) -> crate::Result<()>;
+    async fn start(&mut self) -> Result<()>;
     async fn set_exited(&mut self, exit_code: i32);
     async fn pid(&self) -> i32;
-    async fn state(&self) -> crate::Result<StateResponse>;
-    async fn kill(&mut self, signal: u32, all: bool) -> crate::Result<()>;
-    async fn delete(&mut self) -> crate::Result<()>;
-    async fn wait_channel(&mut self) -> crate::Result<Receiver<()>>;
+    async fn state(&self) -> Result<StateResponse>;
+    async fn kill(&mut self, signal: u32, all: bool) -> Result<()>;
+    async fn delete(&mut self) -> Result<()>;
+    async fn wait_channel(&mut self) -> Result<Receiver<()>>;
     async fn exit_code(&self) -> i32;
     async fn exited_at(&self) -> Option<OffsetDateTime>;
-    async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()>;
-    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()>;
-    async fn stats(&self) -> crate::Result<Metrics>;
-    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>>;
-    async fn close_io(&mut self) -> crate::Result<()>;
+    async fn resize_pty(&mut self, height: u32, width: u32) -> Result<()>;
+    async fn update(&mut self, resources: &LinuxResources) -> Result<()>;
+    async fn stats(&self) -> Result<Metrics>;
+    async fn ps(&self) -> Result<Vec<ProcessInfo>>;
+    async fn close_io(&mut self) -> Result<()>;
 }
 
 #[async_trait]
 pub trait ProcessLifecycle<P: Process> {
-    async fn start(&self, p: &mut P) -> crate::Result<()>;
-    async fn kill(&self, p: &mut P, signal: u32, all: bool) -> crate::Result<()>;
-    async fn delete(&self, p: &mut P) -> crate::Result<()>;
-    async fn update(&self, p: &mut P, resources: &LinuxResources) -> crate::Result<()>;
-    async fn stats(&self, p: &P) -> crate::Result<Metrics>;
-    async fn ps(&self, p: &P) -> crate::Result<Vec<ProcessInfo>>;
+    async fn start(&self, p: &mut P) -> Result<()>;
+    async fn kill(&self, p: &mut P, signal: u32, all: bool) -> Result<()>;
+    async fn delete(&self, p: &mut P) -> Result<()>;
+    async fn update(&self, p: &mut P, resources: &LinuxResources) -> Result<()>;
+    async fn stats(&self, p: &P) -> Result<Metrics>;
+    async fn ps(&self, p: &P) -> Result<Vec<ProcessInfo>>;
 }
 
 pub struct ProcessTemplate<S> {
@@ -97,7 +102,7 @@ impl<S> Process for ProcessTemplate<S>
 where
     S: ProcessLifecycle<Self> + Sync + Send,
 {
-    async fn start(&mut self) -> crate::Result<()> {
+    async fn start(&mut self) -> Result<()> {
         self.lifecycle.clone().start(self).await?;
         Ok(())
     }
@@ -114,7 +119,7 @@ where
         self.pid
     }
 
-    async fn state(&self) -> crate::Result<StateResponse> {
+    async fn state(&self) -> Result<StateResponse> {
         let mut resp = StateResponse::new();
         resp.id = self.id.to_string();
         resp.set_status(self.state);
@@ -133,15 +138,15 @@ where
         Ok(resp)
     }
 
-    async fn kill(&mut self, signal: u32, all: bool) -> crate::Result<()> {
+    async fn kill(&mut self, signal: u32, all: bool) -> Result<()> {
         self.lifecycle.clone().kill(self, signal, all).await
     }
 
-    async fn delete(&mut self) -> crate::Result<()> {
+    async fn delete(&mut self) -> Result<()> {
         self.lifecycle.clone().delete(self).await
     }
 
-    async fn wait_channel(&mut self) -> crate::Result<Receiver<()>> {
+    async fn wait_channel(&mut self) -> Result<Receiver<()>> {
         let (tx, rx) = channel::<()>();
         if self.state != Status::STOPPED {
             self.wait_chan_tx.push(tx);
@@ -157,7 +162,7 @@ where
         self.exited_at
     }
 
-    async fn resize_pty(&mut self, height: u32, width: u32) -> crate::Result<()> {
+    async fn resize_pty(&mut self, height: u32, width: u32) -> Result<()> {
         if let Some(console) = self.console.as_ref() {
             let w = libc::winsize {
                 ws_row: height as u16,
@@ -166,7 +171,7 @@ where
                 ws_ypixel: 0,
             };
             let fd = console.file.as_raw_fd();
-            asyncify(move || -> crate::Result<()> {
+            asyncify(move || -> Result<()> {
                 unsafe { ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into) }
             })
             .await?;
@@ -174,19 +179,19 @@ where
         Ok(())
     }
 
-    async fn update(&mut self, resources: &LinuxResources) -> crate::Result<()> {
+    async fn update(&mut self, resources: &LinuxResources) -> Result<()> {
         self.lifecycle.clone().update(self, resources).await
     }
 
-    async fn stats(&self) -> crate::Result<Metrics> {
+    async fn stats(&self) -> Result<Metrics> {
         self.lifecycle.stats(self).await
     }
 
-    async fn ps(&self) -> crate::Result<Vec<ProcessInfo>> {
+    async fn ps(&self) -> Result<Vec<ProcessInfo>> {
         self.lifecycle.ps(self).await
     }
 
-    async fn close_io(&mut self) -> crate::Result<()> {
+    async fn close_io(&mut self) -> Result<()> {
         let mut lock_guard = self.stdin.lock().unwrap();
         if let Some(stdin_w_file) = lock_guard.take() {
             drop(stdin_w_file);

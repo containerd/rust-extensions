@@ -38,9 +38,7 @@ use oci_spec::runtime::LinuxResources;
 use runc::{Command, Spawner};
 use shim::{
     api::*,
-    console::ConsoleSocket,
     error::{Error, Result},
-    io::Stdio,
     monitor::{monitor_subscribe, wait_pid, Topic},
     mount::mount_rootfs,
     other, other_error,
@@ -55,12 +53,14 @@ use shim::{
 };
 use time::OffsetDateTime;
 
+use super::console::ConsoleSocket;
 use crate::{
     common,
     common::{
         create_io, has_shared_pid_namespace, CreateConfig, Log, ShimExecutor, INIT_PID_FILE,
         LOG_JSON_FILE,
     },
+    io::Stdio,
     synchronous::container::{
         CommonContainer, CommonProcess, Container, ContainerFactory, Process,
     },
@@ -113,12 +113,12 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
         )?;
 
         let id = req.id();
-        let stdio = Stdio {
-            stdin: req.stdin().to_string(),
-            stdout: req.stdout().to_string(),
-            stderr: req.stderr().to_string(),
-            terminal: req.terminal(),
-        };
+        let stdio = Stdio::new(
+            req.stdin().to_string().as_str(),
+            req.stdout().to_string().as_str(),
+            req.stderr().to_string().as_str(),
+            req.terminal(),
+        );
 
         let mut init = InitProcess::new(id, bundle, runc, stdio);
         init.rootfs = rootfs.to_string();
@@ -663,12 +663,7 @@ impl TryFrom<ExecProcessRequest> for ExecProcess {
             common: CommonProcess {
                 state: Status::CREATED,
                 id: req.exec_id,
-                stdio: Stdio {
-                    stdin: req.stdin,
-                    stdout: req.stdout,
-                    stderr: req.stderr,
-                    terminal: req.terminal,
-                },
+                stdio: Stdio::new(&req.stdin, &req.stdout, &req.stderr, req.terminal),
                 pid: 0,
                 io: None,
                 exit_code: 0,
