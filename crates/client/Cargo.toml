@@ -30,7 +30,7 @@ tower = { workspace = true, optional = true }
 axum-core = ">=0.2.8"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = "0.9"
 
 [features]
 connect = ["tokio", "tower"]

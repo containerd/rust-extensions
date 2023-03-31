@@ -41,4 +41,4 @@ futures.workspace = true
 simple_logger = { version  = "4.0", default-features = false }
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = "0.9"
