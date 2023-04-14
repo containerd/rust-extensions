@@ -1,6 +1,6 @@
 [package]
 name = "containerd-snapshots"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 keywords = ["containerd", "server", "grpc", "containers"]
 categories = ["api-bindings", "asynchronous"]
