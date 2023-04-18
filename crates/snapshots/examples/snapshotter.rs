@@ -100,7 +100,12 @@ impl snapshots::Snapshotter for Example {
     }
 
     type InfoStream = EmptyStream;
-    async fn list(&self) -> Result<Self::InfoStream, Self::Error> {
+    async fn list(
+        &self,
+        snapshotter: String,
+        filters: Vec<String>,
+    ) -> Result<Self::InfoStream, Self::Error> {
+        info!("List: snapshotter={}, filters={:?}", snapshotter, filters);
         // Returns no snapshots.
         Ok(EmptyStream)
     }
