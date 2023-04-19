@@ -135,7 +135,30 @@ $ cat log
 [INFO] reaper thread stopped
 ```
 
+### Running on Windows
+```powershell
+# Run containerd in background
+$env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"
+
+$ cargo run --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd" start
+\\.\pipe\containerd-shim-17630016127144989388-pipe
+
+# (Optional) Run the log collector in a separate command window
+# note: log reader won't work if containerd is connected to the named pipe, this works when running manually to help debug locally
+$ cargo run --example windows-log-reader \\.\pipe\containerd-shim-default-1234-log
+Reading logs from: \\.\pipe\containerd-shim-default-1234-log
+<logs will appear after next command>
+
+$ cargo run --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
+Connecting to \\.\pipe\containerd-shim-17630016127144989388-pipe...
+Sending `Connect` request...
+Connect response: version: "example"
+Sending `Shutdown` request...
+Shutdown response: ""
+```
+
 ## Supported Platforms
 Currently, following OSs and hardware architectures are supported, and more efforts are needed to enable and validate other OSs and architectures.
 - Linux
 - Mac OS
+- Windows

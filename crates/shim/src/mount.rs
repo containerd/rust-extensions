@@ -1,3 +1,4 @@
+#![cfg(not(windows))]
 /*
    Copyright The containerd Authors.
 

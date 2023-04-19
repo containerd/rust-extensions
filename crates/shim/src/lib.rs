@@ -32,20 +32,24 @@
 //! ```
 //!
 
+use std::{collections::hash_map::DefaultHasher, fs::File, hash::Hasher, path::PathBuf};
+#[cfg(windows)]
+use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
+#[cfg(unix)]
 use std::{
-    collections::hash_map::DefaultHasher,
-    fs::File,
-    hash::Hasher,
     os::unix::{io::RawFd, net::UnixListener},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 pub use containerd_shim_protos as protos;
+#[cfg(unix)]
 use nix::ioctl_write_ptr_bad;
 pub use protos::{
     shim::shim::DeleteResponse,
     ttrpc::{context::Context, Result as TtrpcResult},
 };
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
 #[cfg(feature = "async")]
 pub use crate::asynchronous::*;
@@ -67,6 +71,7 @@ pub mod mount;
 mod reap;
 #[cfg(not(feature = "async"))]
 pub mod synchronous;
+mod sys;
 pub mod util;
 
 /// Generated request/response structures.
@@ -112,6 +117,7 @@ cfg_async! {
     pub use protos::ttrpc::r#async::TtrpcContext;
 }
 
+#[cfg(unix)]
 ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
 
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
@@ -149,6 +155,7 @@ pub struct StartOpts {
 /// The shim process communicates with the containerd server through a communication channel
 /// created by containerd. One endpoint of the communication channel is passed to shim process
 /// through a file descriptor during forking, which is the fourth(3) file descriptor.
+#[cfg(unix)]
 const SOCKET_FD: RawFd = 3;
 
 #[cfg(target_os = "linux")]
@@ -156,6 +163,9 @@ pub const SOCKET_ROOT: &str = "/run/containerd";
 
 #[cfg(target_os = "macos")]
 pub const SOCKET_ROOT: &str = "/var/run/containerd";
+
+#[cfg(target_os = "windows")]
+pub const SOCKET_ROOT: &str = r"\\.\pipe\containerd-containerd";
 
 /// Make socket path from containerd socket path, namespace and id.
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
@@ -171,9 +181,20 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finish()
     };
 
+    format_address(hash)
+}
+
+#[cfg(windows)]
+fn format_address(hash: u64) -> String {
+    format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
+}
+
+#[cfg(unix)]
+fn format_address(hash: u64) -> String {
     format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
 }
 
+#[cfg(unix)]
 fn parse_sockaddr(addr: &str) -> &str {
     if let Some(addr) = addr.strip_prefix("unix://") {
         return addr;
@@ -186,6 +207,26 @@ fn parse_sockaddr(addr: &str) -> &str {
     addr
 }
 
+#[cfg(windows)]
+fn start_listener(address: &str) -> std::io::Result<()> {
+    let mut opts = OpenOptions::new();
+    opts.read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_OVERLAPPED);
+    if let Ok(f) = opts.open(address) {
+        info!("found existing named pipe: {}", address);
+        drop(f);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            "address already exists",
+        ));
+    }
+
+    // windows starts the listener on the second invocation of the shim
+    Ok(())
+}
+
+#[cfg(unix)]
 fn start_listener(address: &str) -> std::io::Result<UnixListener> {
     let path = parse_sockaddr(address);
     // Try to create the needed directory hierarchy.
@@ -204,6 +245,7 @@ mod tests {
     use crate::start_listener;
 
     #[test]
+    #[cfg(unix)]
     fn test_start_listener() {
         let tmpdir = tempfile::tempdir().unwrap();
         let path = tmpdir.path().to_str().unwrap().to_owned();
@@ -225,5 +267,17 @@ mod tests {
         assert!(start_listener(&txt_file).is_err());
         let context = std::fs::read_to_string(&txt_file).unwrap();
         assert_eq!(context, "test");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_start_listener_windows() {
+        use mio::windows::NamedPipe;
+
+        let named_pipe = "\\\\.\\pipe\\test-pipe-duplicate".to_string();
+
+        start_listener(&named_pipe).unwrap();
+        let _pipe_server = NamedPipe::new(named_pipe.clone()).unwrap();
+        start_listener(&named_pipe).expect_err("address already exists");
     }
 }

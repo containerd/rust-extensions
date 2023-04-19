@@ -32,33 +32,37 @@
 //! ```
 //!
 
+macro_rules! cfg_unix {
+    ($($item:item)*) => {
+        $(
+            #[cfg(unix)]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_windows {
+    ($($item:item)*) => {
+        $(
+            #[cfg(windows)]
+            $item
+        )*
+    }
+}
+
 use std::{
-    convert::TryFrom,
-    env, fs,
+    env,
     io::Write,
-    os::unix::{fs::FileTypeExt, io::AsRawFd},
-    path::Path,
     process::{self, Command, Stdio},
     sync::{Arc, Condvar, Mutex},
 };
 
-use command_fds::{CommandFdExt, FdMapping};
-use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 pub use log::{debug, error, info, warn};
-use nix::{
-    errno::Errno,
-    sys::{
-        signal::Signal,
-        wait::{self, WaitPidFlag, WaitStatus},
-    },
-    unistd::Pid,
-};
-use signal_hook::iterator::Signals;
 use util::{read_address, write_address};
 
 use crate::{
     api::DeleteResponse,
-    args, logger, parse_sockaddr,
+    args, logger,
     protos::{
         protobuf::Message,
         shim::shim_ttrpc::{create_task, Task},
@@ -66,8 +70,44 @@ use crate::{
     },
     reap, socket_address, start_listener,
     synchronous::publisher::RemotePublisher,
-    Config, Error, Result, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
+    Config, Error, Result, StartOpts, TTRPC_ADDRESS,
 };
+
+cfg_unix! {
+    use std::os::unix::net::UnixListener;
+    use crate::{SOCKET_FD, parse_sockaddr};
+    use command_fds::{CommandFdExt, FdMapping};
+    use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
+    use nix::{
+        errno::Errno,
+        sys::{
+            signal::Signal,
+            wait::{self, WaitPidFlag, WaitStatus},
+        },
+        unistd::Pid,
+    };
+    use signal_hook::iterator::Signals;
+    use std::os::unix::fs::FileTypeExt;
+    use std::{convert::TryFrom, fs, path::Path};
+    use std::os::fd::AsRawFd;
+}
+
+cfg_windows! {
+    use std::{io, ptr};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        System::{
+            Console::SetConsoleCtrlHandler,
+            Threading::{CreateSemaphoreA, ReleaseSemaphore, },
+        },
+    };
+
+    static mut SEMAPHORE: HANDLE = 0 as HANDLE;
+    const MAX_SEM_COUNT: i32 = 255;
+
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    use windows_sys::Win32::System::Threading::INFINITE;
+}
 
 pub mod monitor;
 pub mod publisher;
@@ -158,8 +198,12 @@ where
     // Create shim instance
     let mut config = opts.unwrap_or_default();
 
+    #[cfg(unix)]
     // Setup signals
     let signals = setup_signals(&config);
+
+    #[cfg(windows)]
+    setup_signals();
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
@@ -188,7 +232,10 @@ where
             Ok(())
         }
         "delete" => {
+            #[cfg(unix)]
             std::thread::spawn(move || handle_signals(signals));
+            #[cfg(windows)]
+            std::thread::spawn(handle_signals);
             let response = shim.delete_shim()?;
             let stdout = std::io::stdout();
             let mut locked = stdout.lock();
@@ -197,18 +244,28 @@ where
             Ok(())
         }
         _ => {
+            #[cfg(windows)]
+            util::setup_debugger_event();
+
             if !config.no_setup_logger {
+                #[cfg(unix)]
                 logger::init(flags.debug)?;
+                #[cfg(windows)]
+                logger::init(flags.debug, &flags.namespace, &flags.id)?;
             }
 
             let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
             let task = shim.create_task_service(publisher);
             let task_service = create_task(Arc::new(Box::new(task)));
-            let mut server = Server::new().register_service(task_service);
-            server = server.add_listener(SOCKET_FD)?;
+            let mut server = create_server(flags)?;
+            server = server.register_service(task_service);
             server.start()?;
 
+            #[cfg(windows)]
+            signal_server_started();
+
             info!("Shim successfully started, waiting for exit signal...");
+            #[cfg(unix)]
             std::thread::spawn(move || handle_signals(signals));
             shim.wait();
 
@@ -224,6 +281,22 @@ where
     }
 }
 
+#[cfg(windows)]
+fn create_server(flags: args::Flags) -> Result<Server> {
+    let mut server = Server::new();
+    let address = socket_address(&flags.address, &flags.namespace, &flags.id);
+    server = server.bind(address.as_str())?;
+    Ok(server)
+}
+
+#[cfg(unix)]
+fn create_server(_flags: args::Flags) -> Result<Server> {
+    let mut server = Server::new();
+    server = server.add_listener(SOCKET_FD)?;
+    Ok(server)
+}
+
+#[cfg(unix)]
 fn setup_signals(config: &Config) -> Signals {
     let signals = Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
     if !config.no_reaper {
@@ -232,6 +305,30 @@ fn setup_signals(config: &Config) -> Signals {
     signals
 }
 
+#[cfg(windows)]
+fn setup_signals() {
+    unsafe {
+        SEMAPHORE = CreateSemaphoreA(ptr::null_mut(), 0, MAX_SEM_COUNT, ptr::null());
+        if SEMAPHORE == 0 {
+            panic!("Failed to create semaphore: {}", io::Error::last_os_error());
+        }
+
+        if SetConsoleCtrlHandler(Some(signal_handler), 1) == 0 {
+            let e = io::Error::last_os_error();
+            CloseHandle(SEMAPHORE);
+            SEMAPHORE = 0 as HANDLE;
+            panic!("Failed to set console handler: {}", e);
+        }
+    }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn signal_handler(_: u32) -> i32 {
+    ReleaseSemaphore(SEMAPHORE, 1, ptr::null_mut());
+    1
+}
+
+#[cfg(unix)]
 fn handle_signals(mut signals: Signals) {
     loop {
         for sig in signals.wait() {
@@ -274,6 +371,16 @@ fn handle_signals(mut signals: Signals) {
     }
 }
 
+#[cfg(windows)]
+// must start on thread as waitforSingleObject puts the current thread to sleep
+fn handle_signals() {
+    unsafe {
+        WaitForSingleObject(SEMAPHORE, INFINITE);
+        //Windows doesn't have similiar signal like SIGCHLD
+        // We could implement something if required but for now
+    }
+}
+
 fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
     for _i in 0..count {
         match Client::connect(address) {
@@ -292,12 +399,33 @@ fn remove_socket_silently(address: &str) {
     remove_socket(address).unwrap_or_else(|e| warn!("failed to remove file {} {:?}", address, e))
 }
 
+#[cfg(unix)]
 fn remove_socket(address: &str) -> Result<()> {
     let path = parse_sockaddr(address);
     if let Ok(md) = Path::new(path).metadata() {
         if md.file_type().is_socket() {
             fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
         }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn remove_socket(address: &str) -> Result<()> {
+    use std::{
+        fs::OpenOptions,
+        os::windows::prelude::{AsRawHandle, OpenOptionsExt},
+    };
+
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+
+    let mut opts = OpenOptions::new();
+    opts.read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_OVERLAPPED);
+    if let Ok(f) = opts.open(address) {
+        info!("attempting to remove existing named pipe: {}", address);
+        unsafe { CloseHandle(f.as_raw_handle() as isize) };
     }
     Ok(())
 }
@@ -311,6 +439,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
 
     // Create socket and prepare listener.
     // We'll use `add_listener` when creating TTRPC server.
+    #[allow(clippy::let_unit_value)]
     let listener = match start_listener(&address) {
         Ok(l) => l,
         Err(e) => {
@@ -320,6 +449,8 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
                     err: e,
                 });
             };
+            // If the Address is already in use then make sure it is up and running and return the address
+            // This allows for running a single shim per container scenarios
             if let Ok(()) = wait_socket_working(&address, 5, 200) {
                 write_address(&address)?;
                 return Ok((0, address));
@@ -329,6 +460,18 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
         }
     };
 
+    run_shim(cmd, cwd, opts, vars, listener, address)
+}
+
+#[cfg(unix)]
+fn run_shim(
+    cmd: std::path::PathBuf,
+    cwd: std::path::PathBuf,
+    opts: StartOpts,
+    vars: Vec<(&str, &str)>,
+    listener: UnixListener,
+    address: String,
+) -> Result<(u32, String)> {
     let mut command = Command::new(cmd);
 
     command
@@ -361,6 +504,97 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
             std::mem::forget(listener);
             (child.id(), address)
         })
+}
+
+// Activation pattern for Windows comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
+// another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
+// the logic in Rust's 'command' for process creation.  There is an  issue in Rust to make it simplier to specify handle inheritence and this could
+// be revisited once https://github.com/rust-lang/rust/issues/54760 is implemented.
+#[cfg(windows)]
+fn run_shim(
+    cmd: std::path::PathBuf,
+    cwd: std::path::PathBuf,
+    opts: StartOpts,
+    vars: Vec<(&str, &str)>,
+    _listener: (),
+    address: String,
+) -> Result<(u32, String)> {
+    let mut command = Command::new(cmd);
+
+    let (mut reader, writer) = os_pipe::pipe().map_err(io_error!(e, "create pipe"))?;
+    let stdio_writer = writer.try_clone().unwrap();
+
+    command
+        .current_dir(cwd)
+        .stdout(stdio_writer)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .args([
+            "-namespace",
+            &opts.namespace,
+            "-id",
+            &opts.id,
+            "-address",
+            &opts.address,
+        ]);
+
+    if opts.debug {
+        command.arg("-debug");
+    }
+    command.envs(vars);
+
+    disable_handle_inheritance();
+    command
+        .spawn()
+        .map_err(io_error!(e, "spawn shim"))
+        .map(|child| {
+            // IMPORTANT: we must drop the writer and command to close up handles before we copy the reader to stderr
+            // AND the shim Start method must NOT write to stdout/stderr
+            drop(writer);
+            drop(command);
+            io::copy(&mut reader, &mut io::stderr()).unwrap();
+            (child.id(), address)
+        })
+}
+
+// On Windows Rust currently sets the `HANDLE_FLAG_INHERIT` flag to true when using Command::spawn.
+// When a child process is spawned by another process (containerd) the child process inherits the parent's stdin, stdout, and stderr handles.
+// Due to the HANDLE_FLAG_INHERIT flag being set to true this will cause containerd to hand until the child process closes the handles.
+// As a workaround we can Disables inheritance on the io pipe handles.
+// This workaround comes from https://github.com/rust-lang/rust/issues/54760#issuecomment-1045940560
+#[cfg(windows)]
+fn disable_handle_inheritance() {
+    use windows_sys::Win32::{
+        Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT},
+        System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    };
+
+    unsafe {
+        let std_err = GetStdHandle(STD_ERROR_HANDLE);
+        let std_in = GetStdHandle(STD_INPUT_HANDLE);
+        let std_out = GetStdHandle(STD_OUTPUT_HANDLE);
+
+        for handle in [std_err, std_in, std_out] {
+            SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            //info!(" handle for... {:?}", handle);
+            //CloseHandle(handle);
+        }
+    }
+}
+
+// This closes the stdout handle which was mapped to the stderr on the first invocation of the shim.
+// This releases first process which will give containerd the address of the namedpipe.
+#[cfg(windows)]
+fn signal_server_started() {
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_OUTPUT_HANDLE};
+
+    unsafe {
+        let std_out = GetStdHandle(STD_OUTPUT_HANDLE);
+
+        for handle in [std_out] {
+            CloseHandle(handle);
+        }
+    }
 }
 
 #[cfg(test)]

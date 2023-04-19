@@ -13,7 +13,7 @@ homepage.workspace = true
 
 [dependencies]
 protobuf = "3.1"
-ttrpc = "0.7"
+ttrpc = { git = "https://github.com/jsturtevant/ttrpc-rust", rev = "d96bea3a41b6c6b85c1d8da53e5085fb0789a685" } # unmerged pr https://github.com/containerd/ttrpc-rust/pull/182 
 async-trait = { version = "0.1.48", optional = true }
 
 [build-dependencies]

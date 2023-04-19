@@ -1,0 +1,99 @@
+name: CI-windows
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: '0 0 * * *' # Every day at midnight
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      matrix:
+        os: [windows-latest]
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos
+      
+      - run: rustup toolchain install nightly --component rustfmt
+      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -- --check --files-with-diff
+      
+      - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
+      - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
+  tests:
+    name: Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        os: [windows-latest]
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tests
+        run: |
+          cargo test -p containerd-shim -p containerd-shim-protos
+
+  integration:
+    name: Integration
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+
+    strategy:
+      matrix:
+        os: [windows-latest]
+        containerd: [1.7.0]
+
+    steps:
+      - name: Checkout extensions
+        uses: actions/checkout@v3
+
+      - name: Install containerd
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Install containerd https://github.com/containerd/containerd/blob/v1.7.0/docs/getting-started.md#installing-containerd-on-windows
+          # Download and extract desired containerd Windows binaries
+          curl.exe -L https://github.com/containerd/containerd/releases/download/v${{ matrix.containerd }}/containerd-${{ matrix.containerd }}-windows-amd64.tar.gz -o containerd-windows-amd64.tar.gz
+          tar.exe xvf .\containerd-windows-amd64.tar.gz
+
+          # Copy and configure
+          mkdir "$Env:ProgramFiles\containerd"
+          Copy-Item -Path ".\bin\*" -Destination "$Env:ProgramFiles\containerd" -Recurse -Force
+          cd $Env:ProgramFiles\containerd\
+          .\containerd.exe config default | Out-File config.toml -Encoding ascii
+
+          # Review the configuration. Depending on setup you may want to adjust:
+          # - the sandbox_image (Kubernetes pause image)
+          # - cni bin_dir and conf_dir locations
+          Get-Content config.toml
+
+          # Register and start service
+          .\containerd.exe --register-service
+          Start-Service containerd
+        working-directory: ${{ runner.temp }}
+      - name: Run integration test
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          get-service containerd
+          $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"  
+
+          # run the example 
+          cargo run --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start 
+          ps skeleton 
+          cargo run --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe

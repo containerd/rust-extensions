@@ -50,9 +50,11 @@ pub enum Error {
     Setup(#[from] log::SetLoggerError),
 
     /// Unable to pass fd to child process (we rely on `command_fds` crate for this).
+    #[cfg(unix)]
     #[error("Failed to pass socket fd to child: {0}")]
     FdMap(#[from] command_fds::FdMappingCollision),
 
+    #[cfg(unix)]
     #[error("Nix error: {0}")]
     Nix(#[from] nix::Error),
 
@@ -65,6 +67,7 @@ pub enum Error {
     #[error("Failed pre condition: {0}")]
     FailedPreconditionError(String),
 
+    #[cfg(unix)]
     #[error("{context} error: {err}")]
     MountError {
         context: String,

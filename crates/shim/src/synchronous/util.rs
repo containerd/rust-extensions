@@ -21,8 +21,10 @@ use std::{
 };
 
 use containerd_shim_protos::shim::oci::Options;
+#[cfg(unix)]
 use libc::mode_t;
 use log::warn;
+#[cfg(unix)]
 use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
 
@@ -117,6 +119,7 @@ pub fn read_spec_from_file(bundle: &str) -> crate::Result<Spec> {
     Spec::load(path).map_err(other_error!(e, "read spec file"))
 }
 
+#[cfg(unix)]
 pub fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> crate::Result<()> {
     let path_buf = path.as_ref().to_path_buf();
     if !path_buf.as_path().exists() {
@@ -141,5 +144,59 @@ impl Drop for HelperRemoveFile {
     fn drop(&mut self) {
         std::fs::remove_file(&self.path)
             .unwrap_or_else(|e| warn!("remove dir {} error: {}", &self.path, e));
+    }
+}
+
+#[cfg(target_os = "windows")]
+// helper to configure pause thread until signaled. Useful in attaching a debugger
+// https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L313-L315
+// use with https://github.com/moby/docker-signal
+pub(crate) fn setup_debugger_event() {
+    use std::{env, io, process};
+
+    use log::{debug, error};
+    use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
+
+    let debugger = env::var("SHIM_DEBUGGER").unwrap_or_else(|_| "".to_string());
+    if debugger.is_empty() {
+        return;
+    }
+    let event_name = format!("Global\\debugger-{}", process::id());
+    debug!("Halting until signalled: {}", event_name);
+    let e = match create_event(event_name) {
+        Ok(e) => e,
+        Err(e) => {
+            error!("failed to create event for debugger: {}", e);
+            return;
+        }
+    };
+    match unsafe { WaitForSingleObject(e, INFINITE) } {
+        0 => {}
+        _ => {
+            error!(
+                "failed to wait for debugger event: {}",
+                io::Error::last_os_error()
+            );
+            return;
+        }
+    }
+    debug!("signal received, continuing");
+}
+
+#[cfg(target_os = "windows")]
+fn create_event(name: String) -> crate::Result<isize> {
+    use std::{ffi::OsStr, io, os::windows::prelude::OsStrExt};
+
+    use windows_sys::Win32::System::Threading::CreateEventW;
+
+    let name = OsStr::new(name.as_str())
+        .encode_wide()
+        .chain(Some(0)) // add NULL termination
+        .collect::<Vec<_>>();
+
+    let result = unsafe { CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr()) };
+    match result {
+        0 => Err(Error::Other(io::Error::last_os_error().to_string())),
+        _ => Ok(result),
     }
 }

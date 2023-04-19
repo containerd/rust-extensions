@@ -26,16 +26,20 @@ use std::{
 use log::{Metadata, Record};
 
 use crate::error::Error;
+#[cfg(windows)]
+use crate::sys::windows::NamedPipeLogger;
 
 pub struct FifoLogger {
     file: Mutex<File>,
 }
 
 impl FifoLogger {
+    #[allow(dead_code)]
     pub fn new() -> Result<FifoLogger, io::Error> {
         Self::with_path("log")
     }
 
+    #[allow(dead_code)]
     pub fn with_path<P: AsRef<Path>>(path: P) -> Result<FifoLogger, io::Error> {
         let f = OpenOptions::new()
             .write(true)
@@ -74,33 +78,60 @@ impl log::Log for FifoLogger {
     }
 }
 
+#[cfg(unix)]
 pub fn init(debug: bool) -> Result<(), Error> {
     let logger = FifoLogger::new().map_err(io_error!(e, "failed to init logger"))?;
+
+    let boxed_logger = Box::new(logger);
+    configure_logger(boxed_logger, debug)
+}
+
+#[cfg(windows)]
+// Containerd on windows expects the log to be a named pipe in the format of \\.\pipe\containerd-<namespace>-<id>-log
+// There is an assumption that there is always only one client connected which is containerd.
+// If there is a restart of containerd then logs during that time period will be lost.
+//
+// https://github.com/containerd/containerd/blob/v1.7.0/runtime/v2/shim_windows.go#L77
+// https://github.com/microsoft/hcsshim/blob/5871d0c4436f131c377655a3eb09fc9b5065f11d/cmd/containerd-shim-runhcs-v1/serve.go#L132-L137
+pub fn init(debug: bool, namespace: &String, id: &String) -> Result<(), Error> {
+    let logger =
+        NamedPipeLogger::new(namespace, id).map_err(io_error!(e, "failed to init logger"))?;
+
+    let boxed_logger = Box::new(logger);
+    configure_logger(boxed_logger, debug)
+}
+
+fn configure_logger(logger: Box<dyn log::Log>, debug: bool) -> Result<(), Error> {
     let level = if debug {
         log::LevelFilter::Debug
     } else {
         log::LevelFilter::Info
     };
 
-    log::set_boxed_logger(Box::new(logger))?;
+    log::set_boxed_logger(logger)?;
     log::set_max_level(level);
-
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use log::{Log, Record};
-    use nix::{sys::stat, unistd};
 
     use super::*;
 
     #[test]
     fn test_fifo_log() {
+        #[cfg(unix)]
+        use nix::{sys::stat, unistd};
+
         let tmpdir = tempfile::tempdir().unwrap();
         let path = tmpdir.path().to_str().unwrap().to_owned() + "/log";
 
+        #[cfg(unix)]
         unistd::mkfifo(Path::new(&path), stat::Mode::S_IRWXU).unwrap();
+
+        #[cfg(windows)]
+        File::create(path.clone()).unwrap();
 
         let path1 = path.clone();
         let thread = std::thread::spawn(move || {
