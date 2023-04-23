@@ -158,11 +158,12 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
 
     async fn list(
         &self,
-        _request: tonic::Request<ListSnapshotsRequest>,
+        request: tonic::Request<ListSnapshotsRequest>,
     ) -> Result<tonic::Response<Self::ListStream>, tonic::Status> {
+        let request = request.into_inner();
         let sn = self.snapshotter.clone();
         let output = async_stream::try_stream! {
-            let walk_stream = sn.list().await?;
+            let walk_stream = sn.list(request.snapshotter, request.filters).await?;
             pin_utils::pin_mut!(walk_stream);
             let mut infos = Vec::<Info>::new();
             while let Some(info) = walk_stream.next().await {

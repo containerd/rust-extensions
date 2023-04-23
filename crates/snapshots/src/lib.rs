@@ -283,5 +283,9 @@ pub trait Snapshotter: Send + Sync + 'static {
     ///         })
     ///     }
     /// ```
-    async fn list(&self) -> Result<Self::InfoStream, Self::Error>;
+    async fn list(
+        &self,
+        snapshotter: String,
+        filters: Vec<String>,
+    ) -> Result<Self::InfoStream, Self::Error>;
 }
