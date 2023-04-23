@@ -260,10 +260,13 @@ impl Process for CommonProcess {
             .accept()
             .map_err(io_error!(e, "accept console socket"))?;
         let fd = receive_socket(stream.as_raw_fd())?;
+        let tty = unsafe { File::from_raw_fd(fd) };
 
         if !self.stdio.stdin.is_empty() {
             debug!("copy_console: pipe stdin to console");
-            let f = unsafe { File::from_raw_fd(fd) };
+            let f = tty
+                .try_clone()
+                .map_err(io_error!(e, "failed to clone tty"))?;
             let stdin = OpenOptions::new()
                 .read(true)
                 .open(self.stdio.stdin.as_str())
@@ -272,8 +275,10 @@ impl Process for CommonProcess {
         }
 
         if !self.stdio.stdout.is_empty() {
-            let f = unsafe { File::from_raw_fd(fd) };
             debug!("copy_console: pipe stdout from console");
+            let f = tty
+                .try_clone()
+                .map_err(io_error!(e, "failed to clone tty"))?;
             let stdout = OpenOptions::new()
                 .write(true)
                 .open(self.stdio.stdout.as_str())
@@ -293,9 +298,7 @@ impl Process for CommonProcess {
                 })),
             );
         }
-        let console = Console {
-            file: unsafe { File::from_raw_fd(fd) },
-        };
+        let console = Console { file: tty };
         Ok(console)
     }
 
