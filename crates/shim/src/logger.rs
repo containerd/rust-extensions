@@ -78,37 +78,27 @@ impl log::Log for FifoLogger {
     }
 }
 
-#[cfg(unix)]
-pub fn init(debug: bool) -> Result<(), Error> {
+pub fn init(debug: bool, _namespace: &str, _id: &str) -> Result<(), Error> {
+    #[cfg(unix)]
     let logger = FifoLogger::new().map_err(io_error!(e, "failed to init logger"))?;
 
-    let boxed_logger = Box::new(logger);
-    configure_logger(boxed_logger, debug)
-}
-
-#[cfg(windows)]
-// Containerd on windows expects the log to be a named pipe in the format of \\.\pipe\containerd-<namespace>-<id>-log
-// There is an assumption that there is always only one client connected which is containerd.
-// If there is a restart of containerd then logs during that time period will be lost.
-//
-// https://github.com/containerd/containerd/blob/v1.7.0/runtime/v2/shim_windows.go#L77
-// https://github.com/microsoft/hcsshim/blob/5871d0c4436f131c377655a3eb09fc9b5065f11d/cmd/containerd-shim-runhcs-v1/serve.go#L132-L137
-pub fn init(debug: bool, namespace: &String, id: &String) -> Result<(), Error> {
+    // Containerd on windows expects the log to be a named pipe in the format of \\.\pipe\containerd-<namespace>-<id>-log
+    // There is an assumption that there is always only one client connected which is containerd.
+    // If there is a restart of containerd then logs during that time period will be lost.
+    //
+    // https://github.com/containerd/containerd/blob/v1.7.0/runtime/v2/shim_windows.go#L77
+    // https://github.com/microsoft/hcsshim/blob/5871d0c4436f131c377655a3eb09fc9b5065f11d/cmd/containerd-shim-runhcs-v1/serve.go#L132-L137
+    #[cfg(windows)]
     let logger =
-        NamedPipeLogger::new(namespace, id).map_err(io_error!(e, "failed to init logger"))?;
+        NamedPipeLogger::new(_namespace, _id).map_err(io_error!(e, "failed to init logger"))?;
 
-    let boxed_logger = Box::new(logger);
-    configure_logger(boxed_logger, debug)
-}
-
-fn configure_logger(logger: Box<dyn log::Log>, debug: bool) -> Result<(), Error> {
     let level = if debug {
         log::LevelFilter::Debug
     } else {
         log::LevelFilter::Info
     };
 
-    log::set_boxed_logger(logger)?;
+    log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
     Ok(())
 }

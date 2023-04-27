@@ -28,7 +28,7 @@ pub struct NamedPipeLogger {
 }
 
 impl NamedPipeLogger {
-    pub fn new(namespace: &String, id: &String) -> Result<NamedPipeLogger, io::Error> {
+    pub fn new(namespace: &str, id: &str) -> Result<NamedPipeLogger, io::Error> {
         let pipe_name = format!("\\\\.\\pipe\\containerd-shim-{}-{}-log", namespace, id);
         let mut pipe_server = NamedPipe::new(pipe_name).unwrap();
         let mut poll = Poll::new().unwrap();

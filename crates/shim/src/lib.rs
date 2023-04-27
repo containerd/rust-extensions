@@ -181,17 +181,15 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finish()
     };
 
-    format_address(hash)
-}
+    #[cfg(unix)]
+    {
+        format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
+    }
 
-#[cfg(windows)]
-fn format_address(hash: u64) -> String {
-    format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
-}
-
-#[cfg(unix)]
-fn format_address(hash: u64) -> String {
-    format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
+    #[cfg(windows)]
+    {
+        format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
+    }
 }
 
 #[cfg(unix)]

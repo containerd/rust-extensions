@@ -74,7 +74,6 @@ use crate::{
 };
 
 cfg_unix! {
-    use std::os::unix::net::UnixListener;
     use crate::{SOCKET_FD, parse_sockaddr};
     use command_fds::{CommandFdExt, FdMapping};
     use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
@@ -93,20 +92,23 @@ cfg_unix! {
 }
 
 cfg_windows! {
-    use std::{io, ptr};
+    use std::{
+        io, ptr,
+        fs::OpenOptions,
+        os::windows::prelude::{AsRawHandle, OpenOptionsExt},
+    };
+
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HANDLE},
         System::{
             Console::SetConsoleCtrlHandler,
-            Threading::{CreateSemaphoreA, ReleaseSemaphore, },
+            Threading::{CreateSemaphoreA, ReleaseSemaphore, WaitForSingleObject, INFINITE},
         },
+        Storage::FileSystem::FILE_FLAG_OVERLAPPED
     };
 
     static mut SEMAPHORE: HANDLE = 0 as HANDLE;
     const MAX_SEM_COUNT: i32 = 255;
-
-    use windows_sys::Win32::System::Threading::WaitForSingleObject;
-    use windows_sys::Win32::System::Threading::INFINITE;
 }
 
 pub mod monitor;
@@ -248,9 +250,6 @@ where
             util::setup_debugger_event();
 
             if !config.no_setup_logger {
-                #[cfg(unix)]
-                logger::init(flags.debug)?;
-                #[cfg(windows)]
                 logger::init(flags.debug, &flags.namespace, &flags.id)?;
             }
 
@@ -281,18 +280,20 @@ where
     }
 }
 
-#[cfg(windows)]
-fn create_server(flags: args::Flags) -> Result<Server> {
-    let mut server = Server::new();
-    let address = socket_address(&flags.address, &flags.namespace, &flags.id);
-    server = server.bind(address.as_str())?;
-    Ok(server)
-}
-
-#[cfg(unix)]
 fn create_server(_flags: args::Flags) -> Result<Server> {
     let mut server = Server::new();
-    server = server.add_listener(SOCKET_FD)?;
+
+    #[cfg(unix)]
+    {
+        server = server.add_listener(SOCKET_FD)?;
+    }
+
+    #[cfg(windows)]
+    {
+        let address = socket_address(&_flags.address, &_flags.namespace, &_flags.id);
+        server = server.bind(address.as_str())?;
+    }
+
     Ok(server)
 }
 
@@ -399,34 +400,29 @@ fn remove_socket_silently(address: &str) {
     remove_socket(address).unwrap_or_else(|e| warn!("failed to remove file {} {:?}", address, e))
 }
 
-#[cfg(unix)]
 fn remove_socket(address: &str) -> Result<()> {
-    let path = parse_sockaddr(address);
-    if let Ok(md) = Path::new(path).metadata() {
-        if md.file_type().is_socket() {
-            fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
+    #[cfg(unix)]
+    {
+        let path = parse_sockaddr(address);
+        if let Ok(md) = Path::new(path).metadata() {
+            if md.file_type().is_socket() {
+                fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
+            }
         }
     }
-    Ok(())
-}
 
-#[cfg(windows)]
-fn remove_socket(address: &str) -> Result<()> {
-    use std::{
-        fs::OpenOptions,
-        os::windows::prelude::{AsRawHandle, OpenOptionsExt},
-    };
-
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
-
-    let mut opts = OpenOptions::new();
-    opts.read(true)
-        .write(true)
-        .custom_flags(FILE_FLAG_OVERLAPPED);
-    if let Ok(f) = opts.open(address) {
-        info!("attempting to remove existing named pipe: {}", address);
-        unsafe { CloseHandle(f.as_raw_handle() as isize) };
+    #[cfg(windows)]
+    {
+        let mut opts = OpenOptions::new();
+        opts.read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED);
+        if let Ok(f) = opts.open(address) {
+            info!("attempting to remove existing named pipe: {}", address);
+            unsafe { CloseHandle(f.as_raw_handle() as isize) };
+        }
     }
+
     Ok(())
 }
 
@@ -438,9 +434,10 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
     let address = socket_address(&opts.address, &opts.namespace, grouping);
 
     // Create socket and prepare listener.
-    // We'll use `add_listener` when creating TTRPC server.
+    // On Linux, We'll use `add_listener` when creating TTRPC server, on Windows the value isn't used hence the clippy allow
+    // (see note below about activation process for windows)
     #[allow(clippy::let_unit_value)]
-    let listener = match start_listener(&address) {
+    let _listener = match start_listener(&address) {
         Ok(l) => l,
         Err(e) => {
             if e.kind() != std::io::ErrorKind::AddrInUse {
@@ -449,7 +446,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
                     err: e,
                 });
             };
-            // If the Address is already in use then make sure it is up and running and return the address
+            // If the address is already in use then make sure it is up and running and return the address
             // This allows for running a single shim per container scenarios
             if let Ok(()) = wait_socket_working(&address, 5, 200) {
                 write_address(&address)?;
@@ -460,108 +457,75 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
         }
     };
 
-    run_shim(cmd, cwd, opts, vars, listener, address)
-}
-
-#[cfg(unix)]
-fn run_shim(
-    cmd: std::path::PathBuf,
-    cwd: std::path::PathBuf,
-    opts: StartOpts,
-    vars: Vec<(&str, &str)>,
-    listener: UnixListener,
-    address: String,
-) -> Result<(u32, String)> {
     let mut command = Command::new(cmd);
-
-    command
-        .current_dir(cwd)
-        .stdout(Stdio::null())
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .fd_mappings(vec![FdMapping {
-            parent_fd: listener.as_raw_fd(),
-            child_fd: SOCKET_FD,
-        }])?
-        .args([
-            "-namespace",
-            &opts.namespace,
-            "-id",
-            &opts.id,
-            "-address",
-            &opts.address,
-        ]);
-    if opts.debug {
-        command.arg("-debug");
-    }
-    command.envs(vars);
-
-    command
-        .spawn()
-        .map_err(io_error!(e, "spawn shim"))
-        .map(|child| {
-            // Ownership of `listener` has been passed to child.
-            std::mem::forget(listener);
-            (child.id(), address)
-        })
-}
-
-// Activation pattern for Windows comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
-// another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
-// the logic in Rust's 'command' for process creation.  There is an  issue in Rust to make it simplier to specify handle inheritence and this could
-// be revisited once https://github.com/rust-lang/rust/issues/54760 is implemented.
-#[cfg(windows)]
-fn run_shim(
-    cmd: std::path::PathBuf,
-    cwd: std::path::PathBuf,
-    opts: StartOpts,
-    vars: Vec<(&str, &str)>,
-    _listener: (),
-    address: String,
-) -> Result<(u32, String)> {
-    let mut command = Command::new(cmd);
-
-    let (mut reader, writer) = os_pipe::pipe().map_err(io_error!(e, "create pipe"))?;
-    let stdio_writer = writer.try_clone().unwrap();
-
-    command
-        .current_dir(cwd)
-        .stdout(stdio_writer)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .args([
-            "-namespace",
-            &opts.namespace,
-            "-id",
-            &opts.id,
-            "-address",
-            &opts.address,
-        ]);
+    command.current_dir(cwd).envs(vars).args([
+        "-namespace",
+        &opts.namespace,
+        "-id",
+        &opts.id,
+        "-address",
+        &opts.address,
+    ]);
 
     if opts.debug {
         command.arg("-debug");
     }
-    command.envs(vars);
 
-    disable_handle_inheritance();
-    command
-        .spawn()
-        .map_err(io_error!(e, "spawn shim"))
-        .map(|child| {
-            // IMPORTANT: we must drop the writer and command to close up handles before we copy the reader to stderr
-            // AND the shim Start method must NOT write to stdout/stderr
-            drop(writer);
-            drop(command);
-            io::copy(&mut reader, &mut io::stderr()).unwrap();
-            (child.id(), address)
-        })
+    #[cfg(unix)]
+    {
+        command
+            .stdout(Stdio::null())
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .fd_mappings(vec![FdMapping {
+                parent_fd: _listener.as_raw_fd(),
+                child_fd: SOCKET_FD,
+            }])?;
+
+        command
+            .spawn()
+            .map_err(io_error!(e, "spawn shim"))
+            .map(|child| {
+                // Ownership of `listener` has been passed to child.
+                std::mem::forget(_listener);
+                (child.id(), address)
+            })
+    }
+
+    #[cfg(windows)]
+    {
+        // Activation pattern for Windows comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
+        // another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
+        // the logic in Rust's 'command' for process creation.  There is an  issue in Rust to make it simplier to specify handle inheritence and this could
+        // be revisited once https://github.com/rust-lang/rust/issues/54760 is implemented.
+        let (mut reader, writer) = os_pipe::pipe().map_err(io_error!(e, "create pipe"))?;
+        let stdio_writer = writer.try_clone().unwrap();
+
+        command
+            .stdout(stdio_writer)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+
+        // On Windows Rust currently sets the `HANDLE_FLAG_INHERIT` flag to true when using Command::spawn.
+        // When a child process is spawned by another process (containerd) the child process inherits the parent's stdin, stdout, and stderr handles.
+        // Due to the HANDLE_FLAG_INHERIT flag being set to true this will cause containerd to hand until the child process closes the handles.
+        // As a workaround we can Disables inheritance on the io pipe handles.
+        // This workaround comes from https://github.com/rust-lang/rust/issues/54760#issuecomment-1045940560
+        disable_handle_inheritance();
+        command
+            .spawn()
+            .map_err(io_error!(e, "spawn shim"))
+            .map(|child| {
+                // IMPORTANT: we must drop the writer and command to close up handles before we copy the reader to stderr
+                // AND the shim Start method must NOT write to stdout/stderr
+                drop(writer);
+                drop(command);
+                io::copy(&mut reader, &mut io::stderr()).unwrap();
+                (child.id(), address)
+            })
+    }
 }
 
-// On Windows Rust currently sets the `HANDLE_FLAG_INHERIT` flag to true when using Command::spawn.
-// When a child process is spawned by another process (containerd) the child process inherits the parent's stdin, stdout, and stderr handles.
-// Due to the HANDLE_FLAG_INHERIT flag being set to true this will cause containerd to hand until the child process closes the handles.
-// As a workaround we can Disables inheritance on the io pipe handles.
-// This workaround comes from https://github.com/rust-lang/rust/issues/54760#issuecomment-1045940560
 #[cfg(windows)]
 fn disable_handle_inheritance() {
     use windows_sys::Win32::{

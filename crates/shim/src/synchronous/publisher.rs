@@ -49,18 +49,20 @@ impl RemotePublisher {
         })
     }
 
-    #[cfg(unix)]
     fn connect(address: impl AsRef<str>) -> Result<Client> {
-        let fd = connect(address)?;
-        // Client::new() takes ownership of the RawFd.
-        Ok(Client::new_from_fd(fd)?)
-    }
+        #[cfg(unix)]
+        {
+            let fd = connect(address)?;
+            // Client::new() takes ownership of the RawFd.
+            Ok(Client::new_from_fd(fd)?)
+        }
 
-    #[cfg(windows)]
-    fn connect(address: impl AsRef<str>) -> Result<Client> {
-        match Client::connect(address.as_ref()) {
-            Ok(client) => Ok(client),
-            Err(e) => Err(e.into()),
+        #[cfg(windows)]
+        {
+            match Client::connect(address.as_ref()) {
+                Ok(client) => Ok(client),
+                Err(e) => Err(e.into()),
+            }
         }
     }
 
@@ -165,29 +167,31 @@ mod tests {
         thread.join().unwrap();
     }
 
-    #[cfg(unix)]
     fn create_server(server_address: &String) -> Server {
-        use std::os::unix::{io::AsRawFd, net::UnixListener};
-        let listener = UnixListener::bind(server_address).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
-        let service = client::create_events(t);
-        let server = Server::new()
-            .add_listener(listener.as_raw_fd())
-            .unwrap()
-            .register_service(service);
-        std::mem::forget(listener);
-        server
-    }
+        #[cfg(unix)]
+        {
+            use std::os::unix::{io::AsRawFd, net::UnixListener};
+            let listener = UnixListener::bind(server_address).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
+            let service = client::create_events(t);
+            let server = Server::new()
+                .add_listener(listener.as_raw_fd())
+                .unwrap()
+                .register_service(service);
+            std::mem::forget(listener);
+            server
+        }
 
-    #[cfg(windows)]
-    fn create_server(server_address: &String) -> Server {
-        let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
-        let service = client::create_events(t);
+        #[cfg(windows)]
+        {
+            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
+            let service = client::create_events(t);
 
-        Server::new()
-            .bind(server_address)
-            .unwrap()
-            .register_service(service)
+            Server::new()
+                .bind(server_address)
+                .unwrap()
+                .register_service(service)
+        }
     }
 }
