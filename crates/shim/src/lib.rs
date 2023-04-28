@@ -182,14 +182,12 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finish()
     };
 
-    #[cfg(unix)]
-    {
+    if cfg!(unix) {
         format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
-    }
-
-    #[cfg(windows)]
-    {
+    } else if cfg!(windows) {
         format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
+    } else {
+        panic!("unsupported platform")
     }
 }
 
