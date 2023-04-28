@@ -122,6 +122,12 @@ pub mod util;
 #[derive(Default)]
 pub struct ExitSignal(Mutex<bool>, Condvar);
 
+// Wrapper type to help hide platform specific signal handling.
+struct AppSignals {
+    #[cfg(unix)]
+    signals: Signals,
+}
+
 #[allow(clippy::mutex_atomic)]
 impl ExitSignal {
     /// Set exit signal to shutdown shim server.
@@ -200,12 +206,8 @@ where
     // Create shim instance
     let mut config = opts.unwrap_or_default();
 
-    #[cfg(unix)]
-    // Setup signals
+    // Setup signals (On Linux need register signals before start main app according to signal_hook docs)
     let signals = setup_signals(&config);
-
-    #[cfg(windows)]
-    setup_signals();
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
@@ -234,10 +236,7 @@ where
             Ok(())
         }
         "delete" => {
-            #[cfg(unix)]
             std::thread::spawn(move || handle_signals(signals));
-            #[cfg(windows)]
-            std::thread::spawn(handle_signals);
             let response = shim.delete_shim()?;
             let stdout = std::io::stdout();
             let mut locked = stdout.lock();
@@ -297,29 +296,32 @@ fn create_server(_flags: args::Flags) -> Result<Server> {
     Ok(server)
 }
 
-#[cfg(unix)]
-fn setup_signals(config: &Config) -> Signals {
-    let signals = Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
-    if !config.no_reaper {
-        signals.add_signal(SIGCHLD).expect("add signal failed");
+fn setup_signals(_config: &Config) -> Option<AppSignals> {
+    #[cfg(unix)]
+    {
+        let signals = Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed");
+        if !_config.no_reaper {
+            signals.add_signal(SIGCHLD).expect("add signal failed");
+        }
+        Some(AppSignals { signals })
     }
-    signals
-}
 
-#[cfg(windows)]
-fn setup_signals() {
-    unsafe {
-        SEMAPHORE = CreateSemaphoreA(ptr::null_mut(), 0, MAX_SEM_COUNT, ptr::null());
-        if SEMAPHORE == 0 {
-            panic!("Failed to create semaphore: {}", io::Error::last_os_error());
-        }
+    #[cfg(windows)]
+    {
+        unsafe {
+            SEMAPHORE = CreateSemaphoreA(ptr::null_mut(), 0, MAX_SEM_COUNT, ptr::null());
+            if SEMAPHORE == 0 {
+                panic!("Failed to create semaphore: {}", io::Error::last_os_error());
+            }
 
-        if SetConsoleCtrlHandler(Some(signal_handler), 1) == 0 {
-            let e = io::Error::last_os_error();
-            CloseHandle(SEMAPHORE);
-            SEMAPHORE = 0 as HANDLE;
-            panic!("Failed to set console handler: {}", e);
+            if SetConsoleCtrlHandler(Some(signal_handler), 1) == 0 {
+                let e = io::Error::last_os_error();
+                CloseHandle(SEMAPHORE);
+                SEMAPHORE = 0 as HANDLE;
+                panic!("Failed to set console handler: {}", e);
+            }
         }
+        None
     }
 }
 
@@ -329,56 +331,61 @@ unsafe extern "system" fn signal_handler(_: u32) -> i32 {
     1
 }
 
-#[cfg(unix)]
-fn handle_signals(mut signals: Signals) {
-    loop {
-        for sig in signals.wait() {
-            match sig {
-                SIGTERM | SIGINT => {
-                    debug!("received {}", sig);
-                }
-                SIGCHLD => loop {
-                    // Note that this thread sticks to child even it is suspended.
-                    match wait::waitpid(Some(Pid::from_raw(-1)), Some(WaitPidFlag::WNOHANG)) {
-                        Ok(WaitStatus::Exited(pid, status)) => {
-                            monitor::monitor_notify_by_pid(pid.as_raw(), status)
-                                .unwrap_or_else(|e| error!("failed to send exit event {}", e))
-                        }
-                        Ok(WaitStatus::Signaled(pid, sig, _)) => {
-                            debug!("child {} terminated({})", pid, sig);
-                            let exit_code = 128 + sig as i32;
-                            monitor::monitor_notify_by_pid(pid.as_raw(), exit_code)
-                                .unwrap_or_else(|e| error!("failed to send signal event {}", e))
-                        }
-                        Err(Errno::ECHILD) => {
-                            break;
-                        }
-                        Err(e) => {
-                            // stick until all children will be successfully waited, even some unexpected error occurs.
-                            warn!("error occurred in signal handler: {}", e);
-                        }
-                        _ => {} // stick until exit
-                    }
-                },
-                _ => {
-                    if let Ok(sig) = Signal::try_from(sig) {
+fn handle_signals(mut _signals: Option<AppSignals>) {
+    #[cfg(unix)]
+    {
+        let mut app_signals = _signals.take().unwrap();
+        loop {
+            for sig in app_signals.signals.wait() {
+                match sig {
+                    SIGTERM | SIGINT => {
                         debug!("received {}", sig);
-                    } else {
-                        warn!("received invalid signal {}", sig);
+                    }
+                    SIGCHLD => loop {
+                        // Note that this thread sticks to child even it is suspended.
+                        match wait::waitpid(Some(Pid::from_raw(-1)), Some(WaitPidFlag::WNOHANG)) {
+                            Ok(WaitStatus::Exited(pid, status)) => {
+                                monitor::monitor_notify_by_pid(pid.as_raw(), status)
+                                    .unwrap_or_else(|e| error!("failed to send exit event {}", e))
+                            }
+                            Ok(WaitStatus::Signaled(pid, sig, _)) => {
+                                debug!("child {} terminated({})", pid, sig);
+                                let exit_code = 128 + sig as i32;
+                                monitor::monitor_notify_by_pid(pid.as_raw(), exit_code)
+                                    .unwrap_or_else(|e| error!("failed to send signal event {}", e))
+                            }
+                            Err(Errno::ECHILD) => {
+                                break;
+                            }
+                            Err(e) => {
+                                // stick until all children will be successfully waited, even some unexpected error occurs.
+                                warn!("error occurred in signal handler: {}", e);
+                            }
+                            _ => {} // stick until exit
+                        }
+                    },
+                    _ => {
+                        if let Ok(sig) = Signal::try_from(sig) {
+                            debug!("received {}", sig);
+                        } else {
+                            warn!("received invalid signal {}", sig);
+                        }
                     }
                 }
             }
         }
     }
-}
 
-#[cfg(windows)]
-// must start on thread as waitforSingleObject puts the current thread to sleep
-fn handle_signals() {
-    unsafe {
-        WaitForSingleObject(SEMAPHORE, INFINITE);
-        //Windows doesn't have similiar signal like SIGCHLD
-        // We could implement something if required but for now
+    #[cfg(windows)]
+    {
+        // must start on thread as waitforSingleObject puts the current thread to sleep
+        loop {
+            unsafe {
+                WaitForSingleObject(SEMAPHORE, INFINITE);
+                //Windows doesn't have similar signal like SIGCHLD
+                // We could implement something if required but for now
+            }
+        }
     }
 }
 

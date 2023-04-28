@@ -33,8 +33,6 @@
 //!
 
 use std::{collections::hash_map::DefaultHasher, fs::File, hash::Hasher, path::PathBuf};
-#[cfg(windows)]
-use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
 #[cfg(unix)]
 use std::{
     os::unix::{io::RawFd, net::UnixListener},
@@ -48,6 +46,12 @@ pub use protos::{
     shim::shim::DeleteResponse,
     ttrpc::{context::Context, Result as TtrpcResult},
 };
+#[cfg(unix)]
+ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
+
+#[cfg(windows)]
+use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
+
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
@@ -116,9 +120,6 @@ cfg_async! {
     pub use protos::shim_async::Task;
     pub use protos::ttrpc::r#async::TtrpcContext;
 }
-
-#[cfg(unix)]
-ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
 
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
 
