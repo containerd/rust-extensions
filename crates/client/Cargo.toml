@@ -1,6 +1,6 @@
 [package]
 name = "containerd-client"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 description = "GRPC bindings to containerd APIs"
 keywords = ["containerd", "client", "grpc", "containers"]
