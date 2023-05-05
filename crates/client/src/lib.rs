@@ -49,6 +49,7 @@ pub mod services {
         tonic::include_proto!("containerd.services.introspection.v1");
         tonic::include_proto!("containerd.services.leases.v1");
         tonic::include_proto!("containerd.services.namespaces.v1");
+        tonic::include_proto!("containerd.services.sandbox.v1");
         tonic::include_proto!("containerd.services.tasks.v1");
 
         // Snapshot's `Info` conflicts with Content's `Info`, so wrap it into a separate sub module.
