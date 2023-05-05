@@ -22,6 +22,7 @@ const PROTO_FILES: &[&str] = &[
     "vendor/github.com/containerd/containerd/api/types/metrics.proto",
     "vendor/github.com/containerd/containerd/api/types/mount.proto",
     "vendor/github.com/containerd/containerd/api/types/platform.proto",
+    "vendor/github.com/containerd/containerd/api/types/sandbox.proto",
     "vendor/github.com/containerd/containerd/api/types/task/task.proto",
     // Services
     "vendor/github.com/containerd/containerd/api/services/containers/v1/containers.proto",
@@ -32,6 +33,7 @@ const PROTO_FILES: &[&str] = &[
     "vendor/github.com/containerd/containerd/api/services/introspection/v1/introspection.proto",
     "vendor/github.com/containerd/containerd/api/services/leases/v1/leases.proto",
     "vendor/github.com/containerd/containerd/api/services/namespaces/v1/namespace.proto",
+    "vendor/github.com/containerd/containerd/api/services/sandbox/v1/sandbox.proto",
     "vendor/github.com/containerd/containerd/api/services/snapshots/v1/snapshots.proto",
     "vendor/github.com/containerd/containerd/api/services/version/v1/version.proto",
     "vendor/github.com/containerd/containerd/api/services/tasks/v1/tasks.proto",
@@ -48,6 +50,7 @@ const FIXUP_MODULES: &[&str] = &[
     "containerd.services.diff.v1",
     "containerd.services.images.v1",
     "containerd.services.introspection.v1",
+    "containerd.services.sandbox.v1",
     "containerd.services.snapshots.v1",
     "containerd.services.tasks.v1",
 ];
