@@ -12,9 +12,9 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-tonic = "0.8"
-prost = "0.11"
-prost-types = "0.11"
+tonic.workspace = true
+prost.workspace = true
+prost-types.workspace = true
 tokio = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
 
@@ -30,7 +30,7 @@ tower = { workspace = true, optional = true }
 axum-core = ">=0.2.8"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build.workspace = true
 
 [features]
 connect = ["tokio", "tower"]
