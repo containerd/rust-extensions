@@ -77,6 +77,22 @@ fn main() {
             true,
         );
     }
+
+    #[cfg(feature = "sandbox")]
+    {
+        genmodule(
+            "sandbox",
+            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            false,
+        );
+
+        #[cfg(feature = "async")]
+        genmodule(
+            "sandbox_async",
+            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            true,
+        );
+    }
 }
 
 fn genmodule(name: &str, inputs: &[&str], async_all: bool) {
