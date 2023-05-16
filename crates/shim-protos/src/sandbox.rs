@@ -26,3 +26,11 @@ pub mod sandbox_ttrpc {
 pub mod sandbox_async {
     include!(concat!(env!("OUT_DIR"), "/sandbox_async/sandbox_ttrpc.rs"));
 }
+
+pub(crate) mod mount {
+    pub use crate::types::mount::*;
+}
+
+pub(crate) mod platform {
+    pub use crate::types::platform::*;
+}
