@@ -78,8 +78,6 @@ pub mod events {
 pub async fn connect(
     path: impl AsRef<std::path::Path>,
 ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
-    use std::convert::TryFrom;
-
     use tokio::net::UnixStream;
     use tonic::transport::Endpoint;
 
