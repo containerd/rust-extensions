@@ -14,27 +14,23 @@
    limitations under the License.
 */
 
-pub mod empty {
-    include!(concat!(env!("OUT_DIR"), "/types/empty.rs"));
+pub mod sandbox {
+    include!(concat!(env!("OUT_DIR"), "/sandbox/sandbox.rs"));
 }
 
-pub mod gogo {
-    include!(concat!(env!("OUT_DIR"), "/types/gogo.rs"));
+pub mod sandbox_ttrpc {
+    include!(concat!(env!("OUT_DIR"), "/sandbox/sandbox_ttrpc.rs"));
 }
 
-pub mod mount {
-    include!(concat!(env!("OUT_DIR"), "/types/mount.rs"));
+#[cfg(feature = "async")]
+pub mod sandbox_async {
+    include!(concat!(env!("OUT_DIR"), "/sandbox_async/sandbox_ttrpc.rs"));
 }
 
-pub mod task {
-    include!(concat!(env!("OUT_DIR"), "/types/task.rs"));
+pub(crate) mod mount {
+    pub use crate::types::mount::*;
 }
 
-pub mod fieldpath {
-    include!(concat!(env!("OUT_DIR"), "/types/fieldpath.rs"));
-}
-
-#[cfg(feature = "sandbox")]
-pub mod platform {
-    include!(concat!(env!("OUT_DIR"), "/types/platform.rs"));
+pub(crate) mod platform {
+    pub use crate::types::platform::*;
 }

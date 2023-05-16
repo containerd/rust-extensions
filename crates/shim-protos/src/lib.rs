@@ -67,6 +67,8 @@ pub use ttrpc;
 
 pub mod cgroups;
 pub mod events;
+#[cfg(feature = "sandbox")]
+mod sandbox;
 pub mod shim;
 pub mod types;
 
@@ -99,4 +101,17 @@ pub mod shim_async {
 /// Reexport auto-generated public data structures.
 pub mod api {
     pub use crate::shim::{empty::*, events::*, mount::*, shim::*, task::*};
+}
+
+#[cfg(feature = "sandbox")]
+pub use sandbox::sandbox as sandbox_api;
+
+#[cfg(feature = "sandbox")]
+pub mod sandbox_sync {
+    pub use crate::sandbox::sandbox_ttrpc::*;
+}
+
+#[cfg(all(feature = "sandbox", feature = "async"))]
+pub mod sandbox_async {
+    pub use crate::sandbox::sandbox_async::*;
 }
