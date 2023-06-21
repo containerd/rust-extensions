@@ -562,7 +562,8 @@ fn signal_server_started() {
     unsafe {
         let std_out = GetStdHandle(STD_OUTPUT_HANDLE);
 
-        for handle in [std_out] {
+        {
+            let handle = std_out;
             CloseHandle(handle);
         }
     }

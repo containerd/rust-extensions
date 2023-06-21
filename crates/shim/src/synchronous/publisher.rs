@@ -54,7 +54,7 @@ impl RemotePublisher {
         {
             let fd = connect(address)?;
             // Client::new() takes ownership of the RawFd.
-            Ok(Client::new_from_fd(fd)?)
+            Client::new(fd).map_err(|err| err.into())
         }
 
         #[cfg(windows)]
@@ -167,7 +167,7 @@ mod tests {
         thread.join().unwrap();
     }
 
-    fn create_server(server_address: &String) -> Server {
+    fn create_server(server_address: &str) -> Server {
         #[cfg(unix)]
         {
             use std::os::unix::{io::AsRawFd, net::UnixListener};
