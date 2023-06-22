@@ -2,6 +2,7 @@ name: CI
 on:
   pull_request:
   push:
+  merge_group:
   schedule:
     - cron: '0 0 * * *' # Every day at midnight
 
