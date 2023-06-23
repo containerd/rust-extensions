@@ -23,7 +23,7 @@ mod skeleton {
     use containerd_shim as shim;
     use log::info;
     use shim::{
-        api, synchronous::publisher::RemotePublisher, Config, DeleteResponse, ExitSignal,
+        api, synchronous::publisher::RemotePublisher, Config, DeleteResponse, ExitSignal, Flags,
         TtrpcContext, TtrpcResult,
     };
 
@@ -35,7 +35,7 @@ mod skeleton {
     impl shim::Shim for Service {
         type T = Service;
 
-        fn new(_runtime_id: &str, _id: &str, _namespace: &str, _config: &mut Config) -> Self {
+        fn new(_runtime_id: &str, _args: &Flags, _config: &mut Config) -> Self {
             Service {
                 exit: Arc::new(ExitSignal::default()),
             }

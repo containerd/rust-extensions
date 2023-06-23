@@ -40,7 +40,7 @@ use shim::{
         convert_to_timestamp, read_options, read_runtime, read_spec_from_file, timestamp,
         write_address,
     },
-    warn, Config, Context, ExitSignal, Shim, StartOpts,
+    warn, Config, Context, ExitSignal, Flags, Shim, StartOpts,
 };
 
 use crate::{
@@ -56,11 +56,11 @@ use crate::{
 impl Shim for Service {
     type T = ShimTask<RuncFactory, RuncContainer>;
 
-    fn new(_runtime_id: &str, id: &str, namespace: &str, _config: &mut Config) -> Self {
+    fn new(_runtime_id: &str, args: &Flags, _config: &mut Config) -> Self {
         Service {
             exit: Arc::new(ExitSignal::default()),
-            id: id.to_string(),
-            namespace: namespace.to_string(),
+            id: args.id.to_string(),
+            namespace: args.namespace.to_string(),
         }
     }
 
