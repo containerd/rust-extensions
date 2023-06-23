@@ -13,7 +13,7 @@ homepage.workspace = true
 
 [dependencies]
 protobuf = "3.1"
-ttrpc = "0.7"
+ttrpc = "0.8"
 async-trait = { version = "0.1.48", optional = true }
 
 [build-dependencies]

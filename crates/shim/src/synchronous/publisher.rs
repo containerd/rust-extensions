@@ -50,7 +50,7 @@ impl RemotePublisher {
     fn connect(address: impl AsRef<str>) -> Result<Client> {
         let fd = connect(address)?;
         // Client::new() takes ownership of the RawFd.
-        Ok(Client::new(fd))
+        Client::new(fd).map_err(|err| err.into())
     }
 
     /// Publish a new event.
