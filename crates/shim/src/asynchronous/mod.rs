@@ -166,7 +166,7 @@ where
         }
         _ => {
             if !config.no_setup_logger {
-                logger::init(flags.debug)?;
+                logger::init(flags.debug, &flags.namespace, &flags.id)?;
             }
 
             let publisher = RemotePublisher::new(&ttrpc_address).await?;

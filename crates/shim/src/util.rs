@@ -14,10 +14,9 @@
    limitations under the License.
 */
 
-use std::{
-    os::unix::io::RawFd,
-    time::{SystemTime, UNIX_EPOCH},
-};
+#[cfg(unix)]
+use std::os::unix::io::RawFd;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -100,6 +99,7 @@ impl From<JsonOptions> for Options {
     }
 }
 
+#[cfg(unix)]
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     use nix::{sys::socket::*, unistd::close};
 

@@ -25,9 +25,11 @@ use client::{
 };
 use containerd_shim_protos as client;
 
+#[cfg(unix)]
+use crate::util::connect;
 use crate::{
     error::Result,
-    util::{connect, convert_to_any, timestamp},
+    util::{convert_to_any, timestamp},
 };
 
 /// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
@@ -48,9 +50,20 @@ impl RemotePublisher {
     }
 
     fn connect(address: impl AsRef<str>) -> Result<Client> {
-        let fd = connect(address)?;
-        // Client::new() takes ownership of the RawFd.
-        Ok(Client::new(fd))
+        #[cfg(unix)]
+        {
+            let fd = connect(address)?;
+            // Client::new() takes ownership of the RawFd.
+            Client::new(fd).map_err(|err| err.into())
+        }
+
+        #[cfg(windows)]
+        {
+            match Client::connect(address.as_ref()) {
+                Ok(client) => Ok(client),
+                Err(e) => Err(e.into()),
+            }
+        }
     }
 
     /// Publish a new event.
@@ -90,10 +103,7 @@ impl Events for RemotePublisher {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        os::unix::{io::AsRawFd, net::UnixListener},
-        sync::{Arc, Barrier},
-    };
+    use std::sync::{Arc, Barrier};
 
     use client::{
         api::{Empty, ForwardRequest},
@@ -102,6 +112,8 @@ mod tests {
     use ttrpc::Server;
 
     use super::*;
+    #[cfg(windows)]
+    use crate::synchronous::wait_socket_working;
 
     struct FakeServer {}
 
@@ -115,8 +127,12 @@ mod tests {
 
     #[test]
     fn test_connect() {
+        #[cfg(unix)]
         let tmpdir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
         let path = format!("{}/socket", tmpdir.as_ref().to_str().unwrap());
+        #[cfg(windows)]
+        let path = "\\\\.\\pipe\\test-pipe".to_string();
         let path1 = path.clone();
 
         assert!(RemotePublisher::connect("a".repeat(16384)).is_err());
@@ -125,17 +141,14 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let barrier2 = barrier.clone();
         let thread = std::thread::spawn(move || {
-            let listener = UnixListener::bind(&path1).unwrap();
-            listener.set_nonblocking(true).unwrap();
-            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
-            let service = client::create_events(t);
-            let mut server = Server::new()
-                .add_listener(listener.as_raw_fd())
-                .unwrap()
-                .register_service(service);
-            std::mem::forget(listener);
+            let mut server = create_server(&path1);
 
             server.start().unwrap();
+
+            #[cfg(windows)]
+            // make sure pipe is ready on windows
+            wait_socket_working(&path1, 5, 5).unwrap();
+
             barrier2.wait();
 
             barrier2.wait();
@@ -152,5 +165,33 @@ mod tests {
         barrier.wait();
 
         thread.join().unwrap();
+    }
+
+    fn create_server(server_address: &str) -> Server {
+        #[cfg(unix)]
+        {
+            use std::os::unix::{io::AsRawFd, net::UnixListener};
+            let listener = UnixListener::bind(server_address).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
+            let service = client::create_events(t);
+            let server = Server::new()
+                .add_listener(listener.as_raw_fd())
+                .unwrap()
+                .register_service(service);
+            std::mem::forget(listener);
+            server
+        }
+
+        #[cfg(windows)]
+        {
+            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
+            let service = client::create_events(t);
+
+            Server::new()
+                .bind(server_address)
+                .unwrap()
+                .register_service(service)
+        }
     }
 }
