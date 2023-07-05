@@ -332,6 +332,9 @@ async fn handle_signals(signals: Signals) {
                             .await
                             .unwrap_or_else(|e| error!("failed to send signal event {}", e))
                     }
+                    Ok(WaitStatus::StillAlive) => {
+                        break;
+                    }
                     Err(Error::Nix(Errno::ECHILD)) => {
                         break;
                     }
