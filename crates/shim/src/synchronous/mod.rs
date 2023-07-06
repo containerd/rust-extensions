@@ -354,6 +354,9 @@ fn handle_signals(mut _signals: Option<AppSignals>) {
                                 monitor::monitor_notify_by_pid(pid.as_raw(), exit_code)
                                     .unwrap_or_else(|e| error!("failed to send signal event {}", e))
                             }
+                            Ok(WaitStatus::StillAlive) => {
+                                break;
+                            }
                             Err(Errno::ECHILD) => {
                                 break;
                             }
