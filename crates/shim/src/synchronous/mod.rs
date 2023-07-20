@@ -62,7 +62,8 @@ use util::{read_address, write_address};
 
 use crate::{
     api::DeleteResponse,
-    args, logger,
+    args::{self, Flags},
+    logger,
     protos::{
         protobuf::Message,
         shim::shim_ttrpc::{create_task, Task},
@@ -159,10 +160,9 @@ pub trait Shim {
     ///
     /// # Arguments
     /// - `runtime_id`: identifier of the container runtime.
-    /// - `id`: identifier of the shim/container, passed in from Containerd.
-    /// - `namespace`: namespace of the shim/container, passed in from Containerd.
+    /// - `args`: command line arguments passed to the shim which includes namespace and id
     /// - `config`: for the shim to pass back configuration information
-    fn new(runtime_id: &str, id: &str, namespace: &str, config: &mut Config) -> Self;
+    fn new(runtime_id: &str, args: &Flags, config: &mut Config) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -213,7 +213,7 @@ where
         reap::set_subreaper()?;
     }
 
-    let mut shim = T::new(runtime_id, &flags.id, &flags.namespace, &mut config);
+    let mut shim = T::new(runtime_id, &flags, &mut config);
 
     match flags.action.as_str() {
         "start" => {

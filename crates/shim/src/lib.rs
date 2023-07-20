@@ -65,6 +65,7 @@ pub use crate::synchronous::*;
 pub mod error;
 
 mod args;
+pub use args::Flags;
 #[cfg(feature = "async")]
 pub mod asynchronous;
 pub mod cgroup;

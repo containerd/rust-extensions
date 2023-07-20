@@ -19,7 +19,7 @@ use std::ffi::OsStr;
 use crate::error::{Error, Result};
 
 /// Flags to be passed from containerd daemon to a shim binary.
-/// Reflects https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L100
+/// Reflects <https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L100>
 #[derive(Debug, Default)]
 pub struct Flags {
     /// Enable debug output in logs.
@@ -37,7 +37,7 @@ pub struct Flags {
     /// Path to publish binary (used for publishing events).
     pub publish_binary: String,
     /// Shim action (start / delete).
-    /// See https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L191
+    /// See <https://github.com/containerd/containerd/blob/master/runtime/v2/shim/shim.go#L191>
     pub action: String,
 }
 

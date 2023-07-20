@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use containerd_shim::{
     asynchronous::{run, spawn, ExitSignal, Shim},
     publisher::RemotePublisher,
-    Config, Error, StartOpts, TtrpcResult,
+    Config, Error, Flags, StartOpts, TtrpcResult,
 };
 use containerd_shim_protos::{
     api, api::DeleteResponse, shim_async::Task, ttrpc::r#async::TtrpcContext,
@@ -36,7 +36,7 @@ struct Service {
 impl Shim for Service {
     type T = Service;
 
-    async fn new(_runtime_id: &str, _id: &str, _namespace: &str, _config: &mut Config) -> Self {
+    async fn new(_runtime_id: &str, _args: &Flags, _config: &mut Config) -> Self {
         Service {
             exit: Arc::new(ExitSignal::default()),
         }

@@ -55,7 +55,7 @@ use crate::{
     error::{Error, Result},
     logger, parse_sockaddr, reap, socket_address,
     util::{asyncify, read_file_to_str, write_str_to_file},
-    Config, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
+    Config, Flags, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
 pub mod monitor;
@@ -77,7 +77,7 @@ pub trait Shim {
     /// - `id`: identifier of the shim/container, passed in from Containerd.
     /// - `namespace`: namespace of the shim/container, passed in from Containerd.
     /// - `config`: for the shim to pass back configuration information
-    async fn new(runtime_id: &str, id: &str, namespace: &str, config: &mut Config) -> Self;
+    async fn new(runtime_id: &str, args: &Flags, config: &mut Config) -> Self;
 
     /// Start shim will be called by containerd when launching new shim instance.
     ///
@@ -128,7 +128,7 @@ where
         reap::set_subreaper()?;
     }
 
-    let mut shim = T::new(runtime_id, &flags.id, &flags.namespace, &mut config).await;
+    let mut shim = T::new(runtime_id, &flags, &mut config).await;
 
     match flags.action.as_str() {
         "start" => {

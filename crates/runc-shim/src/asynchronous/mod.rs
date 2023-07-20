@@ -31,7 +31,7 @@ use containerd_shim::{
     util::{
         convert_to_timestamp, read_options, read_runtime, read_spec, timestamp, write_str_to_file,
     },
-    Config, Context, DeleteResponse, Error, StartOpts,
+    Config, Context, DeleteResponse, Error, Flags, StartOpts,
 };
 use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -61,13 +61,13 @@ pub(crate) struct Service {
 impl Shim for Service {
     type T = TaskService<RuncFactory, RuncContainer>;
 
-    async fn new(_runtime_id: &str, id: &str, namespace: &str, _config: &mut Config) -> Self {
+    async fn new(_runtime_id: &str, args: &Flags, _config: &mut Config) -> Self {
         let exit = Arc::new(ExitSignal::default());
         // TODO: add publisher
         Service {
             exit,
-            id: id.to_string(),
-            namespace: namespace.to_string(),
+            id: args.id.to_string(),
+            namespace: args.namespace.to_string(),
         }
     }
 
