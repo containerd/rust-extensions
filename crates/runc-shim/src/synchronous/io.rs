@@ -17,6 +17,7 @@
 use std::{
     fs::OpenOptions,
     io::{ErrorKind, Read, Write},
+    os::unix::fs::OpenOptionsExt,
     thread::JoinHandle,
 };
 
@@ -94,9 +95,28 @@ where
 }
 
 impl ProcessIO {
-    pub fn copy(&self, stdio: &Stdio) -> Result<WaitGroup> {
+    pub fn copy(&mut self, stdio: &Stdio) -> Result<WaitGroup> {
         let wg = WaitGroup::new();
         if !self.copy {
+            if !stdio.stdout.is_empty() {
+                // Open a reader to make sure even if the read side of containerd closed,
+                // the writer won't get EPIPE.
+                let stdout_r = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NONBLOCK)
+                    .open(stdio.stdout.as_str())
+                    .map_err(io_error!(e, "failed to open stdout for reading"))?;
+                self.stdout_r = Some(stdout_r);
+            }
+            if !stdio.stderr.is_empty() {
+                let stderr_r = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NONBLOCK)
+                    .open(stdio.stderr.as_str())
+                    .map_err(io_error!(e, "failed to open stderr for reading"))?;
+                self.stderr_r = Some(stderr_r);
+            }
+
             return Ok(wg);
         };
         if let Some(pio) = &self.io {
@@ -161,5 +181,106 @@ impl ProcessIO {
         }
 
         Ok(wg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{remove_file, OpenOptions},
+        io::{ErrorKind, Read, Write},
+        path::Path,
+        thread,
+        time::Duration,
+    };
+
+    use nix::{sys::stat::Mode, unistd::mkfifo};
+
+    use crate::{common::ProcessIO, io::Stdio};
+
+    // Test writing stderr fifo is ok when no outside reader.
+    #[test]
+    fn test_set_io_restart() {
+        let tmp_fifo_str = "/tmp/shim-test-fifo";
+        create_fifo_if_not_exist(tmp_fifo_str);
+        let tmp_fifo = Path::new(tmp_fifo_str);
+
+        simulate_containerd_to_open_fifo(tmp_fifo_str.to_string());
+
+        // Simulate container side
+        let mut stderr_w = OpenOptions::new()
+            .write(true)
+            .open(tmp_fifo)
+            .expect("failed to open stderr for write");
+        assert!(stderr_w.write(b"hello\n").is_ok());
+
+        thread::sleep(Duration::from_millis(100)); // wait until containerd side died
+        let err = stderr_w
+            .write(b"hello\n")
+            .expect_err("should get error when no reader");
+        assert_eq!(err.kind(), ErrorKind::BrokenPipe);
+        let stdio = Stdio {
+            stderr: tmp_fifo_str.to_string(),
+            ..Default::default()
+        };
+        let mut process_io = ProcessIO::default();
+        let _ = process_io.copy(&stdio);
+        assert!(stderr_w.write(b"hello\n").is_ok());
+
+        // Cleanup resources
+        remove_file(tmp_fifo).unwrap_or_default();
+    }
+
+    // Test exec with no "it" scenario, container process runs so fast that write side has been closed.
+    #[test]
+    fn test_set_io_no_writer() {
+        let tmp_fifo_str = "/tmp/shim-test-fifo-exec";
+        create_fifo_if_not_exist(tmp_fifo_str);
+        let tmp_fifo = Path::new(tmp_fifo_str);
+
+        simulate_containerd_to_open_fifo(tmp_fifo_str.to_string());
+
+        // Simulate container side
+        let mut stderr_w = OpenOptions::new()
+            .write(true)
+            .open(tmp_fifo)
+            .expect("failed to open stderr for write");
+        assert!(stderr_w.write(b"hello\n").is_ok());
+
+        // container exited, close writer
+        drop(stderr_w);
+
+        let stdio = Stdio {
+            stderr: tmp_fifo_str.to_string(),
+            ..Default::default()
+        };
+        let mut process_io = ProcessIO::default();
+        let _ = process_io.copy(&stdio);
+
+        // Cleanup resources
+        remove_file(tmp_fifo).unwrap_or_default();
+    }
+
+    fn create_fifo_if_not_exist(path: &str) {
+        let tmp_fifo = Path::new(path);
+        if tmp_fifo.exists() {
+            remove_file(tmp_fifo).expect("failed to remove tmp fifo");
+        }
+        mkfifo(tmp_fifo, Mode::from_bits(0o600).unwrap()).expect("failed to create tmp fifo");
+    }
+
+    fn simulate_containerd_to_open_fifo(tmp_fifo_str: String) {
+        // Simulate containerd side to open fifo for read
+        thread::spawn(move || {
+            let tmp_fifo = Path::new(&tmp_fifo_str);
+            let mut containerd_r = OpenOptions::new()
+                .read(true)
+                .open(tmp_fifo)
+                .expect("failed to open stderr for read");
+            let mut buf = Vec::with_capacity(6);
+            thread::sleep(Duration::from_millis(50));
+            assert!(containerd_r.read(buf.as_mut()).is_ok());
+            // Fd will be closed here
+        });
     }
 }

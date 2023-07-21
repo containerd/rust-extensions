@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use std::{env, io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync::Arc};
+use std::{env, fs::File, io::IoSliceMut, ops::Deref, os::unix::io::RawFd, path::Path, sync::Arc};
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
@@ -46,6 +46,7 @@ pub const GROUP_LABELS: [&str; 2] = [
 ];
 pub const INIT_PID_FILE: &str = "init.pid";
 pub const LOG_JSON_FILE: &str = "log.json";
+pub const FIFO_SCHEME: &str = "fifo";
 
 #[derive(Deserialize)]
 pub struct Log {
@@ -53,10 +54,13 @@ pub struct Log {
     pub msg: String,
 }
 
+#[derive(Default)]
 pub struct ProcessIO {
     pub uri: Option<String>,
     pub io: Option<Arc<dyn Io>>,
     pub copy: bool,
+    pub stdout_r: Option<File>,
+    pub stderr_r: Option<File>,
 }
 
 pub fn create_io(
@@ -65,36 +69,25 @@ pub fn create_io(
     _io_gid: u32,
     stdio: &Stdio,
 ) -> containerd_shim::Result<ProcessIO> {
+    let mut pio = ProcessIO::default();
     if stdio.is_null() {
         let nio = NullIo::new().map_err(io_error!(e, "new Null Io"))?;
-        let pio = ProcessIO {
-            uri: None,
-            io: Some(Arc::new(nio)),
-            copy: false,
-        };
+        pio.io = Some(Arc::new(nio));
         return Ok(pio);
     }
     let stdout = stdio.stdout.as_str();
     let scheme_path = stdout.trim().split("://").collect::<Vec<&str>>();
     let scheme: &str;
-    let uri: String;
     if scheme_path.len() <= 1 {
-        // no scheme specified
-        // default schema to fifo
-        uri = format!("fifo://{}", stdout);
-        scheme = "fifo"
+        // no scheme specified, default schema to fifo
+        scheme = FIFO_SCHEME;
+        pio.uri = Some(format!("{}://{}", scheme, stdout));
     } else {
-        uri = stdout.to_string();
         scheme = scheme_path[0];
+        pio.uri = Some(stdout.to_string());
     }
 
-    let mut pio = ProcessIO {
-        uri: Some(uri),
-        io: None,
-        copy: false,
-    };
-
-    if scheme == "fifo" {
+    if scheme == FIFO_SCHEME {
         debug!(
             "create named pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
             id,
