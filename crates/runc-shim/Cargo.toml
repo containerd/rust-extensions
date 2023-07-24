@@ -1,7 +1,11 @@
 [package]
 name = "containerd-runc-shim"
 version = "0.1.1"
-authors = ["Shaobao Feng <fshb1988@gmail.com>", "Tianyang Zhang <burning9699@gmail.com>", "The containerd Authors"]
+authors = [
+    "Shaobao Feng <fshb1988@gmail.com>",
+    "Tianyang Zhang <burning9699@gmail.com>",
+    "The containerd Authors",
+]
 keywords = ["containerd", "shim", "containers"]
 description = "Rust implementation of containerd's runc v2 shim runtime"
 
@@ -19,9 +23,6 @@ name = "containerd-shim-runc-v2-rs"
 path = "src/main.rs"
 doc = false
 
-[features]
-async = ["containerd-shim/async", "runc/async", "tokio", "futures", "async-trait"]
-
 [dependencies]
 log = "0.4"
 nix = "0.26"
@@ -34,9 +35,9 @@ crossbeam = "0.8.1"
 uuid = { version = "1.0.0", features = ["v4"] }
 
 # Async dependencies
-async-trait = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["full"], optional = true }
-futures = { workspace = true, optional = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+futures = { workspace = true }
 
-containerd-shim = { path = "../shim", version = "0.4.0" }
-runc = { path = "../runc", version = "0.2.0" }
+containerd-shim = { path = "../shim", version = "0.4.0", features = ["async"] }
+runc = { path = "../runc", version = "0.2.0", features = ["async"] }
