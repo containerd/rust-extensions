@@ -37,19 +37,12 @@ use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::{
-    asynchronous::runc::{RuncContainer, RuncFactory},
     common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS},
+    container::Container,
+    processes::Process,
+    runc::{RuncContainer, RuncFactory},
+    task::TaskService,
 };
-
-mod console;
-mod container;
-mod processes;
-mod runc;
-mod task;
-
-use container::Container;
-use processes::Process;
-use task::TaskService;
 
 pub(crate) struct Service {
     exit: Arc<ExitSignal>,

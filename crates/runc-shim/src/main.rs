@@ -16,11 +16,16 @@
 
 use containerd_shim::asynchronous::run;
 
-mod asynchronous;
 mod common;
+mod console;
+mod container;
 mod io;
+mod processes;
+mod runc;
+mod service;
+mod task;
 
-use crate::asynchronous::Service;
+use service::Service;
 
 #[tokio::main]
 async fn main() {
