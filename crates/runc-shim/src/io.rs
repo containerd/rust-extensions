@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Stdio {
     pub stdin: String,
     pub stdout: String,

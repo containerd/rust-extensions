@@ -559,7 +559,7 @@ impl Process for InitProcess {
         self.common.copy_console(console_socket)
     }
 
-    fn copy_io(&self) -> Result<()> {
+    fn copy_io(&mut self) -> Result<()> {
         self.common.copy_io()
     }
 
@@ -638,7 +638,7 @@ impl Process for ExecProcess {
         self.common.copy_console(console_socket)
     }
 
-    fn copy_io(&self) -> Result<()> {
+    fn copy_io(&mut self) -> Result<()> {
         self.common.copy_io()
     }
 

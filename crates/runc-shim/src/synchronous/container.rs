@@ -65,7 +65,7 @@ pub trait Process {
     fn exit_code(&self) -> i32;
     fn exited_at(&self) -> Option<OffsetDateTime>;
     fn copy_console(&self, console_socket: &ConsoleSocket) -> Result<Console>;
-    fn copy_io(&self) -> Result<()>;
+    fn copy_io(&mut self) -> Result<()>;
     fn set_pid_from_file(&mut self, pid_path: &Path) -> Result<()>;
     fn resize_pty(&mut self, height: u32, width: u32) -> Result<()>;
     fn close_io(&self) -> Result<()>;
@@ -302,8 +302,8 @@ impl Process for CommonProcess {
         Ok(console)
     }
 
-    fn copy_io(&self) -> Result<()> {
-        if let Some(pio) = self.io.as_ref() {
+    fn copy_io(&mut self) -> Result<()> {
+        if let Some(pio) = self.io.as_mut() {
             pio.copy(&self.stdio)?;
         };
         Ok(())
