@@ -83,7 +83,7 @@ pub trait Shim {
     ///
     /// It expected to return TTRPC address containerd daemon can use to communicate with
     /// the given shim instance.
-    /// See https://github.com/containerd/containerd/tree/master/runtime/v2#start
+    /// See <https://github.com/containerd/containerd/tree/master/runtime/v2#start>
     /// this is an asynchronous call
     async fn start_shim(&mut self, opts: StartOpts) -> Result<String>;
 
