@@ -133,7 +133,7 @@ async fn main() {
         .ok_or("First argument must be socket path")
         .unwrap();
 
-    let example = Example::default();
+    let example = Example;
 
     let incoming = {
         let uds = UnixListener::bind(socket_path).expect("Failed to bind listener");
