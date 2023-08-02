@@ -76,9 +76,10 @@ pub struct Version {
     pub commit: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum LogFormat {
     Json,
+    #[default]
     Text,
 }
 
@@ -88,12 +89,6 @@ impl Display for LogFormat {
             LogFormat::Json => write!(f, "{}", JSON),
             LogFormat::Text => write!(f, "{}", TEXT),
         }
-    }
-}
-
-impl Default for LogFormat {
-    fn default() -> Self {
-        LogFormat::Text
     }
 }
 
@@ -597,6 +592,41 @@ impl Runc {
     }
 }
 
+#[derive(Debug)]
+pub struct DefaultExecutor {}
+
+#[cfg(feature = "async")]
+#[async_trait]
+impl Spawner for DefaultExecutor {
+    async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
+        let mut cmd = cmd;
+        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
+        let pid = child.id().unwrap();
+        let result = child
+            .wait_with_output()
+            .await
+            .map_err(Error::InvalidCommand)?;
+        let status = result.status;
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        Ok((status, pid, stdout, stderr))
+    }
+}
+
+#[cfg(not(feature = "async"))]
+impl Spawner for DefaultExecutor {
+    fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
+        let mut cmd = cmd;
+        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
+        let pid = child.id();
+        let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
+        let status = result.status;
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        Ok((status, pid, stdout, stderr))
+    }
+}
+
 #[cfg(test)]
 #[cfg(all(target_os = "linux", not(feature = "async")))]
 mod tests {
@@ -982,40 +1012,5 @@ mod tests {
         assert_ne!(response.pid, 0);
         assert!(response.status.success());
         assert!(!response.output.is_empty());
-    }
-}
-
-#[derive(Debug)]
-pub struct DefaultExecutor {}
-
-#[cfg(feature = "async")]
-#[async_trait]
-impl Spawner for DefaultExecutor {
-    async fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
-        let mut cmd = cmd;
-        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
-        let pid = child.id().unwrap();
-        let result = child
-            .wait_with_output()
-            .await
-            .map_err(Error::InvalidCommand)?;
-        let status = result.status;
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-        Ok((status, pid, stdout, stderr))
-    }
-}
-
-#[cfg(not(feature = "async"))]
-impl Spawner for DefaultExecutor {
-    fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)> {
-        let mut cmd = cmd;
-        let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
-        let pid = child.id();
-        let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
-        let status = result.status;
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-        Ok((status, pid, stdout, stderr))
     }
 }

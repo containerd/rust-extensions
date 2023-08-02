@@ -22,7 +22,7 @@ use logging::{Config, Driver};
 fn pump(reader: fs::File) {
     io::BufReader::new(reader)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .for_each(|_str| {
             // Write log string to destination here.
             // For instance with journald:

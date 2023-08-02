@@ -80,18 +80,13 @@ pub mod api {
 }
 
 /// Snapshot kinds.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Default)]
 pub enum Kind {
+    #[default]
     Unknown,
     View,
     Active,
     Committed,
-}
-
-impl Default for Kind {
-    fn default() -> Self {
-        Kind::Unknown
-    }
 }
 
 /// Information about a particular snapshot.
