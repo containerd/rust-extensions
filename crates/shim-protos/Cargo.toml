@@ -1,6 +1,6 @@
 [package]
 name = "containerd-shim-protos"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
 description = "TTRPC bindings for containerd shim interfaces"
 keywords = ["containerd", "shim", "containers", "ttrpc", "client"]

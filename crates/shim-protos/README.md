@@ -18,7 +18,7 @@ Add `containerd-shim-client` as a dependency in your `Cargo.toml`
 
 ```toml
 [dependencies]
-containerd-shim-protos = "0.1"
+containerd-shim-protos = "0.4"
 ```
 
 Basic client code looks as follows:
