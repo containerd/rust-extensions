@@ -38,5 +38,5 @@ async-trait = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 futures = { workspace = true, optional = true }
 
-containerd-shim = { path = "../shim", version = "0.3.0" }
+containerd-shim = { path = "../shim", version = "0.4.0" }
 runc = { path = "../runc", version = "0.2.0" }
