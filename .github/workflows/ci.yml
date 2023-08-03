@@ -93,7 +93,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-20.04, ubuntu-22.04]
         containerd: [v1.6.21, v1.7.1]
 
     steps:
