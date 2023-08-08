@@ -94,8 +94,8 @@ jobs:
           $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"  
 
           # run the example 
-          cargo run --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start 
+          cargo run -p containerd-shim --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start 
           ps skeleton 
-          cargo run --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
+          cargo run -p containerd-shim-protos --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
           $skeleton = get-process skeleton -ErrorAction SilentlyContinue
           if ($skeleton) { exit 1 }
