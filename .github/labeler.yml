@@ -1,0 +1,18 @@
+# Automatically assign labels to PRs.
+# `C-` project crate(s) affected.
+# `T-` change type (CI, docs, etc).
+
+C-client: crates/client/**
+C-logging: crates/logging/**
+C-runc: crates/runc/**
+C-runc-shim: crates/runc-shim/**
+C-shim: crates/shim/**
+C-shim-protos: crates/shim-protos/**
+C-snapshots: crates/snapshots/**
+
+T-CI:
+- .github/**
+- *.toml
+
+T-docs:
+- **/*.md
