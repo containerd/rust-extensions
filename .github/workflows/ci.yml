@@ -140,18 +140,3 @@ jobs:
           TESTFLAGS_RACE: "-race"
         run: sudo -E PATH=$PATH make integration
         working-directory: src/github.com/containerd/containerd
-
-      - name: Install async shim
-        run: |
-          cargo build --release --all-features --bin containerd-shim-runc-v2-rs
-          sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
-
-      - name: Integration for async shim
-        env:
-          GOPROXY: direct
-          TEST_RUNTIME: "io.containerd.runc.v2-rs"
-          TESTFLAGS_PARALLEL: 1
-          EXTRA_TESTFLAGS: "-no-criu -test.skip='(TestContainerPTY|TestContainerExecLargeOutputWithTTY|TestTaskUpdate|TestTaskResize)'"
-          TESTFLAGS_RACE: "-race"
-        run: sudo -E PATH=$PATH make integration
-        working-directory: src/github.com/containerd/containerd

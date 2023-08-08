@@ -718,7 +718,7 @@ mod tests {
     use runc::error::Error::CommandFailed;
     use tokio::fs::remove_dir_all;
 
-    use crate::{asynchronous::runc::runtime_error, common::LOG_JSON_FILE};
+    use crate::{common::LOG_JSON_FILE, runc::runtime_error};
 
     #[tokio::test]
     async fn test_runtime_error() {

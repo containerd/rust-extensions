@@ -14,24 +14,20 @@
    limitations under the License.
 */
 
-#[cfg(feature = "async")]
-mod asynchronous;
+use containerd_shim::asynchronous::run;
+
 mod common;
+mod console;
+mod container;
 mod io;
-#[cfg(not(feature = "async"))]
-mod synchronous;
+mod processes;
+mod runc;
+mod service;
+mod task;
 
-#[cfg(not(feature = "async"))]
-fn main() {
-    containerd_shim::run::<synchronous::Service>("io.containerd.runc.v2-rs", None)
-}
+use service::Service;
 
-#[cfg(feature = "async")]
 #[tokio::main]
 async fn main() {
-    containerd_shim::asynchronous::run::<crate::asynchronous::Service>(
-        "io.containerd.runc.v2-rs",
-        None,
-    )
-    .await;
+    run::<Service>("io.containerd.runc.v2-rs", None).await;
 }
