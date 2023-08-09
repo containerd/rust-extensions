@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: arduino/setup-protoc@v1
+      - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo check --examples --tests --all-targets
@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: arduino/setup-protoc@v1
+      - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - env:
@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: arduino/setup-protoc@v1
+      - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo build --all-features --timings
