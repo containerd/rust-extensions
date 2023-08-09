@@ -4,6 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      - T-dependencies
 
   # Ensure that references to actions in a repository's workflow.yml file are kept up to date.
   # See https://docs.github.com/en/code-security/supply-chain-security/keeping-your-dependencies-updated-automatically/keeping-your-actions-up-to-date-with-dependabot
@@ -11,3 +13,6 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      # Mark PRs as CI related change.
+      - T-CI
