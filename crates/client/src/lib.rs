@@ -107,3 +107,123 @@ macro_rules! with_namespace {
         req
     }};
 }
+
+use services::v1::{
+    containers_client::ContainersClient,
+    content_client::ContentClient,
+    diff_client::DiffClient,
+    events_client::EventsClient,
+    images_client::ImagesClient,
+    introspection_client::IntrospectionClient,
+    leases_client::LeasesClient,
+    namespaces_client::NamespacesClient,
+    sandbox::{controller_client::ControllerClient, store_client::StoreClient},
+    snapshots::snapshots_client::SnapshotsClient,
+    tasks_client::TasksClient,
+    version_client::VersionClient,
+};
+use tonic::transport::{Channel, Error};
+
+/// Client to containerd's APIs.
+pub struct Client {
+    channel: Channel,
+}
+
+impl From<Channel> for Client {
+    fn from(value: Channel) -> Self {
+        Self { channel: value }
+    }
+}
+
+impl Client {
+    /// Create a new client from UDS socket.
+    #[cfg(feature = "connect")]
+    pub async fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, Error> {
+        let channel = connect(path).await?;
+        Ok(Self { channel })
+    }
+
+    /// Access to the underlying Tonic channel.
+    #[inline]
+    pub fn channel(&self) -> Channel {
+        self.channel.clone()
+    }
+
+    /// Version service.
+    #[inline]
+    pub fn version(&self) -> VersionClient<Channel> {
+        VersionClient::new(self.channel())
+    }
+
+    /// Task service client.
+    #[inline]
+    pub fn tasks(&self) -> TasksClient<Channel> {
+        TasksClient::new(self.channel())
+    }
+
+    /// Sandbox store client.
+    #[inline]
+    pub fn sandbox_store(&self) -> StoreClient<Channel> {
+        StoreClient::new(self.channel())
+    }
+
+    /// Sandbox controller client.
+    #[inline]
+    pub fn sandbox_controller(&self) -> ControllerClient<Channel> {
+        ControllerClient::new(self.channel())
+    }
+
+    /// Snapshots service.
+    #[inline]
+    pub fn snapshots(&self) -> SnapshotsClient<Channel> {
+        SnapshotsClient::new(self.channel())
+    }
+
+    /// Namespaces service.
+    #[inline]
+    pub fn namespaces(&self) -> NamespacesClient<Channel> {
+        NamespacesClient::new(self.channel())
+    }
+
+    /// Leases service.
+    #[inline]
+    pub fn leases(&self) -> LeasesClient<Channel> {
+        LeasesClient::new(self.channel())
+    }
+
+    /// Intropection service.
+    #[inline]
+    pub fn introspection(&self) -> IntrospectionClient<Channel> {
+        IntrospectionClient::new(self.channel())
+    }
+
+    /// Image service.
+    #[inline]
+    pub fn images(&self) -> ImagesClient<Channel> {
+        ImagesClient::new(self.channel())
+    }
+
+    /// Event service.
+    #[inline]
+    pub fn events(&self) -> EventsClient<Channel> {
+        EventsClient::new(self.channel())
+    }
+
+    /// Diff service.
+    #[inline]
+    pub fn diff(&self) -> DiffClient<Channel> {
+        DiffClient::new(self.channel())
+    }
+
+    /// Content service.
+    #[inline]
+    pub fn content(&self) -> ContentClient<Channel> {
+        ContentClient::new(self.channel())
+    }
+
+    /// Container service.
+    #[inline]
+    pub fn containers(&self) -> ContainersClient<Channel> {
+        ContainersClient::new(self.channel())
+    }
+}
