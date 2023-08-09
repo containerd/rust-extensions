@@ -11,8 +11,9 @@ C-shim-protos: crates/shim-protos/**
 C-snapshots: crates/snapshots/**
 
 T-CI:
-- .github/**
-- *.toml
+- '.github/**'
+- '*.toml'
 
 T-docs:
-- **/*.md
+- '**/*.md'
+
