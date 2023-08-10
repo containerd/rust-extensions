@@ -1,0 +1,27 @@
+changelog:
+  categories:
+    - title: Runc crate
+      labels:
+        - C-runc
+    - title: Runc shim crate
+      labels:
+        - C-runc-shim
+    - title: Shim crate
+      labels:
+        - C-shim
+    - title: Shim protos crate
+      labels:
+        - C-shim-protos
+    - title: Snapshots crate
+      labels:
+        - C-snapshots
+    - title: Client crate
+      labels:
+        - C-client
+    - title: Logging crate
+      labels:
+        - C-logging
+    - title: Other changes
+      labels:
+        - T-CI
+        - T-docs
