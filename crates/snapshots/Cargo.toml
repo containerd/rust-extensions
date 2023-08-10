@@ -1,7 +1,10 @@
 [package]
 name = "containerd-snapshots"
-version = "0.2.0"
-authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
+version = "0.3.0"
+authors = [
+    "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+    "The containerd Authors",
+]
 keywords = ["containerd", "server", "grpc", "containers"]
 categories = ["api-bindings", "asynchronous"]
 description = "Remote snapshotter extension for containerd"
@@ -27,7 +30,7 @@ pin-utils = "0.1.0"
 log = "0.4"
 async-stream = "0.3.2"
 futures.workspace = true
-simple_logger = { version  = "4.0", default-features = false }
+simple_logger = { version = "4.0", default-features = false }
 
 [build-dependencies]
 tonic-build.workspace = true
