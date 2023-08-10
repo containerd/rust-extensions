@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    # Required by gh
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.number }}
+
     steps:
     - uses: actions/labeler@v4
       with:
@@ -20,3 +25,7 @@ jobs:
         dot: true
         # Remove labels when matching files are reverted or no longer changed by the PR
         sync-labels: true
+
+    # Apply OS-windows label if PR title contains 'Windows'
+    - run: gh pr edit $PR_NUMBER --add-label OS-windows
+      if: contains(github.event.pull_request.title, 'Windows')
