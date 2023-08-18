@@ -45,6 +45,12 @@ fn main() {
     );
 
     genmodule(
+        "stats",
+        &["vendor/microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/stats/stats.proto"],
+        false,
+    );
+
+    genmodule(
         "events",
         &[
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
