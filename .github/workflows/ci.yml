@@ -100,16 +100,22 @@ jobs:
       - name: Checkout extensions
         uses: actions/checkout@v3
 
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.20.4'
-
       - name: Checkout containerd
         uses: actions/checkout@v3
         with:
           repository: containerd/containerd
           path: src/github.com/containerd/containerd
           ref: ${{ matrix.containerd }}
+
+      - name: Get Go Version
+        run: |
+          go_version=$(awk -F': ' '/GO_VERSION/ {gsub(/["'\'']/, "", $2); print $2; exit}' .github/workflows/release.yml)
+          echo "GO_VERSION=$go_version" >> $GITHUB_ENV
+        working-directory: src/github.com/containerd/containerd
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Install containerd
         env:
@@ -122,7 +128,7 @@ jobs:
           sudo -E PATH=$PATH script/setup/install-runc
           sudo -E PATH=$PATH script/setup/install-cni $(grep containernetworking/plugins go.mod | awk '{print $2}')
           # Install containerd
-          make bin/containerd GO_BUILD_FLAGS="-mod=vendor" BUILDTAGS="no_btrfs no_devmapper"
+          sudo -E PATH=$PATH make bin/containerd GO_BUILD_FLAGS="-mod=vendor" BUILDTAGS="no_btrfs no_devmapper"
           sudo -E PATH=$PATH install bin/containerd /usr/local/bin/
         working-directory: src/github.com/containerd/containerd
 
@@ -130,6 +136,11 @@ jobs:
         run: |
           cargo build --release --bin containerd-shim-runc-v2-rs
           sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
+
+      ## get latest go version for integrations tests so we can skip runnings tests
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.20.4'
 
       - name: Integration
         env:
