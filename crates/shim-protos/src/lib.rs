@@ -71,6 +71,7 @@ pub mod events;
 mod sandbox;
 pub mod shim;
 pub mod types;
+pub mod windows;
 
 /// Includes event names shims can publish to containerd.
 pub mod topics;
