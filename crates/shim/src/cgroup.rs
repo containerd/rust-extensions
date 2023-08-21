@@ -97,26 +97,7 @@ fn write_process_oom_score(pid: u32, score: i64) -> Result<()> {
 pub fn collect_metrics(pid: u32) -> Result<Metrics> {
     let mut metrics = Metrics::new();
 
-    let hierarchies = hierarchies::auto();
-    let cgroup = if hierarchies.v2() {
-        let path = format!("/proc/{}/cgroup", pid);
-        let content = fs::read_to_string(path).map_err(io_error!(e, "read cgroup"))?;
-        let content = content.strip_suffix('\n').unwrap_or_default();
-
-        let parts: Vec<&str> = content.split("::").collect();
-        let path_parts: Vec<&str> = parts[1].split('/').collect();
-        let namespace = path_parts[1];
-        let cgroup_name = path_parts[2];
-        Cgroup::load(
-            hierarchies,
-            format!("/sys/fs/cgroup/{namespace}/{cgroup_name}").as_str(),
-        )
-    } else {
-        // get container main process cgroup
-        let path = get_cgroups_relative_paths_by_pid(pid)
-            .map_err(other_error!(e, "get process cgroup"))?;
-        Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path)
-    };
+    let cgroup = get_cgroup(pid)?;
 
     // to make it easy, fill the necessary metrics only.
     for sub_system in Cgroup::subsystems(&cgroup) {
@@ -193,12 +174,35 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
     Ok(metrics)
 }
 
+// get_cgroup will return either cgroup v1 or v2 depending on system configuration
+fn get_cgroup(pid: u32) -> Result<Cgroup> {
+    let hierarchies = hierarchies::auto();
+    let cgroup = if hierarchies.v2() {
+        let path = format!("/proc/{}/cgroup", pid);
+        let content = fs::read_to_string(path).map_err(io_error!(e, "read cgroup"))?;
+        let content = content.strip_suffix('\n').unwrap_or_default();
+
+        let parts: Vec<&str> = content.split("::").collect();
+        let path_parts: Vec<&str> = parts[1].split('/').collect();
+        let namespace = path_parts[1];
+        let cgroup_name = path_parts[2];
+        Cgroup::load(
+            hierarchies,
+            format!("/sys/fs/cgroup/{namespace}/{cgroup_name}").as_str(),
+        )
+    } else {
+        // get container main process cgroup
+        let path = get_cgroups_relative_paths_by_pid(pid)
+            .map_err(other_error!(e, "get process cgroup"))?;
+        Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path)
+    };
+    Ok(cgroup)
+}
+
 /// Update process cgroup limits
 pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
     // get container main process cgroup
-    let path =
-        get_cgroups_relative_paths_by_pid(pid).map_err(other_error!(e, "get process cgroup"))?;
-    let cgroup = Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path);
+    let cgroup = get_cgroup(pid)?;
 
     for sub_system in Cgroup::subsystems(&cgroup) {
         match sub_system {
