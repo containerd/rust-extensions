@@ -201,6 +201,12 @@ where
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
 
+    if flags.namespace.is_empty() {
+        return Err(Error::InvalidArgument(String::from(
+            "Shim namespace cannot be empty",
+        )));
+    }
+
     let ttrpc_address = env::var(TTRPC_ADDRESS)?;
 
     // Create shim instance
@@ -592,5 +598,43 @@ mod tests {
         if let Err(err) = handle.join() {
             panic!("{:?}", err);
         }
+    }
+
+    struct Nop {}
+
+    struct NopTask {}
+    impl Task for NopTask {}
+
+    impl Shim for Nop {
+        type T = NopTask;
+
+        fn new(_runtime_id: &str, _args: &Flags, _config: &mut Config) -> Self {
+            Nop {}
+        }
+
+        fn start_shim(&mut self, _opts: StartOpts) -> Result<String> {
+            Ok("".to_string())
+        }
+
+        fn delete_shim(&mut self) -> Result<DeleteResponse> {
+            Ok(DeleteResponse::default())
+        }
+
+        fn wait(&mut self) {}
+
+        fn create_task_service(&self, _publisher: RemotePublisher) -> Self::T {
+            NopTask {}
+        }
+    }
+
+    #[test]
+    fn no_namespace() {
+        let runtime_id = "test";
+        let res = bootstrap::<Nop>(runtime_id, None);
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Shim namespace cannot be empty"));
     }
 }
