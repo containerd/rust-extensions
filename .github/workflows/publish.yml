@@ -1,10 +1,10 @@
-  # Automates crate publishing
-  # - Submit a PR to bump crate version.
-  # - Specify crate to publish from the menu.
-  # - Launch the job:
-  #   + The job will extract version from Cargo.toml
-  #   + Will publish to crates.io
-  #   + Will add and push a git tag "<crate>-v<version>"
+# Automates crate publishing
+# - Submit a PR to bump crate version.
+# - Specify crate to publish from the menu.
+# - Launch the job:
+#   + The job will extract version from Cargo.toml
+#   + Will publish to crates.io
+#   + Will add and push a git tag "<crate>-v<version>"
 
 name: Release
 on:
