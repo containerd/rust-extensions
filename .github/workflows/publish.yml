@@ -1,0 +1,64 @@
+  # Automates crate publishing
+  # - Submit a PR to bump crate version.
+  # - Specify crate to publish from the menu.
+  # - Launch the job:
+  #   + The job will extract version from Cargo.toml
+  #   + Will publish to crates.io
+  #   + Will add and push a git tag "<crate>-v<version>"
+
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: 'Crate to publish'
+        required: true
+        type: choice
+        options:
+          - client
+          - logging
+          - runc
+          - runc-shim
+          - shim
+          - shim-protos
+          - snapshots
+
+      dryrun:
+        description: 'Dry run'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    name: 'Publish ${{ inputs.crate }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    env:
+      CARGO_FILE: "crates/${{ inputs.crate }}/Cargo.toml"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Extract package version
+        id: extract_version
+        run: echo "version=${cargo pkgid --manifest-path $CARGO_FILE | sed 's/.*@//'}" >> $GITHUB_OUTPUT
+
+      - name: Publish on crates.io
+        run: cargo publish $DRYRUN --manifest-path $CARGO_FILE
+        env:
+          DRYRUN: ${{ inputs.dryrun && '--dry-run' }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Push version tag
+        if: ${{ !inputs.dryrun }}
+        env:
+          TAG: "${{ inputs.crate }}-v${{ steps.extract_version.outputs.version }}"
+        run: |
+          git tag $TAG
+          git push origin $TAG
+
