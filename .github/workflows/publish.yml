@@ -46,7 +46,7 @@ jobs:
 
       - name: Extract package version
         id: extract_version
-        run: echo "version=${cargo pkgid --manifest-path $CARGO_FILE | sed 's/.*@//'}" >> $GITHUB_OUTPUT
+        run: echo "version=$(cargo pkgid --manifest-path $CARGO_FILE | sed 's/.*@//')" >> $GITHUB_OUTPUT
 
       - name: Publish on crates.io
         run: cargo publish $DRYRUN --manifest-path $CARGO_FILE
