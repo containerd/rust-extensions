@@ -46,7 +46,14 @@ jobs:
 
       - name: Extract package version
         id: extract_version
-        run: echo "version=$(cargo pkgid --manifest-path $CARGO_FILE | sed 's/.*@//')" >> $GITHUB_OUTPUT
+        run: |
+          cargo generate-lockfile
+          echo "version=$(cargo pkgid --manifest-path $CARGO_FILE | sed 's/.*@//')" >> $GITHUB_OUTPUT
+
+      - name: Install protobuf
+        run: |
+          sudo apt update
+          sudo apt install protobuf-compiler
 
       - name: Publish on crates.io
         run: cargo publish $DRYRUN --manifest-path $CARGO_FILE
