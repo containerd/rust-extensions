@@ -368,8 +368,22 @@ pub trait Spawner: Debug {
 /// and some other utilities.
 #[cfg(feature = "async")]
 impl Runc {
-    async fn launch(&self, cmd: Command, combined_output: bool) -> Result<Response> {
+    async fn launch(&self, mut cmd: Command, combined_output: bool) -> Result<Response> {
         debug!("Execute command {:?}", cmd);
+        unsafe {
+            cmd.pre_exec(move || {
+                #[cfg(target_os = "linux")]
+                if let Ok(thp) = std::env::var("THP_DISABLED") {
+                    if let Ok(thp_disabled) = thp.parse::<bool>() {
+                        if let Err(e) = prctl::set_thp_disable(thp_disabled) {
+                            debug!("set_thp_disable err: {}", e);
+                        };
+                    }
+                }
+                Ok(())
+            });
+        }
+
         let (status, pid, stdout, stderr) = self.spawner.execute(cmd).await?;
         if status.success() {
             let output = if combined_output {

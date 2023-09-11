@@ -78,8 +78,27 @@ impl Shim for Service {
             }
             None => {}
         }
+        #[cfg(not(target_os = "linux"))]
+        let thp_disabled = String::new();
+        #[cfg(target_os = "linux")]
+        // Our goal is to set thp disable = true on the shim side and then restore thp
+        // disable before starting runc. So we only need to focus on the return value
+        // of the function get_thp_disabled, which is Result<bool, i32>.
+        let thp_disabled = match prctl::get_thp_disable() {
+            Ok(x) => {
+                // The return value of the function set_thp_disabled is Result<(), i32>,
+                // we don't care if the setting is successful, because even if the
+                // setting failed, we should not exit the shim process, therefore,
+                // there is no need to pay attention to the set_thp_disabled function's
+                // return value.
+                let _ = prctl::set_thp_disable(true);
+                x.to_string()
+            }
+            Err(_) => String::new(),
+        };
+        let vars: Vec<(&str, &str)> = vec![("THP_DISABLED", thp_disabled.as_str())];
 
-        let address = spawn(opts, &grouping, Vec::new()).await?;
+        let address = spawn(opts, &grouping, vars).await?;
         write_str_to_file("address", &address).await?;
         Ok(address)
     }

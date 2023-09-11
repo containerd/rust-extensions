@@ -22,6 +22,7 @@ nix = { workspace = true, features = ["user", "fs"] }
 oci-spec.workspace = true
 os_pipe.workspace = true
 path-absolutize = "3.0.11"
+prctl.workspace = true
 rand = "0.8.4"
 serde.workspace = true
 serde_json.workspace = true
