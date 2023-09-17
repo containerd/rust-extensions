@@ -17,9 +17,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./scripts/install-protobuf.sh
       - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos
       
       - run: rustup toolchain install nightly --component rustfmt
@@ -41,9 +39,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./scripts/install-protobuf.sh
       - name: Tests
         run: |
           cargo test -p containerd-shim -p containerd-shim-protos
