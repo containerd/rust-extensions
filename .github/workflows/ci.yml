@@ -73,7 +73,7 @@ jobs:
       - run: cargo build --all-features --timings
       - uses: actions/upload-artifact@v3
         with:
-          name: cargo-timing
+          name: timings
           path: target/cargo-timings/cargo-timing.html
           if-no-files-found: error
 
