@@ -49,7 +49,9 @@ pub mod services {
         tonic::include_proto!("containerd.services.introspection.v1");
         tonic::include_proto!("containerd.services.leases.v1");
         tonic::include_proto!("containerd.services.namespaces.v1");
+        tonic::include_proto!("containerd.services.streaming.v1");
         tonic::include_proto!("containerd.services.tasks.v1");
+        tonic::include_proto!("containerd.services.transfer.v1");
 
         // Sandbox services (Controller and Store) don't make it clear that they are for sandboxes.
         // Wrap these into a sub module to make the names more clear.
@@ -119,7 +121,9 @@ use services::v1::{
     namespaces_client::NamespacesClient,
     sandbox::{controller_client::ControllerClient, store_client::StoreClient},
     snapshots::snapshots_client::SnapshotsClient,
+    streaming_client::StreamingClient,
     tasks_client::TasksClient,
+    transfer_client::TransferClient,
     version_client::VersionClient,
 };
 use tonic::transport::{Channel, Error};
@@ -161,10 +165,22 @@ impl Client {
         TasksClient::new(self.channel())
     }
 
+    /// Transfer service client.
+    #[inline]
+    pub fn transfer(&self) -> TransferClient<Channel> {
+        TransferClient::new(self.channel())
+    }
+
     /// Sandbox store client.
     #[inline]
     pub fn sandbox_store(&self) -> StoreClient<Channel> {
         StoreClient::new(self.channel())
+    }
+
+    /// Streaming services client.
+    #[inline]
+    pub fn streaming(&self) -> StreamingClient<Channel> {
+        StreamingClient::new(self.channel())
     }
 
     /// Sandbox controller client.

@@ -24,6 +24,11 @@ const PROTO_FILES: &[&str] = &[
     "vendor/github.com/containerd/containerd/api/types/platform.proto",
     "vendor/github.com/containerd/containerd/api/types/sandbox.proto",
     "vendor/github.com/containerd/containerd/api/types/task/task.proto",
+    "vendor/github.com/containerd/containerd/api/types/transfer/imagestore.proto",
+    "vendor/github.com/containerd/containerd/api/types/transfer/importexport.proto",
+    "vendor/github.com/containerd/containerd/api/types/transfer/progress.proto",
+    "vendor/github.com/containerd/containerd/api/types/transfer/registry.proto",
+    "vendor/github.com/containerd/containerd/api/types/transfer/streaming.proto",
     // Services
     "vendor/github.com/containerd/containerd/api/services/containers/v1/containers.proto",
     "vendor/github.com/containerd/containerd/api/services/content/v1/content.proto",
@@ -35,8 +40,10 @@ const PROTO_FILES: &[&str] = &[
     "vendor/github.com/containerd/containerd/api/services/namespaces/v1/namespace.proto",
     "vendor/github.com/containerd/containerd/api/services/sandbox/v1/sandbox.proto",
     "vendor/github.com/containerd/containerd/api/services/snapshots/v1/snapshots.proto",
-    "vendor/github.com/containerd/containerd/api/services/version/v1/version.proto",
+    "vendor/github.com/containerd/containerd/api/services/streaming/v1/streaming.proto",
     "vendor/github.com/containerd/containerd/api/services/tasks/v1/tasks.proto",
+    "vendor/github.com/containerd/containerd/api/services/transfer/v1/transfer.proto",
+    "vendor/github.com/containerd/containerd/api/services/version/v1/version.proto",
     // Events
     "vendor/github.com/containerd/containerd/api/events/container.proto",
     "vendor/github.com/containerd/containerd/api/events/content.proto",
