@@ -1,0 +1,70 @@
+name: Coverage
+on:
+  pull_request_target:
+
+jobs:
+  coverage:
+    name: Collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      statuses: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          sudo apt-get install protobuf-compiler
+
+      - name: Install grcov
+        run: |
+          cargo install grcov
+          grcov --version
+
+      - name: Tests
+        env:
+          RUSTFLAGS: "-Cinstrument-coverage"
+          LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"
+        run: |
+          sudo -E $(command -v cargo) test --all-features
+
+          # Fix permissions after sudo.
+          sudo chown -R $(whoami) target/coverage/
+
+      - name: Collect coverage data
+        run: |
+          grcov . \
+            --source-dir . \
+            --binary-path ./target/debug/ \
+            --branch --ignore-not-existing \
+            --output-types html,markdown \
+            --keep-only 'crates/*' \
+            --output-path ./target/coverage/
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: coverage
+          path: target/coverage/html/
+          if-no-files-found: error
+
+      - name: Publish job summary
+        run: |
+          echo "# Coverage" >> $GITHUB_STEP_SUMMARY
+          cat target/coverage/markdown.md >> $GITHUB_STEP_SUMMARY
+
+      - run: echo "coverage=$(cat target/coverage/markdown.md | grep 'Total coverage')" >> $GITHUB_OUTPUT
+        id: coverage
+
+      - name: Create commit status
+        uses: actions/github-script@v6
+        if: success()
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'success',
+              description: '${{ steps.coverage.outputs.coverage }}',
+            })
