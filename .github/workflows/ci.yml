@@ -18,9 +18,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: ./scripts/install-protobuf.sh
+
       - run: cargo check --examples --tests --all-targets
       - run: cargo check --examples --tests --all-targets --all-features
 
@@ -45,16 +45,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./scripts/install-protobuf.sh
       - env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
         run: |
           # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup
           mkdir -p /tmp/dummy-xdr
-          export PROTOC=$(which protoc)
           sudo -E $(command -v cargo) test
           sudo -E $(command -v cargo) test --all-features
 
@@ -67,9 +64,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: ./scripts/install-protobuf.sh
       - run: cargo build --all-features --timings
       - uses: actions/upload-artifact@v3
         with:
