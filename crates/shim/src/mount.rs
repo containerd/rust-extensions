@@ -29,7 +29,7 @@ use log::error;
 use nix::mount::{mount, MsFlags};
 #[cfg(target_os = "linux")]
 use nix::unistd::{fork, ForkResult};
-use regex::Regex;
+use regex_lite::Regex;
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
@@ -273,7 +273,7 @@ fn longest_common_prefix(dirs: &[String]) -> Option<String> {
 }
 
 // NOTE: the snapshot id is based on digits.
-// in order to avoid to get snapshots/x, shoule be back to parent dir.
+// in order to avoid to get snapshots/x, should be back to parent dir.
 // however, there is assumption that the common dir is ${root}/io.containerd.v1.overlayfs/snapshots.
 #[cfg(target_os = "linux")]
 fn trim_flawed_dir(s: &str) -> String {
