@@ -2,8 +2,8 @@
 name = "containerd-client"
 version = "0.4.0"
 authors = [
-    "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
-    "The containerd Authors",
+  "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+  "The containerd Authors",
 ]
 description = "GRPC bindings to containerd APIs"
 keywords = ["containerd", "client", "grpc", "containers"]
@@ -14,11 +14,19 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[[example]]
+name = "container"
+path = "examples/container.rs"
+
+[[example]]
+name = "version"
+path = "examples/version.rs"
+
 [dependencies]
-tonic.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 tokio = { workspace = true, optional = true }
+tonic.workspace = true
 tower = { workspace = true, optional = true }
 
 [build-dependencies]

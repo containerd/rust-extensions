@@ -1,9 +1,13 @@
 [package]
 name = "containerd-shim-logging"
 version = "0.1.1"
-authors = ["Maksym Pavlenko <pavlenko.maksym@gmail.com>", "The containerd Authors"]
+authors = [
+  "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+  "The containerd Authors"
+]
 description = "Logger extension for containerd v2 runtime"
 keywords = ["containerd", "shim", "containers"]
+categories = ["api-bindings", "asynchronous"]
 
 edition.workspace = true
 license.workspace = true

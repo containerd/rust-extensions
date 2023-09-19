@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "crates/client",
-    "crates/logging",
-    "crates/shim-protos",
-    "crates/shim",
-    "crates/snapshots",
-    "crates/runc",
-    "crates/runc-shim",
+  "crates/client",
+  "crates/logging",
+  "crates/runc",
+  "crates/runc-shim",
+  "crates/shim",
+  "crates/shim-protos",
+  "crates/snapshots",
 ]
 
 [profile.release]
@@ -24,14 +24,21 @@ edition = "2021"
 
 # Common dependencies for all crates
 [workspace.dependencies]
-tokio = "1.26"
-tower = "0.4"
-
-tonic = "0.10"
-tonic-build = "0.10"
-
-prost = "0.12"
-prost-types = "0.12"
-
 async-trait = "0.1.52"
 futures = "0.3.19"
+libc = "0.2.112"
+log = "0.4"
+nix = "0.26"
+oci-spec = "0.6"
+os_pipe = "1.1"
+prost = "0.12"
+prost-types = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+time = { version = "0.3.7", features = ["serde", "std"] }
+tokio = "1.26"
+tonic = "0.10"
+tonic-build = "0.10"
+tower = "0.4"
+uuid = { version = "1.0", features = ["v4"] }
