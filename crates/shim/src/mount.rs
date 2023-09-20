@@ -267,19 +267,7 @@ fn longest_common_prefix(dirs: &[String]) -> &str {
 // however, there is assumption that the common dir is ${root}/io.containerd.v1.overlayfs/snapshots.
 #[cfg(target_os = "linux")]
 fn trim_flawed_dir(s: &str) -> String {
-    match s.ends_with('/') {
-        true => s.to_owned(),
-        false => {
-            // Iterate in reverse order to find the last '/', then return string in correct order
-            s.chars()
-                .rev()
-                .skip_while(|x| *x != '/')
-                .collect::<Vec<char>>()
-                .iter()
-                .rev()
-                .collect::<String>()
-        }
-    }
+    s[0..s.rfind('/').unwrap_or(0) + 1].to_owned()
 }
 
 #[cfg(target_os = "linux")]
@@ -619,6 +607,8 @@ mod tests {
     #[test]
     fn test_trim_flawed_dir() {
         let mut tcases: Vec<(&str, String)> = Vec::new();
+        tcases.push(("/", "/".to_string()));
+        tcases.push(("/foo", "/".to_string()));
         tcases.push(("/.foo-_bar/foo", "/.foo-_bar/".to_string()));
         tcases.push(("/.foo-_bar/foo/", "/.foo-_bar/foo/".to_string()));
         tcases.push(("/.foo-_bar/foo/bar", "/.foo-_bar/foo/".to_string()));
