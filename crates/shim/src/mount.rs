@@ -239,37 +239,29 @@ fn options_size(options: &[String]) -> usize {
     options.iter().fold(0, |sum, x| sum + x.len())
 }
 
-fn longest_common_prefix(dirs: &[String]) -> Option<String> {
+fn longest_common_prefix(dirs: &[String]) -> &str {
     if dirs.is_empty() {
-        return None;
-    }
-    if dirs.len() == 1 {
-        if dirs[0].is_empty() {
-            return None;
-        }
-        return Some(dirs[0].to_string());
+        return "";
     }
 
-    let min = dirs.iter().min().unwrap();
-    let max = dirs.iter().max().unwrap();
-    let min_chars = min.chars().collect::<Vec<char>>();
-    let max_chars = max.chars().collect::<Vec<char>>();
-    let mut i = 0;
-    while i < min_chars.len() && i < max_chars.len() {
-        if min_chars[i] != max_chars[i] {
-            if i == 0 {
-                return None;
+    let first_dir = &dirs[0];
+
+    for (i, byte) in first_dir.as_bytes().iter().enumerate() {
+        for dir in dirs {
+            if dir.as_bytes().get(i) != Some(byte) {
+
+                let mut end = i;
+                // guaranteed not to underflow since is_char_boundary(0) is always true
+                while !first_dir.is_char_boundary(end) {
+                    end -= 1;
+                }
+
+                return &first_dir[0..end]
             }
-            return Some(min[0..i].to_string());
         }
-        i += 1;
     }
 
-    if min.is_empty() {
-        None
-    } else {
-        Some(min.to_string())
-    }
+    first_dir
 }
 
 // NOTE: the snapshot id is based on digits.
@@ -282,6 +274,7 @@ fn trim_flawed_dir(s: &str) -> String {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Default)]
 struct LowerdirCompactor {
     options: Vec<String>,
     lowerdirs: Option<Vec<String>>,
@@ -291,11 +284,7 @@ struct LowerdirCompactor {
 #[cfg(target_os = "linux")]
 impl LowerdirCompactor {
     fn new(options: &[String]) -> Self {
-        Self {
-            options: options.to_vec(),
-            lowerdirs: None,
-            lowerdir_prefix: None,
-        }
+        Self::default()
     }
 
     fn lowerdirs(&mut self) -> &mut Self {
@@ -317,8 +306,7 @@ impl LowerdirCompactor {
             .as_ref()
             .filter(|x| x.len() > 1)
             .map(|x| longest_common_prefix(x))
-            .unwrap_or(None)
-            .filter(|x| x != "/")
+            .filter(|x| *x != "/")
             .map(|x| trim_flawed_dir(&x))
             .filter(|x| !x.is_empty() && x != "/");
         self
@@ -632,21 +620,21 @@ mod tests {
 
     #[test]
     fn test_longest_common_prefix() {
-        let mut tcases: Vec<(Vec<String>, Option<String>)> = Vec::new();
-        tcases.push((vec![], None));
-        tcases.push((vec!["foo".to_string()], Some("foo".to_string())));
-        tcases.push((vec!["foo".to_string(), "bar".to_string()], None));
+        let mut tcases: Vec<(Vec<String>, String)> = Vec::new();
+        tcases.push((vec![], "".to_string()));
+        tcases.push((vec!["foo".to_string()], "foo".to_string()));
+        tcases.push((vec!["foo".to_string(), "bar".to_string()], "".to_string()));
         tcases.push((
             vec!["foo".to_string(), "foo".to_string()],
-            Some("foo".to_string()),
+            "foo".to_string(),
         ));
         tcases.push((
             vec!["foo".to_string(), "foobar".to_string()],
-            Some("foo".to_string()),
+            "foo".to_string(),
         ));
         tcases.push((
             vec!["foo".to_string(), "".to_string(), "foobar".to_string()],
-            None,
+            "".to_string(),
         ));
         for (case, expected) in tcases {
             let res = longest_common_prefix(&case);
