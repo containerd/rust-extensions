@@ -29,7 +29,6 @@ use log::error;
 use nix::mount::{mount, MsFlags};
 #[cfg(target_os = "linux")]
 use nix::unistd::{fork, ForkResult};
-use regex_lite::Regex;
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
@@ -249,14 +248,13 @@ fn longest_common_prefix(dirs: &[String]) -> &str {
     for (i, byte) in first_dir.as_bytes().iter().enumerate() {
         for dir in dirs {
             if dir.as_bytes().get(i) != Some(byte) {
-
                 let mut end = i;
                 // guaranteed not to underflow since is_char_boundary(0) is always true
                 while !first_dir.is_char_boundary(end) {
                     end -= 1;
                 }
 
-                return &first_dir[0..end]
+                return &first_dir[0..end];
             }
         }
     }
@@ -269,8 +267,19 @@ fn longest_common_prefix(dirs: &[String]) -> &str {
 // however, there is assumption that the common dir is ${root}/io.containerd.v1.overlayfs/snapshots.
 #[cfg(target_os = "linux")]
 fn trim_flawed_dir(s: &str) -> String {
-    let r = Regex::new(r"((/[^/]+)+/)([^/]*)").unwrap();
-    r.replace(s, "$1").to_string()
+    match s.ends_with('/') {
+        true => s.to_owned(),
+        false => {
+            // Iterate in reverse order to find the last '/', then return string in correct order
+            s.chars()
+                .rev()
+                .skip_while(|x| *x != '/')
+                .collect::<Vec<char>>()
+                .iter()
+                .rev()
+                .collect::<String>()
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -284,7 +293,10 @@ struct LowerdirCompactor {
 #[cfg(target_os = "linux")]
 impl LowerdirCompactor {
     fn new(options: &[String]) -> Self {
-        Self::default()
+        Self {
+            options: options.to_vec(),
+            ..Self::default()
+        }
     }
 
     fn lowerdirs(&mut self) -> &mut Self {
@@ -306,8 +318,7 @@ impl LowerdirCompactor {
             .as_ref()
             .filter(|x| x.len() > 1)
             .map(|x| longest_common_prefix(x))
-            .filter(|x| *x != "/")
-            .map(|x| trim_flawed_dir(&x))
+            .map(trim_flawed_dir)
             .filter(|x| !x.is_empty() && x != "/");
         self
     }
