@@ -22,7 +22,9 @@ use cgroups_rs::{
     cgroup::get_cgroups_relative_paths_by_pid, hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem,
 };
 use containerd_shim_protos::{
-    cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle},
+    cgroups::v1::metrics::{
+        CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle,
+    },
     protobuf::{well_known_types::any::Any, Message},
     shim::oci::Options,
 };

@@ -34,7 +34,7 @@ use containerd_shim::{
     other, other_error,
     protos::{
         api::ProcessInfo,
-        cgroups::metrics::Metrics,
+        cgroups::v1::metrics::Metrics,
         protobuf::{CodedInputStream, Message},
     },
     util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
@@ -350,11 +350,6 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
 
 impl RuncInitLifecycle {
     pub fn new(runtime: Runc, opts: Options, bundle: &str) -> Self {
-        let work_dir = Path::new(bundle).join("work");
-        let mut opts = opts;
-        if opts.criu_path().is_empty() {
-            opts.criu_path = work_dir.to_string_lossy().to_string();
-        }
         Self {
             runtime,
             opts,

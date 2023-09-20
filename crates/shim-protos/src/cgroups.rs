@@ -14,8 +14,16 @@
    limitations under the License.
 */
 
-pub mod metrics {
-    include!(concat!(env!("OUT_DIR"), "/cgroups/metrics.rs"));
+pub mod v1 {
+    pub mod metrics {
+        include!(concat!(env!("OUT_DIR"), "/cgroups/v1/metrics.rs"));
+    }
+}
+
+pub mod v2 {
+    pub mod v2 {
+        include!(concat!(env!("OUT_DIR"), "/cgroups/v2/metrics.rs"));
+    }
 }
 
 mod gogo {

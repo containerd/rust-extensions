@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package containerd.runc.v1;
 
-import weak "gogoproto/gogo.proto";
-
 option go_package = "github.com/containerd/containerd/runtime/v2/runc/options;options";
 
 message Options {
@@ -21,8 +19,10 @@ message Options {
 	string binary_name = 6;
 	// runc root directory
 	string root = 7;
-	// criu binary path
-	string criu_path = 8;
+	// criu binary path.
+	//
+	// Removed in containerd v2.0: string criu_path = 8;
+	reserved 8;
 	// enable systemd cgroups
 	bool systemd_cgroup = 9;
 	// criu image path

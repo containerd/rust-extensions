@@ -19,5 +19,5 @@ pub mod stats {
 }
 
 pub mod metrics {
-    pub use crate::cgroups::metrics::{file_descriptor, Metrics};
+    pub use crate::cgroups::v1::metrics::{file_descriptor, Metrics};
 }

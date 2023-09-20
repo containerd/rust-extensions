@@ -34,3 +34,7 @@ pub(crate) mod mount {
 pub(crate) mod platform {
     pub use crate::types::platform::*;
 }
+
+pub(crate) mod metrics {
+    pub use crate::types::metrics::*;
+}

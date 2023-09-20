@@ -26,11 +26,16 @@ use ttrpc_codegen::{Codegen, Customize, ProtobufCustomize};
 fn main() {
     genmodule(
         "types",
+        None,
         &[
             "vendor/gogoproto/gogo.proto",
             "vendor/google/protobuf/empty.proto",
             "vendor/github.com/containerd/containerd/protobuf/plugin/fieldpath.proto",
+            "vendor/github.com/containerd/containerd/api/types/descriptor.proto",
+            "vendor/github.com/containerd/containerd/api/types/metrics.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
+            #[cfg(feature = "sandbox")]
+            "vendor/github.com/containerd/containerd/api/types/sandbox.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
             #[cfg(feature = "sandbox")]
             "vendor/github.com/containerd/containerd/api/types/platform.proto",
@@ -40,24 +45,36 @@ fn main() {
 
     genmodule(
         "cgroups",
-        &["vendor/github.com/containerd/cgroups/stats/v1/metrics.proto"],
+        Some("v1"),
+        &["vendor/github.com/containerd/cgroups/cgroup1/stats/metrics.proto"],
+        false,
+    );
+
+    genmodule(
+        "cgroups",
+        Some("v2"),
+        &["vendor/github.com/containerd/cgroups/cgroup2/stats/metrics.proto"],
         false,
     );
 
     genmodule(
         "stats",
+        None,
         &["vendor/microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/stats/stats.proto"],
         false,
     );
 
     genmodule(
         "events",
+        None,
         &[
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/events/container.proto",
             "vendor/github.com/containerd/containerd/api/events/content.proto",
             "vendor/github.com/containerd/containerd/api/events/image.proto",
             "vendor/github.com/containerd/containerd/api/events/namespace.proto",
+            #[cfg(feature = "sandbox")]
+            "vendor/github.com/containerd/containerd/api/events/sandbox.proto",
             "vendor/github.com/containerd/containerd/api/events/snapshot.proto",
             "vendor/github.com/containerd/containerd/api/events/task.proto",
         ],
@@ -66,9 +83,10 @@ fn main() {
 
     genmodule(
         "shim",
+        None,
         &[
             "vendor/github.com/containerd/containerd/runtime/v2/runc/options/oci.proto",
-            "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+            "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
         false,
@@ -78,8 +96,9 @@ fn main() {
     {
         genmodule(
             "shim_async",
+            None,
             &[
-                "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
                 "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             ],
             true,
@@ -90,22 +109,37 @@ fn main() {
     {
         genmodule(
             "sandbox",
-            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            None,
+            &[
+                "vendor/github.com/containerd/containerd/api/types/mount.proto",
+                "vendor/github.com/containerd/containerd/api/types/platform.proto",
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             false,
         );
 
         #[cfg(feature = "async")]
         genmodule(
             "sandbox_async",
-            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            None,
+            &[
+                "vendor/github.com/containerd/containerd/api/types/mount.proto",
+                "vendor/github.com/containerd/containerd/api/types/platform.proto",
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             true,
         );
     }
 }
 
-fn genmodule(name: &str, inputs: &[&str], async_all: bool) {
+fn genmodule(name: &str, version: Option<&str>, inputs: &[&str], async_all: bool) {
     let mut out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     out_path.push(name);
+    if let Some(version) = version {
+        out_path.push(version);
+    }
 
     fs::create_dir_all(&out_path).unwrap();
 

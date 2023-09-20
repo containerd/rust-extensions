@@ -18,23 +18,36 @@ pub mod empty {
     include!(concat!(env!("OUT_DIR"), "/types/empty.rs"));
 }
 
+pub mod fieldpath {
+    include!(concat!(env!("OUT_DIR"), "/types/fieldpath.rs"));
+}
+
 pub mod gogo {
     include!(concat!(env!("OUT_DIR"), "/types/gogo.rs"));
+}
+
+pub mod descriptor {
+    include!(concat!(env!("OUT_DIR"), "/types/descriptor.rs"));
+}
+
+pub mod metrics {
+    include!(concat!(env!("OUT_DIR"), "/types/metrics.rs"));
 }
 
 pub mod mount {
     include!(concat!(env!("OUT_DIR"), "/types/mount.rs"));
 }
 
-pub mod task {
-    include!(concat!(env!("OUT_DIR"), "/types/task.rs"));
-}
-
-pub mod fieldpath {
-    include!(concat!(env!("OUT_DIR"), "/types/fieldpath.rs"));
-}
-
 #[cfg(feature = "sandbox")]
 pub mod platform {
     include!(concat!(env!("OUT_DIR"), "/types/platform.rs"));
+}
+
+#[cfg(feature = "sandbox")]
+pub mod sandbox {
+    include!(concat!(env!("OUT_DIR"), "/types/sandbox.rs"));
+}
+
+pub mod task {
+    include!(concat!(env!("OUT_DIR"), "/types/task.rs"));
 }

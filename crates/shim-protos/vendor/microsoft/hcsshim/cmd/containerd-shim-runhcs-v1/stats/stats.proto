@@ -3,7 +3,7 @@ syntax = "proto3";
 package containerd.runhcs.stats.v1;
 
 import "google/protobuf/timestamp.proto";
-import "github.com/containerd/cgroups/v3/cgroup1/stats/metrics.proto";
+import "github.com/containerd/cgroups/cgroup1/stats/metrics.proto";
 
 option go_package = "github.com/Microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/stats;stats";
 

@@ -30,6 +30,11 @@ pub mod namespace {
     include!(concat!(env!("OUT_DIR"), "/events/namespace.rs"));
 }
 
+#[cfg(feature = "sandbox")]
+pub mod sandbox {
+    include!(concat!(env!("OUT_DIR"), "/events/sandbox.rs"));
+}
+
 pub mod snapshot {
     include!(concat!(env!("OUT_DIR"), "/events/snapshot.rs"));
 }
