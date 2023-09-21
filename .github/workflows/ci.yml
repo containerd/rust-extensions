@@ -89,7 +89,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04]
-        containerd: [1.6.21, 1.7.1]
+        containerd: [v1.6.21, v1.7.1]
 
     steps:
       - name: Checkout extensions
@@ -99,9 +99,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download v${{ matrix.containerd }} \
+          gh release download ${{ matrix.containerd }} \
             --repo containerd/containerd \
-            --pattern 'containerd-${{ matrix.containerd }}-linux-amd64.tar.gz' \
+            --pattern 'containerd-1.*-linux-amd64.tar.gz' \
             --output containerd.tar.gz
 
       - name: Extract containerd binaries to $HOME/.local/bin
@@ -115,7 +115,7 @@ jobs:
         with:
           repository: containerd/containerd
           path: src/github.com/containerd/containerd
-          ref: v${{ matrix.containerd }}
+          ref: ${{ matrix.containerd }}
 
       - name: Install shim
         run: |
