@@ -1,9 +1,13 @@
 [package]
 name = "runc"
 version = "0.2.0"
-authors = ["Yuna Tomida <ytomida.mmm@gmail.com>", "The containerd Authors"]
-keywords = ["containerd", "containers", "runc"]
+authors = [
+  "Yuna Tomida <ytomida.mmm@gmail.com>",
+  "The containerd Authors",
+]
 description = "A crate for consuming the runc binary in your Rust applications"
+keywords = ["containerd", "containers", "runc"]
+categories = ["api-bindings", "asynchronous"]
 
 edition.workspace = true
 license.workspace = true
@@ -13,24 +17,23 @@ homepage.workspace = true
 [features]
 async = ["tokio", "async-trait", "futures", "tokio-pipe"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-libc = "0.2.112"
-log = "0.4.14"
-nix = "0.26"
-oci-spec = "0.6.0"
+libc.workspace = true
+log.workspace = true
+nix.workspace = true
+oci-spec.workspace = true
+os_pipe.workspace = true
 path-absolutize = "3.0.11"
 rand = "0.8.4"
-serde = { version = "1.0.133", features = ["derive"] }
-serde_json = "1.0.74"
+serde.workspace = true
+serde_json.workspace = true
 tempfile = "3.6.0"
-thiserror = "1.0.30"
-time = { version = "0.3.7", features = ["serde", "std"] }
-uuid = { version = "1.0.0", features = ["v4"] }
-os_pipe = "1.0.0"
+thiserror.workspace = true
+time.workspace = true
+uuid.workspace = true
 
 # Async dependencies
-tokio = { workspace = true, features = ["full"], optional = true }
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
 tokio-pipe = { version="0.2.10", optional = true }

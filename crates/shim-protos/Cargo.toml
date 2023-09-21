@@ -2,38 +2,17 @@
 name = "containerd-shim-protos"
 version = "0.5.0"
 authors = [
-    "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
-    "The containerd Authors",
+  "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+  "The containerd Authors",
 ]
 description = "TTRPC bindings for containerd shim interfaces"
 keywords = ["containerd", "shim", "containers", "ttrpc", "client"]
-categories = ["api-bindings"]
+categories = ["api-bindings", "asynchronous"]
 
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-
-[dependencies]
-protobuf = "3.1"
-
-# Quickfix to make CI green.
-# 0.8.1 introduces a breaking change in the API.
-# https://github.com/containerd/ttrpc-rust/pull/197
-# https://github.com/containerd/ttrpc-rust/pull/209
-ttrpc = "=0.8.0"
-async-trait = { version = "0.1.48", optional = true }
-
-[build-dependencies]
-ttrpc-codegen = "0.4"
-
-[dev-dependencies]
-ctrlc = { version = "3.0", features = ["termination"] }
-log = "0.4"
-simple_logger = { version = "4.0", default-features = false, features = [
-    "stderr",
-] }
-tokio = { workspace = true, features = ["full"] }
 
 [features]
 default = []
@@ -66,3 +45,21 @@ required-features = ["async"]
 name = "shim-proto-connect-async"
 path = "examples/connect-async.rs"
 required-features = ["async"]
+
+[dependencies]
+async-trait = { version = "0.1.48", optional = true }
+protobuf = "3.1"
+# Quickfix to make CI green.
+# 0.8.1 introduces a breaking change in the API.
+# https://github.com/containerd/ttrpc-rust/pull/197
+# https://github.com/containerd/ttrpc-rust/pull/209
+ttrpc = "=0.8.0"
+
+[build-dependencies]
+ttrpc-codegen = "0.4"
+
+[dev-dependencies]
+ctrlc = { version = "3.0", features = ["termination"] }
+log.workspace = true
+simple_logger = { version = "4.0", default-features = false, features = ["stderr"]}
+tokio = { workspace = true, features = ["full"] }
