@@ -95,16 +95,20 @@ jobs:
       - name: Checkout extensions
         uses: actions/checkout@v4
 
-      - name: Download containerd release v${{ matrix.containerd }} archive
-        uses: robinraju/release-downloader@v1.8
-        with:
-          repository: "containerd/containerd"
-          tag: v${{ matrix.containerd }}
-          fileName: "containerd-${{ matrix.containerd }}-linux-amd64.tar.gz"
-          extract: true
+      - name: Download containerd archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v${{ matrix.containerd }} \
+            --repo containerd/containerd \
+            --pattern 'containerd-${{ matrix.containerd }}-linux-amd64.tar.gz' \
+            --output containerd.tar.gz
 
-      - name: Add containerd binaries to PATH
-        run: echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Extract containerd binaries to $HOME/.local/bin
+        run: |
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          tar -xf containerd.tar.gz -C $HOME/.local
 
       - name: Checkout containerd
         uses: actions/checkout@v4
