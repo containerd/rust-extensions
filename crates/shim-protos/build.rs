@@ -45,14 +45,14 @@ fn main() {
 
     genmodule(
         "cgroups",
-        Some("v1"),
+        Some("cgroup1"),
         &["vendor/github.com/containerd/cgroups/cgroup1/stats/metrics.proto"],
         false,
     );
 
     genmodule(
         "cgroups",
-        Some("v2"),
+        Some("cgroup2"),
         &["vendor/github.com/containerd/cgroups/cgroup2/stats/metrics.proto"],
         false,
     );

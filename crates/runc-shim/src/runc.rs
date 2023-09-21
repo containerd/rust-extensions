@@ -34,7 +34,7 @@ use containerd_shim::{
     other, other_error,
     protos::{
         api::ProcessInfo,
-        cgroups::v1::metrics::Metrics,
+        cgroups::cgroup1::metrics::Metrics,
         protobuf::{CodedInputStream, Message},
     },
     util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},

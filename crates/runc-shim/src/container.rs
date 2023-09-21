@@ -21,7 +21,7 @@ use containerd_shim::{
     error::Result,
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
-        cgroups::v1::metrics::Metrics,
+        cgroups::cgroup1::metrics::Metrics,
     },
     Error,
 };

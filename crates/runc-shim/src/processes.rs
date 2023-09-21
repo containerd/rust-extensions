@@ -24,7 +24,7 @@ use containerd_shim::{
     ioctl_set_winsz,
     protos::{
         api::{ProcessInfo, StateResponse, Status},
-        cgroups::v1::metrics::Metrics,
+        cgroups::cgroup1::metrics::Metrics,
         protobuf::well_known_types::timestamp::Timestamp,
     },
     util::asyncify,
