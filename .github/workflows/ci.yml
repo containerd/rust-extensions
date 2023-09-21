@@ -89,43 +89,29 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04]
-        containerd: [v1.6.21, v1.7.1]
+        containerd: [1.6.21, 1.7.1]
 
     steps:
       - name: Checkout extensions
         uses: actions/checkout@v4
+
+      - name: Download containerd release v${{ matrix.containerd }} archive
+        uses: robinraju/release-downloader@v1.8
+        with:
+          repository: "containerd/containerd"
+          tag: v${{ matrix.containerd }}
+          fileName: "containerd-${{ matrix.containerd }}-linux-amd64.tar.gz"
+          extract: true
+
+      - name: Add containerd binaries to PATH
+        run: echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
 
       - name: Checkout containerd
         uses: actions/checkout@v4
         with:
           repository: containerd/containerd
           path: src/github.com/containerd/containerd
-          ref: ${{ matrix.containerd }}
-
-      - name: Get Go Version
-        run: |
-          go_version=$(awk -F': ' '/GO_VERSION/ {gsub(/["'\'']/, "", $2); print $2; exit}' .github/workflows/release.yml)
-          echo "GO_VERSION=$go_version" >> $GITHUB_ENV
-        working-directory: src/github.com/containerd/containerd
-
-      - uses: actions/setup-go@v4
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Install containerd
-        env:
-          GOFLAGS: -modcacherw
-          CGO_ENABLED: 1
-        run: |
-          # Install containerd dependencies first
-          sudo apt-get install -y gperf
-          sudo -E PATH=$PATH script/setup/install-seccomp
-          sudo -E PATH=$PATH script/setup/install-runc
-          sudo -E PATH=$PATH script/setup/install-cni $(grep containernetworking/plugins go.mod | awk '{print $2}')
-          # Install containerd
-          sudo -E PATH=$PATH make bin/containerd GO_BUILD_FLAGS="-mod=vendor" BUILDTAGS="no_btrfs no_devmapper"
-          sudo -E PATH=$PATH install bin/containerd /usr/local/bin/
-        working-directory: src/github.com/containerd/containerd
+          ref: v${{ matrix.containerd }}
 
       - name: Install shim
         run: |
