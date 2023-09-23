@@ -25,10 +25,7 @@ use containerd_shim::{
 use log::{debug, warn};
 use nix::{
     cmsg_space,
-    sys::{
-        socket::{recvmsg, ControlMessageOwned, MsgFlags, UnixAddr},
-        termios::tcgetattr,
-    },
+    sys::socket::{recvmsg, ControlMessageOwned, MsgFlags, UnixAddr},
 };
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 use runc::{
@@ -206,7 +203,6 @@ pub fn receive_socket(stream_fd: RawFd) -> containerd_shim::Result<RawFd> {
         "copy_console: console socket get path: {}, fd: {}",
         path, &fds[0]
     );
-    tcgetattr(fds[0])?;
     Ok(fds[0])
 }
 

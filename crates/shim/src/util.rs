@@ -15,7 +15,7 @@
 */
 
 #[cfg(unix)]
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     #[cfg(not(target_os = "linux"))]
     const SOCK_CLOEXEC: SockFlag = SockFlag::empty();
 
-    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?;
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?.as_raw_fd();
 
     // MacOS doesn't support atomic creation of a socket descriptor with `SOCK_CLOEXEC` flag,
     // so there is a chance of leak if fork + exec happens in between of these calls.

@@ -29,7 +29,7 @@ containerd-shim = { path = "../shim", version = "0.5.0", features = ["async"] }
 crossbeam = "0.8.1"
 libc.workspace = true
 log.workspace = true
-nix.workspace = true
+nix = {workspace = true, features = ["socket", "term", "uio"]}
 oci-spec.workspace = true
 runc = { path = "../runc", version = "0.2.0", features = ["async"] }
 serde.workspace = true
