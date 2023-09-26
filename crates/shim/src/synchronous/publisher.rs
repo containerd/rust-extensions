@@ -30,7 +30,11 @@ use crate::util::connect;
 use crate::{
     error::Result,
     util::{convert_to_any, timestamp},
+    Error,
 };
+
+#[cfg(windows)]
+const RETRY_COUNT: i32 = 3;
 
 /// Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
@@ -59,10 +63,20 @@ impl RemotePublisher {
 
         #[cfg(windows)]
         {
-            match Client::connect(address.as_ref()) {
-                Ok(client) => Ok(client),
-                Err(e) => Err(e.into()),
+            for i in 0..RETRY_COUNT {
+                match Client::connect(address.as_ref()) {
+                    Ok(client) => return Ok(client),
+                    Err(e) => match e {
+                        ttrpc::Error::Windows(231) => {
+                            // ERROR_PIPE_BUSY
+                            log::debug!("pipe busy during connect. try number {}", i);
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        _ => return Err(e.into()),
+                    },
+                }
             }
+            Err(other!("failed to connect to {}", address.as_ref()))
         }
     }
 
