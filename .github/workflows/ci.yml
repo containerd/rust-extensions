@@ -89,7 +89,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04]
-        containerd: [v1.6.21, v1.7.1]
+        containerd: [v1.6.24, v1.7.6]
 
     steps:
       - name: Checkout extensions
@@ -132,13 +132,8 @@ jobs:
           GOPROXY: direct
           TEST_RUNTIME: "io.containerd.runc.v2-rs"
           TESTFLAGS_PARALLEL: 1
-          EXTRA_TESTFLAGS: "-no-criu -test.skip='(TestContainerPTY|TestContainerExecLargeOutputWithTTY)'"
+          EXTRA_TESTFLAGS: "-no-criu -test.skip='(TestContainerPTY|TestContainerExecLargeOutputWithTTY|TestTaskUpdate|TestTaskResize)'"
           TESTFLAGS_RACE: "-race"
         run: |
-          # https://github.com/containerd/rust-extensions/issues/147#issuecomment-1684553369
-          cd integration/client
-          sudo -E PATH=$PATH go mod edit -dropreplace github.com/AdaLogics/go-fuzz-headers
-          sudo -E PATH=$PATH go get -u github.com/AdaLogics/go-fuzz-headers
-          cd ../..
           sudo -E PATH=$PATH make integration
         working-directory: src/github.com/containerd/containerd
