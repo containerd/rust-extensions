@@ -10,6 +10,22 @@ Rust crate to ease runtime v2 shim implementation.
 It replicates same [shim.Run](https://github.com/containerd/containerd/blob/dbef1d56d7ebc05bc4553d72c419ed5ce025b05d/runtime/v2/example/cmd/main.go)
 API offered by containerd's shim v2 runtime implementation written in Go.
 
+## Runtime
+
+Runtime v2 introduces a first class shim API for runtime authors to integrate with containerd.
+The shim API is minimal and scoped to the execution lifecycle of a container.
+
+This crate simplifies shim v2 runtime development for containerd. It handles common tasks such
+as command line parsing, setting up shim's TTRPC server, logging, events, etc.
+
+Clients are expected to implement [Shim] and [Task] traits with task handling routines.
+This generally replicates same API as in Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/example/cmd/main.go).
+
+Once implemented, shim's bootstrap code is as easy as:
+```rust
+shim::run::<Service>("io.containerd.empty.v1")
+```
+
 ## Look and feel
 
 The API is very similar to the one offered by Go version:
@@ -73,7 +89,6 @@ impl shim::Task for Service {
 fn main() {
     shim::run::<Service>("io.containerd.empty.v1")
 }
-
 ```
 
 ## How to use with containerd
@@ -97,7 +112,7 @@ $ sudo ctr run --rm --runtime ./target/debug/examples/skeleton docker.io/library
 
 Or manually:
 
-```
+```bash
 $ touch log
 
 # Run containerd in background

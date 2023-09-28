@@ -34,9 +34,13 @@ tonic-build.workspace = true
 
 [features]
 connect = ["tokio", "tower"]
+docs = []
 
 # Technically Tonic doesn't require Tokio and Tower dependencies here.
 # However we need them to implement `connect` helper and it's highly unlikely
 # that Tonic will be used with any other async runtime (see https://github.com/hyperium/tonic/issues/152)
 # So we enable `connect` feature by default (use `--no-default-features` otherwise).
 default = ["connect"]
+
+[package.metadata.docs.rs]
+features = ["docs"]

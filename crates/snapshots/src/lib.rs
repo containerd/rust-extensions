@@ -14,41 +14,7 @@
    limitations under the License.
 */
 
-//! Remote snapshotter extension for containerd.
-//!
-//! Snapshots crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying
-//! complexity of GRPC interfaces, streaming and request/response conversions and provide one
-//! [crate::Snapshotter] trait to implement.
-//!
-//! # Proxy plugins
-//! A proxy plugin is configured using containerd's config file and will be loaded alongside the
-//! internal plugins when containerd is started. These plugins are connected to containerd using a
-//! local socket serving one of containerd's GRPC API services. Each plugin is configured with a
-//! type and name just as internal plugins are.
-//!
-//! # How to use from containerd
-//! Add the following to containerd's configuration file:
-//! ```toml
-//! [proxy_plugins]
-//!   [proxy_plugins.custom]
-//!     type = "snapshot"
-//!     address = "/tmp/snap2.sock"
-//! ```
-//! Start containerd daemon:
-//! ```bash
-//! containerd --config /path/config.toml
-//! ```
-//!
-//! Run remote snapshotter instance:
-//! ```bash
-//! $ cargo run --example snapshotter /tmp/snap2.sock
-//! ```
-//! Now specify `custom` snapshotter when pulling an image with `ctr`:
-//! ```bash
-//! $ ctr i pull --snapshotter custom docker.io/library/hello-world:latest
-//! ```
-//!
-
+#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 // No way to derive Eq with tonic :(
 // See https://github.com/hyperium/tonic/issues/1056
 #![allow(clippy::derive_partial_eq_without_eq)]
