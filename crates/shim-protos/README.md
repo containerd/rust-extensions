@@ -38,18 +38,20 @@ containerd-shim-protos = "0.4"
 
 Basic client code looks as follows:
 
-```rust
-let client = client::Client::connect(socket_path)?;
+```rust,no_run
+use containerd_shim_protos as client;
+
+let client = client::Client::connect("unix:///containerd-shim/shim.sock").expect("Failed to connect to shim");
 let task_client = client::TaskClient::new(client);
 
 let context = client::ttrpc::context::with_timeout(0);
 
 let req = client::api::ConnectRequest {
-    id: pid,
+    id: String::from("1"),
     ..Default::default()
 };
 
-let resp = task_client.connect(context, &req)?;
+let resp = task_client.connect(context, &req).expect("Connect request failed");
 ```
 
 ## Example

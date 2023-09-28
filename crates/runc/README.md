@@ -14,12 +14,10 @@ You can build runc client with `RuncConfig` in method chaining style.
 Call `build()` or `build_async()` to get client.
 Note that async client depends on [tokio](https://github.com/tokio-rs/tokio), then please use it on tokio runtime.
 
-```rust
-use runc;
-
+```rust,ignore
 #[tokio::main]
 async fn main() {
-    let config = runc::Config::new()
+    let config = runc::GlobalOpts::new()
         .root("./new_root")
         .debug(false)
         .log("/path/to/logfile.json")
