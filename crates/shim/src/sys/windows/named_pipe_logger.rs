@@ -23,6 +23,8 @@ use std::{
 use log::{Metadata, Record};
 use mio::{windows::NamedPipe, Events, Interest, Poll, Token};
 
+use crate::logger;
+
 pub struct NamedPipeLogger {
     current_connection: Arc<Mutex<NamedPipe>>,
 }
@@ -82,7 +84,12 @@ impl log::Log for NamedPipeLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let message = format!("[{}] {}\n", record.level(), record.args());
+            let message = format!(
+                "time=\"{}\" level={} {}\n",
+                logger::rfc3339_formated(),
+                record.level().as_str().to_lowercase(),
+                record.args()
+            );
 
             match self
                 .current_connection
@@ -175,8 +182,14 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        let buf = read_message(&mut client);
-        assert_eq!("[INFO] hello", std::str::from_utf8(&buf).unwrap());
+        let buf = read_message(&mut client, 53);
+        let message = std::str::from_utf8(&buf).unwrap();
+        assert!(message.starts_with("time=\""), "message was: {:?}", message);
+        assert!(
+            message.ends_with("level=info hello\n"),
+            "message was: {:?}",
+            message
+        );
 
         // test that we can reconnect after a reader disconnects
         // we need to get the raw handle and drop that as well to force full disconnect
@@ -192,16 +205,16 @@ mod tests {
         logger.log(&record);
         logger.flush();
 
-        read_message(&mut client2);
+        read_message(&mut client2, 51);
     }
 
-    fn read_message(client: &mut NamedPipe) -> [u8; 12] {
+    fn read_message(client: &mut NamedPipe, length: usize) -> Vec<u8> {
         let mut poll = Poll::new().unwrap();
         poll.registry()
             .register(client, Token(1), Interest::READABLE)
             .unwrap();
         let mut events = Events::with_capacity(128);
-        let mut buf = [0; 12];
+        let mut buf = vec![0; length];
         loop {
             poll.poll(&mut events, Some(Duration::from_millis(10)))
                 .unwrap();
@@ -221,7 +234,7 @@ mod tests {
                 Err(e) => panic!("Error reading from pipe: {}", e),
             }
         }
-        buf
+        buf.to_vec()
     }
 
     fn create_client(pipe_name: &str) -> mio::windows::NamedPipe {

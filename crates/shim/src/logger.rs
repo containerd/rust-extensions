@@ -24,6 +24,7 @@ use std::{
 };
 
 use log::{Metadata, Record};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::error::Error;
 #[cfg(windows)]
@@ -68,7 +69,13 @@ impl log::Log for FifoLogger {
             // a write(2) will cause a SIGPIPE signal to be generated for the calling process.
             // If the calling process is ignoring this signal, then write(2) fails with the error
             // EPIPE.
-            let _ = writeln!(guard.borrow_mut(), "[{}] {}", record.level(), record.args());
+            let _ = writeln!(
+                guard.borrow_mut(),
+                "time=\"{}\" level={} {}\n",
+                rfc3339_formated(),
+                record.level().as_str().to_lowercase(),
+                record.args()
+            );
         }
     }
 
@@ -101,6 +108,12 @@ pub fn init(debug: bool, _namespace: &str, _id: &str) -> Result<(), Error> {
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
     Ok(())
+}
+
+pub(crate) fn rfc3339_formated() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or(OffsetDateTime::now_utc().to_string())
 }
 
 #[cfg(test)]
