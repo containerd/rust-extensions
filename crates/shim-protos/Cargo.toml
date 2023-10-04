@@ -54,7 +54,7 @@ protobuf = "3.1"
 # 0.8.1 introduces a breaking change in the API.
 # https://github.com/containerd/ttrpc-rust/pull/197
 # https://github.com/containerd/ttrpc-rust/pull/209
-ttrpc = "=0.8.0"
+ttrpc = "=0.8.1"
 
 [build-dependencies]
 ttrpc-codegen = "0.4"
