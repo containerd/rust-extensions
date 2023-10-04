@@ -10,11 +10,15 @@ This crate implements a GRPC client to query containerd APIs.
 ## Example
 
 ```rust
-// Launch containerd at /run/containerd/containerd.sock
-let channel = connect("/run/containerd/containerd.sock").await?;
+use containerd_client::{connect, services::v1::version_client::VersionClient};
 
-let mut client = VersionClient::new(channel);
-let resp = client.version(()).await?;
+async fn query_version() {
+    // Launch containerd at /run/containerd/containerd.sock
+    let channel = connect("/run/containerd/containerd.sock").await.unwrap();
 
-println!("Response: {:?}", resp.get_ref());
+    let mut client = VersionClient::new(channel);
+    let resp = client.version(()).await.unwrap();
+
+    println!("Response: {:?}", resp.get_ref());
+}
 ```

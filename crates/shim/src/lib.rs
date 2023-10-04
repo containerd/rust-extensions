@@ -14,23 +14,7 @@
    limitations under the License.
 */
 
-//! A library to implement custom runtime v2 shims for containerd.
-//!
-//! # Runtime
-//! Runtime v2 introduces a first class shim API for runtime authors to integrate with containerd.
-//! The shim API is minimal and scoped to the execution lifecycle of a container.
-//!
-//! This crate simplifies shim v2 runtime development for containerd. It handles common tasks such
-//! as command line parsing, setting up shim's TTRPC server, logging, events, etc.
-//!
-//! Clients are expected to implement [Shim] and [Task] traits with task handling routines.
-//! This generally replicates same API as in Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/example/cmd/main.go).
-//!
-//! Once implemented, shim's bootstrap code is as easy as:
-//! ```text
-//! shim::run::<Service>("io.containerd.empty.v1")
-//! ```
-//!
+#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 
 use std::{collections::hash_map::DefaultHasher, fs::File, hash::Hasher, path::PathBuf};
 #[cfg(unix)]

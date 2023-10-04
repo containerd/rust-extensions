@@ -14,14 +14,7 @@
    limitations under the License.
 */
 
-//! Helper library to implement custom shim loggers for containerd.
-//!
-//! # Runtime
-//! containerd shims may support pluggable logging via stdio URIs. Binary logging has the ability to
-//! forward a container's STDIO to an external binary for consumption.
-//!
-//! This crates replicates APIs provided by Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/README.md#logging).
-//!
+#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 
 use std::{env, fmt, fs, os::unix::io::FromRawFd, process};
 

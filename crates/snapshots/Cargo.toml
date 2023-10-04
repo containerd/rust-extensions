@@ -14,6 +14,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[features]
+docs = []
+
 [dependencies]
 async-stream = "0.3.3"
 futures.workspace = true
@@ -34,3 +37,6 @@ simple_logger = { version = "4.0", default-features = false }
 
 [build-dependencies]
 tonic-build.workspace = true
+
+[package.metadata.docs.rs]
+features = ["docs"]

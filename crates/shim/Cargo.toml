@@ -22,6 +22,7 @@ async = [
   "signal-hook-tokio",
   "tokio",
 ]
+docs = []
 
 [[example]]
 name = "skeleton_async"
@@ -36,7 +37,7 @@ containerd-shim-protos = { path = "../shim-protos", version = "0.5.0" }
 go-flag = "0.1.0"
 lazy_static = "1.4.0"
 libc.workspace = true
-log = { workspace = true, features = ["std"]}
+log = { workspace = true, features = ["std"] }
 nix.workspace = true
 oci-spec.workspace = true
 page_size = "0.6.0"
@@ -49,8 +50,10 @@ time.workspace = true
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
-futures = { workspace = true, optional = true}
-signal-hook-tokio = { version = "0.3.1", optional = true, features = ["futures-v0_3"]}
+futures = { workspace = true, optional = true }
+signal-hook-tokio = { version = "0.3.1", optional = true, features = [
+  "futures-v0_3",
+] }
 tokio = { workspace = true, features = ["full"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -62,7 +65,7 @@ command-fds = "0.2.1"
 [target.'cfg(windows)'.dependencies]
 mio = { version = "0.8", features = ["os-ext", "os-poll"] }
 os_pipe.workspace = true
-windows-sys = {version = "0.48.0", features = [
+windows-sys = { version = "0.48.0", features = [
   "Win32_Foundation",
   "Win32_System_WindowsProgramming",
   "Win32_System_Console",
@@ -70,7 +73,10 @@ windows-sys = {version = "0.48.0", features = [
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_Threading",
-  ]}
+] }
 
 [dev-dependencies]
 tempfile = "3.6"
+
+[package.metadata.docs.rs]
+features = ["docs"]

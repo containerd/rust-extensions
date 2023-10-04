@@ -1,10 +1,7 @@
 [package]
 name = "runc"
 version = "0.2.0"
-authors = [
-  "Yuna Tomida <ytomida.mmm@gmail.com>",
-  "The containerd Authors",
-]
+authors = ["Yuna Tomida <ytomida.mmm@gmail.com>", "The containerd Authors"]
 description = "A crate for consuming the runc binary in your Rust applications"
 keywords = ["containerd", "containers", "runc"]
 categories = ["api-bindings", "asynchronous"]
@@ -16,6 +13,7 @@ homepage.workspace = true
 
 [features]
 async = ["tokio", "async-trait", "futures", "tokio-pipe"]
+docs = []
 
 [dependencies]
 libc.workspace = true
@@ -36,4 +34,7 @@ uuid.workspace = true
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
-tokio-pipe = { version="0.2.10", optional = true }
+tokio-pipe = { version = "0.2.10", optional = true }
+
+[package.metadata.docs.rs]
+features = ["docs"]
