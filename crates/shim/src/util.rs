@@ -101,6 +101,8 @@ impl From<JsonOptions> for Options {
 
 #[cfg(unix)]
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
+    use std::os::fd::IntoRawFd;
+
     use nix::{sys::socket::*, unistd::close};
 
     let unix_addr = UnixAddr::new(address.as_ref())?;
@@ -112,7 +114,7 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     #[cfg(not(target_os = "linux"))]
     const SOCK_CLOEXEC: SockFlag = SockFlag::empty();
 
-    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?;
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?.into_raw_fd();
 
     // MacOS doesn't support atomic creation of a socket descriptor with `SOCK_CLOEXEC` flag,
     // so there is a chance of leak if fork + exec happens in between of these calls.
