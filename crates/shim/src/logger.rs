@@ -16,6 +16,7 @@
 
 use std::{
     borrow::BorrowMut,
+    fmt::Write as fmtwrite,
     fs::{File, OpenOptions},
     io,
     io::Write,
@@ -23,7 +24,10 @@ use std::{
     sync::Mutex,
 };
 
-use log::{Metadata, Record};
+use log::{
+    kv::{self, Visitor},
+    Metadata, Record,
+};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::error::Error;
@@ -54,6 +58,23 @@ impl FifoLogger {
     }
 }
 
+pub(crate) struct SimpleWriteVistor {
+    key_values: String,
+}
+
+impl<'kvs> Visitor<'kvs> for SimpleWriteVistor {
+    fn visit_pair(&mut self, k: kv::Key<'kvs>, v: kv::Value<'kvs>) -> Result<(), kv::Error> {
+        write!(&mut self.key_values, " {}=\"{}\"", k, v)?;
+        Ok(())
+    }
+}
+
+impl SimpleWriteVistor {
+    fn as_str(&self) -> &str {
+        &self.key_values
+    }
+}
+
 impl log::Log for FifoLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= log::max_level()
@@ -62,6 +83,13 @@ impl log::Log for FifoLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let mut guard = self.file.lock().unwrap();
+
+            // collect key_values but don't fail if error parsing
+            let mut writer = SimpleWriteVistor {
+                key_values: String::new(),
+            };
+            let _ = record.key_values().visit(&mut writer);
+
             // The logger server may have temporarily shutdown, ignore the error instead of panic.
             //
             // Manual for pipe/FIFO: https://man7.org/linux/man-pages/man7/pipe.7.html
@@ -71,9 +99,10 @@ impl log::Log for FifoLogger {
             // EPIPE.
             let _ = writeln!(
                 guard.borrow_mut(),
-                "time=\"{}\" level={} {}\n",
+                "time=\"{}\" level={}{} msg=\"{}\"\n",
                 rfc3339_formated(),
                 record.level().as_str().to_lowercase(),
+                writer.as_str(),
                 record.args()
             );
         }
@@ -118,6 +147,8 @@ pub(crate) fn rfc3339_formated() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use log::{Log, Record};
 
     use super::*;
@@ -151,12 +182,46 @@ mod tests {
         log::set_max_level(log::LevelFilter::Info);
         thread.join().unwrap();
 
+        let kvs: &[(&str, i32)] = &[("a", 1), ("b", 2)];
         let record = Record::builder()
             .level(log::Level::Error)
             .line(Some(1))
             .file(Some("sample file"))
+            .key_values(&kvs)
             .build();
         logger.log(&record);
         logger.flush();
+    }
+
+    #[test]
+    fn test_supports_structured_logging() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().to_str().unwrap().to_owned() + "/log";
+        File::create(path.clone()).unwrap();
+
+        let logger = FifoLogger::with_path(&path).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+
+        let record = Record::builder()
+            .level(log::Level::Info)
+            .args(format_args!("no keys"))
+            .build();
+        logger.log(&record);
+        logger.flush();
+
+        let contents = fs::read_to_string(path.clone()).unwrap();
+        assert!(contents.contains("level=info msg=\"no keys\""));
+
+        let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
+        let record = Record::builder()
+            .level(log::Level::Error)
+            .key_values(&kvs)
+            .args(format_args!("structured!"))
+            .build();
+        logger.log(&record);
+        logger.flush();
+
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("level=error key=\"1\" b=\"2\" msg=\"structured!\""));
     }
 }

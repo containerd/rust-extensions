@@ -37,7 +37,7 @@ containerd-shim-protos = { path = "../shim-protos", version = "0.5.0" }
 go-flag = "0.1.0"
 lazy_static = "1.4.0"
 libc.workspace = true
-log = { workspace = true, features = ["std"] }
+log = { workspace = true, features = ["std", "kv_unstable" ] }
 nix = { workspace = true, features = [
   "ioctl",
   "fs",

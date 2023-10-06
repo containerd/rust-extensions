@@ -84,10 +84,17 @@ impl log::Log for NamedPipeLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            // collect key_values but don't fail if error parsing
+            let mut writer = logger::SimpleWriteVistor {
+                keyvalues: String::new(),
+            };
+            let _ = record.key_values().visit(&mut writer);
+
             let message = format!(
-                "time=\"{}\" level={} {}\n",
+                "time=\"{}\" level={}{} {}\n",
                 logger::rfc3339_formated(),
                 record.level().as_str().to_lowercase(),
+                writer.as_str(),
                 record.args()
             );
 
@@ -173,10 +180,11 @@ mod tests {
         let mut client = create_client(pipe_name.as_str());
 
         log::set_max_level(log::LevelFilter::Info);
+        let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
         let record = Record::builder()
             .level(log::Level::Info)
             .line(Some(1))
-            .file(Some("sample file"))
+            .key_values(&kvs)
             .args(format_args!("hello"))
             .build();
         logger.log(&record);
@@ -186,7 +194,7 @@ mod tests {
         let message = std::str::from_utf8(&buf).unwrap();
         assert!(message.starts_with("time=\""), "message was: {:?}", message);
         assert!(
-            message.ends_with("level=info hello\n"),
+            message.ends_with("level=info key=\"1\" b=\"2\" msg=\"hello\"\n"),
             "message was: {:?}",
             message
         );

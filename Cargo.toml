@@ -27,7 +27,7 @@ edition = "2021"
 async-trait = "0.1.52"
 futures = "0.3.19"
 libc = "0.2.112"
-log = "0.4"
+log = {version = "0.4.2", features=["kv_unstable"]}
 nix = "0.27"
 oci-spec = "0.6"
 os_pipe = "1.1"
