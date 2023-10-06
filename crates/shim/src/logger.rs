@@ -70,7 +70,13 @@ impl<'kvs> Visitor<'kvs> for SimpleWriteVistor {
 }
 
 impl SimpleWriteVistor {
-    fn as_str(&self) -> &str {
+    pub(crate) fn new() -> SimpleWriteVistor {
+        SimpleWriteVistor {
+            key_values: String::new(),
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
         &self.key_values
     }
 }
@@ -85,9 +91,7 @@ impl log::Log for FifoLogger {
             let mut guard = self.file.lock().unwrap();
 
             // collect key_values but don't fail if error parsing
-            let mut writer = SimpleWriteVistor {
-                key_values: String::new(),
-            };
+            let mut writer = SimpleWriteVistor::new();
             let _ = record.key_values().visit(&mut writer);
 
             // The logger server may have temporarily shutdown, ignore the error instead of panic.
