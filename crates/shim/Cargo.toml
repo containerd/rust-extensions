@@ -38,7 +38,13 @@ go-flag = "0.1.0"
 lazy_static = "1.4.0"
 libc.workspace = true
 log = { workspace = true, features = ["std"] }
-nix.workspace = true
+nix = { workspace = true, features = [
+  "ioctl",
+  "fs",
+  "socket",
+  "signal",
+  "mount",
+] }
 oci-spec.workspace = true
 page_size = "0.6.0"
 prctl = "1.0.0"
