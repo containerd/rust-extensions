@@ -55,12 +55,16 @@ fn create_ttrpc_context() -> (
         type_: MESSAGE_TYPE_REQUEST,
         ..Default::default()
     };
+
+    let (_, cancel_rx) = crossbeam::channel::unbounded();
+
     let ctx = TtrpcContext {
         fd: -1,
         mh,
         res_tx,
         metadata: HashMap::new(),
         timeout_nano: 0,
+        cancel_rx,
     };
 
     (ctx, rx)
