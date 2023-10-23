@@ -50,11 +50,7 @@ required-features = ["async"]
 [dependencies]
 async-trait = { version = "0.1.48", optional = true }
 protobuf = "3.1"
-# Quickfix to make CI green.
-# 0.8.1 introduces a breaking change in the API.
-# https://github.com/containerd/ttrpc-rust/pull/197
-# https://github.com/containerd/ttrpc-rust/pull/209
-ttrpc = "=0.8.0"
+ttrpc = "0.8"
 
 [build-dependencies]
 ttrpc-codegen = "0.4"
@@ -66,6 +62,7 @@ simple_logger = { version = "4.0", default-features = false, features = [
   "stderr",
 ] }
 tokio = { workspace = true, features = ["full"] }
+crossbeam = "0.8.0" # Used by create_ttrpc_context()
 
 [package.metadata.docs.rs]
 features = ["docs"]
