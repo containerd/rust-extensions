@@ -302,7 +302,7 @@ mod tests {
         let h = hierarchies::auto();
 
         // create cgroup path first
-        let cg = Cgroup::new(h, path);
+        let cg = Cgroup::new(h, path).unwrap();
 
         let pid = std::process::id();
         add_task_to_cgroup(path, pid).unwrap();
@@ -310,7 +310,7 @@ mod tests {
         assert!(cg.tasks().contains(&cg_id));
 
         // remove cgroup as possible
-        cg.remove_task(cg_id);
+        cg.remove_task(cg_id).unwrap();
         cg.delete().unwrap()
     }
 
