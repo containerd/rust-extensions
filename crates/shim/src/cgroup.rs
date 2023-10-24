@@ -64,7 +64,7 @@ pub fn add_task_to_cgroup(path: &str, pid: u32) -> Result<()> {
     let path = path.trim_start_matches('/');
 
     Cgroup::load(h, path)
-        .add_task(CgroupPid::from(pid as u64))
+        .add_task_by_tgid(CgroupPid::from(pid as u64))
         .map_err(other_error!(e, "add task to cgroup"))
 }
 
@@ -310,7 +310,7 @@ mod tests {
         assert!(cg.tasks().contains(&cg_id));
 
         // remove cgroup as possible
-        cg.remove_task(cg_id).unwrap();
+        cg.remove_task_by_tgid(cg_id).unwrap();
         cg.delete().unwrap()
     }
 
