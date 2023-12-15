@@ -19,7 +19,7 @@ jobs:
       PR_URL: ${{ github.event.pull_request.html_url }}
 
     steps:
-    - uses: actions/labeler@v4
+    - uses: actions/labeler@v5
       with:
         # Auto-include paths starting with dot (e.g. .github)
         dot: true
