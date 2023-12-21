@@ -560,7 +560,7 @@ impl Runc {
     }
 
     /// Return the state of a container
-    pub async fn state(&self, id: &str) -> Result<Vec<usize>> {
+    pub async fn state(&self, id: &str) -> Result<Container> {
         let args = vec!["state".to_string(), id.to_string()];
         let res = self.launch(self.command(&args)?, true).await?;
         serde_json::from_str(&res.output).map_err(Error::JsonDeserializationFailed)
