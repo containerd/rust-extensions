@@ -13,7 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
@@ -44,8 +43,26 @@ use oci_spec::runtime::LinuxResources;
 use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
 
 use super::container::{Container, ContainerFactory};
-
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
+
+#[cfg(target_os = "linux")]
+use std::path::Path;
+
+#[cfg(target_os = "linux")]
+use cgroups_rs::hierarchies::is_cgroup2_unified_mode;
+#[cfg(target_os = "linux")]
+use containerd_shim::{
+    error::{Error, Result},
+    other_error,
+    protos::events::task::TaskOOM,
+};
+#[cfg(target_os = "linux")]
+use log::error;
+#[cfg(target_os = "linux")]
+use tokio::{sync::mpsc::Receiver, task::spawn};
+
+#[cfg(target_os = "linux")]
+use crate::cgroup_memory;
 
 /// TaskService is a Task template struct, it is considered a helper struct,
 /// which has already implemented `Task` trait, so that users can make it the type `T`
@@ -93,6 +110,44 @@ impl<F, C> TaskService<F, C> {
             .await
             .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
     }
+}
+
+#[cfg(target_os = "linux")]
+fn run_oom_monitor(mut rx: Receiver<String>, id: String, tx: EventSender) {
+    let oom_event = TaskOOM {
+        container_id: id,
+        ..Default::default()
+    };
+    let topic = oom_event.topic();
+    let oom_box = Box::new(oom_event);
+    spawn(async move {
+        while let Some(_item) = rx.recv().await {
+            tx.send((topic.to_string(), oom_box.clone()))
+                .await
+                .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
+        }
+    });
+}
+
+#[cfg(target_os = "linux")]
+async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
+    if !is_cgroup2_unified_mode() {
+        let path_from_cgorup = cgroup_memory::get_path_from_cgorup(pid).await?;
+        let (mount_root, mount_point) =
+            cgroup_memory::get_existing_cgroup_mem_path(path_from_cgorup).await?;
+
+        let mem_cgroup_path = mount_point + &mount_root;
+        let rx = cgroup_memory::register_memory_event(
+            id,
+            Path::new(&mem_cgroup_path),
+            "memory.oom_control",
+        )
+        .await
+        .map_err(other_error!(e, "register_memory_event failed:"))?;
+
+        run_oom_monitor(rx, id.to_string(), tx);
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -164,6 +219,10 @@ where
                 ..Default::default()
             })
             .await;
+            #[cfg(target_os = "linux")]
+            if let Err(e) = monitor_oom(&req.id, resp.pid, self.tx.clone()).await {
+                error!("monitor_oom failed: {:?}.", e);
+            }
         } else {
             self.send_event(TaskExecStarted {
                 container_id: req.id.to_string(),
