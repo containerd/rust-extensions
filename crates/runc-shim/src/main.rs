@@ -18,6 +18,7 @@ use std::env;
 
 use containerd_shim::{asynchronous::run, parse};
 
+mod cgroup_memory;
 mod common;
 mod console;
 mod container;
