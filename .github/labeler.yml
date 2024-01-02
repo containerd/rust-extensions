@@ -2,18 +2,38 @@
 # `C-` project crate(s) affected.
 # `T-` change type (CI, docs, etc).
 
-C-client: crates/client/**
-C-logging: crates/logging/**
-C-runc: crates/runc/**
-C-runc-shim: crates/runc-shim/**
-C-shim: crates/shim/**
-C-shim-protos: crates/shim-protos/**
-C-snapshots: crates/snapshots/**
+C-client:
+  - changed-files:
+      - any-glob-to-any-file: crates/client/**
+
+C-logging:
+  - changed-files:
+      - any-glob-to-any-file: crates/logging/**
+
+C-runc:
+  - changed-files:
+      - any-glob-to-any-file: crates/runc/**
+
+C-runc-shim:
+  - changed-files:
+      - any-glob-to-any-file: crates/runc-shim/**
+
+C-shim:
+  - changed-files:
+      - any-glob-to-any-file: crates/shim/**
+
+C-shim-protos:
+  - changed-files:
+      - any-glob-to-any-file: crates/shim-protos/**
+
+C-snapshots:
+  - changed-files:
+      - any-glob-to-any-file: crates/snapshots/**
 
 T-CI:
-- '.github/**'
-- '*.toml'
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", "*.toml"]
 
 T-docs:
-- '**/*.md'
-
+  - changed-files:
+      - any-glob-to-any-file: "**/*.md"
