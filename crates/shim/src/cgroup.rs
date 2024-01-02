@@ -217,22 +217,19 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
             Subsystem::Mem(mem_ctr) => {
                 if let Some(memory) = resources.memory() {
                     //if swap and limit setting have
-                    match (memory.limit(), memory.swap()) {
-                        (Some(limit), Some(swap)) => {
-                            //get current memory_limit
-                            let current = mem_ctr.memory_stat().limit_in_bytes;
-                            // if the updated swap value is larger than the current memory limit set the swap changes first
-                            // then set the memory limit as swap must always be larger than the current limit
-                            if current < swap {
-                                mem_ctr
-                                    .set_memswap_limit(swap)
-                                    .map_err(other_error!(e, "set memsw limit"))?;
-                                mem_ctr
-                                    .set_limit(limit)
-                                    .map_err(other_error!(e, "set mem limit"))?;
-                            }
+                    if let (Some(limit), Some(swap)) = (memory.limit(), memory.swap()) {
+                        //get current memory_limit
+                        let current = mem_ctr.memory_stat().limit_in_bytes;
+                        // if the updated swap value is larger than the current memory limit set the swap changes first
+                        // then set the memory limit as swap must always be larger than the current limit
+                        if current < swap {
+                            mem_ctr
+                                .set_memswap_limit(swap)
+                                .map_err(other_error!(e, "set memsw limit"))?;
+                            mem_ctr
+                                .set_limit(limit)
+                                .map_err(other_error!(e, "set mem limit"))?;
                         }
-                        _ => (),
                     }
                     // set memory limit in bytes
                     if let Some(limit) = memory.limit() {
