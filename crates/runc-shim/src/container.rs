@@ -134,7 +134,13 @@ where
         let (pid, code, exited_at) = self.get_exit_info(exec_id_opt).await?;
         let process = self.get_mut_process(exec_id_opt);
         match process {
-            Ok(p) => p.delete().await?,
+            Ok(p) => {
+                //must kill the process first nor containerd's sync exec will get error
+                //then close process io second to avoid deadlock
+                p.kill(9, false).await?;
+                p.close_io().await?;
+                p.delete().await?
+            }
             Err(Error::NotFoundError(_)) => return Ok((pid, code, exited_at)),
             Err(e) => return Err(e),
         }
