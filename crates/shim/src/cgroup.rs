@@ -229,6 +229,7 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                             mem_ctr
                                 .set_limit(limit)
                                 .map_err(other_error!(e, "set mem limit"))?;
+                            return Ok(());
                         }
                     }
                     // set memory limit in bytes
