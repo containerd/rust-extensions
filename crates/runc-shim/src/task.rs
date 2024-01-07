@@ -43,6 +43,8 @@ use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
 use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
 
+use crate::common::Golang_Bool;
+
 use super::container::{Container, ContainerFactory};
 
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
@@ -231,9 +233,12 @@ where
 
     async fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
+        let req_all = Golang_Bool {
+            value: req.all as i32,
+        };
         let mut container = self.get_container(req.id()).await?;
         container
-            .kill(req.exec_id().as_option(), req.signal, req.all)
+            .kill(req.exec_id().as_option(), req.signal, req_all.rust_value())
             .await?;
         info!("Kill request for {:?} returns successfully", req);
         Ok(Empty::new())

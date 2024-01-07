@@ -248,3 +248,15 @@ pub(crate) fn xdg_runtime_dir() -> String {
     env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| env::temp_dir().to_str().unwrap_or(".").to_string())
 }
+/// Golang Bool convert to Rust Bool
+pub struct Golang_Bool {
+    pub value: i32,
+}
+impl Golang_Bool {
+    pub fn rust_value(&self) -> bool {
+        if self.value == 0 {
+            return true;
+        }
+        return false;
+    }
+}
