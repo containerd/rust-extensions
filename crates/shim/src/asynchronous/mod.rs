@@ -307,6 +307,7 @@ async fn handle_signals(signals: Signals) {
     let mut signals = signals.fuse();
     while let Some(sig) = signals.next().await {
         match sig {
+            SIGPIPE => {}
             SIGTERM | SIGINT => {
                 debug!("received {}", sig);
             }
