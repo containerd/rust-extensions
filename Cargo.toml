@@ -39,6 +39,6 @@ thiserror = "1.0"
 time = { version = "0.3.29", features = ["serde", "std", "formatting"] }
 tokio = "1.26"
 tonic = "0.10"
-tonic-build = "0.10"
+tonic-build = "0.11"
 tower = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
