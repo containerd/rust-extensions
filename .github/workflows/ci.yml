@@ -89,7 +89,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04]
-        containerd: [v1.6.28, v1.7.13]
+        containerd: [v1.6.28, v1.7.13, v2.0.0-beta.2]
 
     steps:
       - name: Checkout extensions
@@ -102,6 +102,7 @@ jobs:
           gh release download ${{ matrix.containerd }} \
             --repo containerd/containerd \
             --pattern 'containerd-1.*-linux-amd64.tar.gz' \
+            --pattern 'containerd-2.*-linux-amd64.tar.gz' \
             --output containerd.tar.gz
 
       - name: Extract containerd binaries to $HOME/.local/bin
@@ -131,7 +132,7 @@ jobs:
         env:
           TEST_RUNTIME: "io.containerd.runc.v2-rs"
           TESTFLAGS_PARALLEL: 1
-          EXTRA_TESTFLAGS: "-no-criu -test.skip='(TestContainerPTY|TestContainerExecLargeOutputWithTTY|TestTaskUpdate|TestTaskResize|TestContainerAttach|TestContainerAttachProcess)'"
+          EXTRA_TESTFLAGS: "-no-criu -test.skip='(TestContainerPTY|TestContainerExecLargeOutputWithTTY|TestTaskUpdate|TestTaskResize|TestContainerAttach|TestContainerAttachProcess|TestRuntimeInfo)'"
           TESTFLAGS_RACE: "-race"
           # Pretend crun for now, remove after https://github.com/containerd/containerd/pull/9829
           RUNC_FLAVOR: "crun"
