@@ -1,6 +1,7 @@
 # Rust extensions for containerd
 
 [![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/containerd/rust-extensions/graph/badge.svg?token=VPUPN3MOFX)](https://codecov.io/gh/containerd/rust-extensions)
 [![Crates.io](https://img.shields.io/crates/l/containerd-client)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![dependency status](https://deps.rs/repo/github/containerd/rust-extensions/status.svg)](https://deps.rs/repo/github/containerd/rust-extensions)
 
