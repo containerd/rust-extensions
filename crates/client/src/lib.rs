@@ -39,6 +39,9 @@ pub mod google {
 
 /// Generated `containerd.services.*` services.
 pub mod services {
+    #[allow(clippy::tabs_in_doc_comments)]
+    #[allow(rustdoc::invalid_rust_codeblocks)]
+    #[allow(rustdoc::invalid_html_tags)]
     pub mod v1 {
         tonic::include_proto!("containerd.services.containers.v1");
         tonic::include_proto!("containerd.services.content.v1");
