@@ -1,0 +1,5 @@
+api/events/*.proto
+api/services/**/*.proto
+api/types/*.proto
+api/types/**/*.proto
+protobuf/plugin/fieldpath.proto

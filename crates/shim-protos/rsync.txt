@@ -1,0 +1,8 @@
+api/events/*.proto
+api/types/*.proto
+api/types/task/*.proto
+api/services/ttrpc/events/v1/*.proto
+protobuf/plugin/fieldpath.proto
+runtime/v2/runc/options/oci.proto
+api/runtime/sandbox/v1/sandbox.proto
+api/runtime/task/v2/shim.proto

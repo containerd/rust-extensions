@@ -58,6 +58,7 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/events/content.proto",
             "vendor/github.com/containerd/containerd/api/events/image.proto",
             "vendor/github.com/containerd/containerd/api/events/namespace.proto",
+            "vendor/github.com/containerd/containerd/api/events/sandbox.proto",
             "vendor/github.com/containerd/containerd/api/events/snapshot.proto",
             "vendor/github.com/containerd/containerd/api/events/task.proto",
         ],
@@ -68,7 +69,7 @@ fn main() {
         "shim",
         &[
             "vendor/github.com/containerd/containerd/runtime/v2/runc/options/oci.proto",
-            "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+            "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
         false,
@@ -79,7 +80,7 @@ fn main() {
         genmodule(
             "shim_async",
             &[
-                "vendor/github.com/containerd/containerd/runtime/v2/task/shim.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
                 "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             ],
             true,
@@ -90,14 +91,14 @@ fn main() {
     {
         genmodule(
             "sandbox",
-            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
             false,
         );
 
         #[cfg(feature = "async")]
         genmodule(
             "sandbox_async",
-            &["vendor/github.com/containerd/containerd/runtime/sandbox/v1/sandbox.proto"],
+            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
             true,
         );
     }
