@@ -18,29 +18,20 @@ syntax = "proto3";
 
 package containerd.events;
 
-import "google/protobuf/any.proto";
-import "github.com/containerd/containerd/protobuf/plugin/fieldpath.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/containerd/containerd/api/events;events";
-option (containerd.plugin.fieldpath_all) = true;
 
-message ContainerCreate {
-	string id = 1;
-	string image = 2;
-	message Runtime {
-		string name = 1;
-		google.protobuf.Any options = 2;
-	}
-	Runtime runtime = 3;
+message SandboxCreate {
+	string sandbox_id = 1;
 }
 
-message ContainerUpdate {
-	string id = 1;
-	string image = 2;
-	map<string, string> labels  = 3;
-	string snapshot_key = 4;
+message SandboxStart {
+	string sandbox_id = 1;
 }
 
-message ContainerDelete {
-	string id = 1;
+message SandboxExit {
+	string sandbox_id = 1;
+	uint32 exit_status = 2;
+	google.protobuf.Timestamp exited_at = 3;
 }
