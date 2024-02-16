@@ -38,6 +38,10 @@ pub mod task {
     include!(concat!(env!("OUT_DIR"), "/events/task.rs"));
 }
 
+pub mod sandbox {
+    include!(concat!(env!("OUT_DIR"), "/events/sandbox.rs"));
+}
+
 mod mount {
     pub use crate::types::mount::*;
 }
