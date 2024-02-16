@@ -60,6 +60,8 @@ const FIXUP_MODULES: &[&str] = &[
     "containerd.services.sandbox.v1",
     "containerd.services.snapshots.v1",
     "containerd.services.tasks.v1",
+    "containerd.services.containers.v1",
+    "containerd.services.content.v1",
 ];
 
 fn main() {
@@ -91,7 +93,14 @@ fn fixup_imports(path: &str) -> Result<(), io::Error> {
     let contents = fs::read_to_string(&path)?
         .replace("super::super::super::v1::types", "crate::types::v1") // for tasks service
         .replace("super::super::super::types", "crate::types")
-        .replace("super::super::super::super::google", "crate::google");
+        .replace("super::super::super::super::google", "crate::google")
+        .replace(
+            "/// 	filters\\[0\\] or filters\\[1\\] or ... or filters\\[n-1\\] or filters\\[n\\]",
+            r#"
+            /// ```notrust
+            /// 	filters[0] or filters[1] or ... or filters[n-1] or filters[n]
+            /// ```"#,
+        );
     fs::write(path, contents)?;
     Ok(())
 }
