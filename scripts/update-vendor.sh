@@ -13,11 +13,8 @@ VERSION="v1.7.13"
 set -x
 
 # Download containerd source code.
-gh release download $VERSION \
-    --repo containerd/containerd \
-    --archive tar.gz \
-    --skip-existing \
-    --output containerd.tar.gz
+wget https://github.com/containerd/containerd/archive/refs/tags/$VERSION.tar.gz -O containerd.tar.gz
+trap 'rm containerd.tar.gz' EXIT
 
 # Extract zip archive to a temporary directory.
 TEMP_DIR=$(mktemp -d)
@@ -25,7 +22,6 @@ tar --extract \
     --file containerd.tar.gz \
     --strip-components=1 \
     --directory $TEMP_DIR
-rm containerd.tar.gz
 
 function sync_crate() {
     local crate_name=$1
