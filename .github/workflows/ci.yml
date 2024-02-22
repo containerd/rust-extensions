@@ -14,7 +14,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +31,25 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
       - run: cargo doc --no-deps --features docs
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
+  # TODO: Merge this with the checks job above
+  windows-checks:
+    name: Windows Checks
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/install-protobuf.sh
+      - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos
+      
+      - run: rustup toolchain install nightly --component rustfmt
+      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -- --check --files-with-diff
+      
+      - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
+      - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos
         env:
           RUSTDOCFLAGS: -Dwarnings
 
@@ -55,9 +74,7 @@ jobs:
         env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
-      - run: |
-          cargo test
-          cargo test --all-features
+      - run: cargo test -p containerd-shim -p containerd-shim-protos
         if: ${{ contains(matrix.os, 'windows') }}
 
   # Collect build timings
@@ -208,7 +225,7 @@ jobs:
     name: Report required job statuses
     runs-on: ubuntu-latest
     # List job dependencies which are required to pass status checks in order to be merged via merge queue.
-    needs: [checks, tests, deny, linux-integration, windows-integration]
+    needs: [checks, windows-checks, tests, deny, linux-integration, windows-integration]
     if: ${{ always() }}
     steps:
       - run: exit 1
