@@ -14,11 +14,7 @@
    limitations under the License.
 */
 
-use std::{
-    fs::{self, rename, File, OpenOptions},
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 
 use containerd_shim_protos::shim::oci::Options;
 #[cfg(unix)]
@@ -69,14 +65,14 @@ pub fn write_str_to_path(filename: &Path, s: &str) -> crate::Result<()> {
     let tmp_path = tmp_path
         .to_str()
         .ok_or_else(|| Error::InvalidArgument(String::from("failed to get path")))?;
-    let mut f = OpenOptions::new()
+    let mut f = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(tmp_path)
         .map_err(io_error!(e, "open {}", filename.to_str().unwrap()))?;
     f.write_all(s.as_bytes())
         .map_err(io_error!(e, "write tmp file"))?;
-    rename(tmp_path, filename).map_err(io_error!(
+    fs::rename(tmp_path, filename).map_err(io_error!(
         e,
         "rename tmp file to {}",
         filename.to_str().unwrap()
