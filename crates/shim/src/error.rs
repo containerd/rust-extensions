@@ -84,6 +84,9 @@ pub enum Error {
     #[error("Failed to send exit event: {0}")]
     Send(#[from] std::sync::mpsc::SendError<ExitEvent>),
 
+    #[error("Failed to read file: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error("Other: {0}")]
     Other(String),
 

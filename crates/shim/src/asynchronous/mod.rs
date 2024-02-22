@@ -47,14 +47,14 @@ use nix::{
     unistd::Pid,
 };
 use signal_hook_tokio::Signals;
-use tokio::{io::AsyncWriteExt, sync::Notify};
+use tokio::{fs, io::AsyncWriteExt, sync::Notify};
 
 use crate::{
     args,
     asynchronous::{monitor::monitor_notify_by_pid, publisher::RemotePublisher},
     error::{Error, Result},
     logger, parse_sockaddr, reap, socket_address,
-    util::{asyncify, read_file_to_str, write_str_to_file},
+    util::{asyncify, write_str_to_file},
     Config, Flags, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
@@ -188,7 +188,7 @@ where
 
             // NOTE: If the shim server is down(like oom killer), the address
             // socket might be leaking.
-            if let Ok(address) = read_file_to_str("address").await {
+            if let Ok(address) = fs::read_to_string("address").await {
                 remove_socket_silently(&address).await;
             }
             Ok(())
