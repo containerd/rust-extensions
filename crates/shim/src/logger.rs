@@ -18,9 +18,9 @@ use std::{
     borrow::BorrowMut,
     fmt::Write as fmtwrite,
     fs::{File, OpenOptions},
-    io,
-    io::Write,
+    io::{self, Write},
     path::Path,
+    str::FromStr,
     sync::Mutex,
 };
 
@@ -33,6 +33,8 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::error::Error;
 #[cfg(windows)]
 use crate::sys::windows::NamedPipeLogger;
+
+pub const LOG_ENV: &str = "RUST_LOG";
 
 pub struct FifoLogger {
     file: Mutex<File>,
@@ -118,7 +120,12 @@ impl log::Log for FifoLogger {
     }
 }
 
-pub fn init(debug: bool, _namespace: &str, _id: &str) -> Result<(), Error> {
+pub fn init(
+    debug: bool,
+    default_log_level: &str,
+    _namespace: &str,
+    _id: &str,
+) -> Result<(), Error> {
     #[cfg(unix)]
     let logger = FifoLogger::new().map_err(io_error!(e, "failed to init logger"))?;
 
@@ -132,15 +139,20 @@ pub fn init(debug: bool, _namespace: &str, _id: &str) -> Result<(), Error> {
     let logger =
         NamedPipeLogger::new(_namespace, _id).map_err(io_error!(e, "failed to init logger"))?;
 
-    let level = if debug {
+    configure_logging_level(debug, default_log_level);
+    log::set_boxed_logger(Box::new(logger))?;
+    Ok(())
+}
+
+fn configure_logging_level(debug: bool, default_log_level: &str) {
+    let debug_level = std::env::var(LOG_ENV).unwrap_or(default_log_level.to_string());
+    let debug_level = log::LevelFilter::from_str(&debug_level).unwrap_or(log::LevelFilter::Info);
+    let level = if debug && log::LevelFilter::Debug > debug_level {
         log::LevelFilter::Debug
     } else {
-        log::LevelFilter::Info
+        debug_level
     };
-
-    log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(level);
-    Ok(())
 }
 
 pub(crate) fn rfc3339_formated() -> String {
@@ -156,6 +168,56 @@ mod tests {
     use log::{Log, Record};
 
     use super::*;
+    use crate::Config;
+
+    #[test]
+    fn test_init_log_level() -> Result<(), Error> {
+        let config = Config::default();
+
+        configure_logging_level(false, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Info, log::max_level());
+
+        // Default for debug flag from containerd
+        configure_logging_level(true, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Debug, log::max_level());
+
+        // ENV different than default
+        std::env::set_var(LOG_ENV, "error");
+        configure_logging_level(false, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Error, log::max_level());
+
+        std::env::set_var(LOG_ENV, "warn");
+        configure_logging_level(false, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Warn, log::max_level());
+
+        std::env::set_var(LOG_ENV, "off");
+        configure_logging_level(false, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Off, log::max_level());
+
+        std::env::set_var(LOG_ENV, "trace");
+        configure_logging_level(false, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Trace, log::max_level());
+
+        std::env::set_var(LOG_ENV, "debug");
+        configure_logging_level(false, &config.default_log_level);
+
+        // ENV Different than default from debug flag
+        configure_logging_level(true, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Debug, log::max_level());
+
+        std::env::set_var(LOG_ENV, "trace");
+        configure_logging_level(true, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Trace, log::max_level());
+
+        std::env::set_var(LOG_ENV, "info");
+        configure_logging_level(true, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Debug, log::max_level());
+
+        std::env::set_var(LOG_ENV, "off");
+        configure_logging_level(true, &config.default_log_level);
+        assert_eq!(log::LevelFilter::Debug, log::max_level());
+        Ok(())
+    }
 
     #[test]
     fn test_fifo_log() {
