@@ -109,14 +109,27 @@ cfg_async! {
 const TTRPC_ADDRESS: &str = "TTRPC_ADDRESS";
 
 /// Config of shim binary options provided by shim implementations
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Config {
     /// Disables automatic configuration of logrus to use the shim FIFO
     pub no_setup_logger: bool,
+    // Sets the the default log level. Default is info
+    pub default_log_level: String,
     /// Disables the shim binary from reaping any child process implicitly
     pub no_reaper: bool,
     /// Disables setting the shim as a child subreaper.
     pub no_sub_reaper: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            no_setup_logger: false,
+            default_log_level: "info".to_string(),
+            no_reaper: false,
+            no_sub_reaper: false,
+        }
+    }
 }
 
 /// Startup options received from containerd to start new shim instance.

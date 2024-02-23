@@ -255,7 +255,12 @@ where
             util::setup_debugger_event();
 
             if !config.no_setup_logger {
-                logger::init(flags.debug, &flags.namespace, &flags.id)?;
+                logger::init(
+                    flags.debug,
+                    &config.default_log_level,
+                    &flags.namespace,
+                    &flags.id,
+                )?;
             }
 
             let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
