@@ -383,7 +383,7 @@ impl From<nix::errno::Errno> for MountExitCode {
 impl From<MountExitCode> for nix::errno::Errno {
     fn from(code: MountExitCode) -> Self {
         match code {
-            MountExitCode::NixOtherErr(errno) => nix::errno::Errno::from_i32(errno),
+            MountExitCode::NixOtherErr(errno) => nix::errno::Errno::from_raw(errno),
             _ => nix::errno::Errno::UnknownErrno,
         }
     }
@@ -400,7 +400,7 @@ impl From<MountExitCode> for Result<()> {
             MountExitCode::Success => Ok(()),
             MountExitCode::NixOtherErr(errno) => Err(other!(
                 "mount process exit unexpectedly, exit code: {}",
-                nix::errno::Errno::from_i32(errno)
+                nix::errno::Errno::from_raw(errno)
             )),
         }
     }

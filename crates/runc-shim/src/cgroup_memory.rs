@@ -25,7 +25,7 @@ use containerd_shim::{
     error::{Error, Result},
     io_error, other_error,
 };
-use nix::sys::eventfd;
+use nix::sys::eventfd::{EfdFlags, EventFd};
 use tokio::{
     fs::{self, read_to_string, File},
     io::AsyncReadExt,
@@ -95,7 +95,7 @@ pub async fn register_memory_event(
         .await
         .map_err(other_error!(e, "Error get path:"))?;
 
-    let eventfd = eventfd::eventfd(0, eventfd::EfdFlags::EFD_CLOEXEC)?;
+    let eventfd = EventFd::from_value_and_flags(0, EfdFlags::EFD_CLOEXEC)?;
 
     let event_control_path = cg_dir.join("cgroup.event_control");
     let data = format!("{} {}", eventfd.as_raw_fd(), event_file.as_raw_fd());
