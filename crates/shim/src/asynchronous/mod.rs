@@ -17,7 +17,7 @@
 use std::{
     convert::TryFrom,
     env,
-    os::unix::{fs::FileTypeExt, io::AsRawFd, net::UnixListener},
+    os::unix::{fs::FileTypeExt, net::UnixListener},
     path::Path,
     process,
     process::{Command, Stdio},
@@ -285,7 +285,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
             &opts.address,
         ])
         .fd_mappings(vec![FdMapping {
-            parent_fd: listener.as_raw_fd(),
+            parent_fd: listener.into(),
             child_fd: SOCKET_FD,
         }])?;
     if opts.debug {
@@ -296,7 +296,6 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     let _child = command.spawn().map_err(io_error!(e, "spawn shim"))?;
     #[cfg(target_os = "linux")]
     crate::cgroup::set_cgroup_and_oom_score(_child.id())?;
-    std::mem::forget(listener);
     Ok(address)
 }
 
