@@ -25,7 +25,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-containerd-shim = { path = "../shim", version = "0.6.0", features = ["async"] }
+containerd-shim = { path = "../shim", version = "0.7.0", features = ["async"] }
 crossbeam = "0.8.1"
 libc.workspace = true
 log.workspace = true
