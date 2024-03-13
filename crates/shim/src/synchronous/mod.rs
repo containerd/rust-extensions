@@ -89,7 +89,6 @@ cfg_unix! {
     use signal_hook::iterator::Signals;
     use std::os::unix::fs::FileTypeExt;
     use std::{convert::TryFrom, fs, path::Path};
-    use std::os::fd::AsRawFd;
 }
 
 cfg_windows! {
@@ -499,7 +498,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .fd_mappings(vec![FdMapping {
-                parent_fd: _listener.as_raw_fd(),
+                parent_fd: _listener.into(),
                 child_fd: SOCKET_FD,
             }])?;
 
@@ -508,7 +507,6 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
             .map_err(io_error!(e, "spawn shim"))
             .map(|child| {
                 // Ownership of `listener` has been passed to child.
-                std::mem::forget(_listener);
                 (child.id(), address)
             })
     }
