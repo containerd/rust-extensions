@@ -27,8 +27,6 @@ use containerd_shim_protos as client;
 
 #[cfg(unix)]
 use crate::util::connect;
-#[cfg(not(target_os = "macos"))] // Prevent unused warning.
-use crate::Error;
 use crate::{
     error::Result,
     util::{convert_to_any, timestamp},
