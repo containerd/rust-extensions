@@ -201,7 +201,7 @@ pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<PathBuf> {
     let content = content.lines().next().unwrap_or("");
 
     let Ok(path) = parse_cgroups_v2_path(content)?.canonicalize() else {
-        return Err(Error::Other(format!("cgroup path not found")));
+        return Err(Error::Other("cgroup path not found".to_string()));
     };
     Ok(path)
 }
