@@ -194,7 +194,7 @@ pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<String> {
     // todo: should upstream to cgroups-rs
     let path = format!("/proc/{}/cgroup", pid);
     let content = fs::read_to_string(path).map_err(io_error!(e, "read cgroup"))?;
-    let content = content.trim_end_matches('\n');
+    let content = content.lines().next().unwrap_or("");
 
     parse_cgroups_v2_path(content)
 }
