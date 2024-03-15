@@ -27,6 +27,8 @@ use containerd_shim_protos as client;
 
 #[cfg(unix)]
 use crate::util::connect;
+#[cfg(target_os = "windows")] // Prevent unused warning.
+use crate::Error;
 use crate::{
     error::Result,
     util::{convert_to_any, timestamp},
