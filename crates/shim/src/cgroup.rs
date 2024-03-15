@@ -16,7 +16,11 @@
 
 #![cfg(target_os = "linux")]
 
-use std::{fs, io::Read, path::Path};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use cgroups_rs::{
     cgroup::get_cgroups_relative_paths_by_pid, hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem,
@@ -179,7 +183,7 @@ fn get_cgroup(pid: u32) -> Result<Cgroup> {
     let hierarchies = hierarchies::auto();
     let cgroup = if hierarchies.v2() {
         let path = get_cgroups_v2_path_by_pid(pid)?;
-        Cgroup::load(hierarchies, path.as_str())
+        Cgroup::load(hierarchies, path)
     } else {
         // get container main process cgroup
         let path = get_cgroups_relative_paths_by_pid(pid)
@@ -190,34 +194,31 @@ fn get_cgroup(pid: u32) -> Result<Cgroup> {
 }
 
 /// Get the cgroups v2 path given a PID
-pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<String> {
+pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<PathBuf> {
     // todo: should upstream to cgroups-rs
     let path = format!("/proc/{}/cgroup", pid);
     let content = fs::read_to_string(path).map_err(io_error!(e, "read cgroup"))?;
     let content = content.lines().next().unwrap_or("");
 
-    parse_cgroups_v2_path(content)
+    let Ok(path) = parse_cgroups_v2_path(content)?.canonicalize() else {
+        return Err(Error::Other(format!("cgroup path not found")));
+    };
+    Ok(path)
 }
 
 // https://github.com/opencontainers/runc/blob/1950892f69597aa844cbf000fbdf77610dda3a44/libcontainer/cgroups/fs2/defaultpath.go#L83
-fn parse_cgroups_v2_path(content: &str) -> std::prelude::v1::Result<String, Error> {
+fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
     // the entry for cgroup v2 is always in the format like `0::$PATH`
     // where 0 is the hierarchy ID, the controller name is ommit in cgroup v2
     // and $PATH is the cgroup path
     // see https://docs.kernel.org/admin-guide/cgroup-v2.html
-    let parts: Vec<&str> = content.splitn(3, ":").collect();
-
-    if parts.len() < 3 {
+    let Some(path) = content.strip_prefix("0::") else {
         return Err(Error::Other(format!("invalid cgroup path: {}", content)));
-    }
+    };
 
-    if parts[0] == "0" && parts[1].is_empty() {
-        // Check if parts[2] starts with '/', remove it if present.
-        let path = parts[2].strip_prefix('/').unwrap_or(parts[2]);
-        return Ok(format!("/sys/fs/cgroup/{}", path));
-    }
+    let path = path.trim_start_matches('/');
 
-    Err(Error::Other("cgroup path not found".into()))
+    Ok(PathBuf::from(format!("/sys/fs/cgroup/{}", path)))
 }
 
 /// Update process cgroup limits
@@ -326,6 +327,8 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use cgroups_rs::{hierarchies, Cgroup, CgroupPid};
 
     use super::parse_cgroups_v2_path;
@@ -370,14 +373,17 @@ mod tests {
         let path = "0::/user.slice/user-1000.slice/session-2.scope";
         assert_eq!(
             parse_cgroups_v2_path(path).unwrap(),
-            "/sys/fs/cgroup/user.slice/user-1000.slice/session-2.scope"
+            PathBuf::from("/sys/fs/cgroup/user.slice/user-1000.slice/session-2.scope")
         );
     }
 
     #[test]
     fn test_parse_cgroups_v2_path_empty() {
         let path = "0::";
-        assert_eq!(parse_cgroups_v2_path(path).unwrap(), "/sys/fs/cgroup/");
+        assert_eq!(
+            parse_cgroups_v2_path(path).unwrap(),
+            PathBuf::from("/sys/fs/cgroup/")
+        );
     }
 
     #[test]
@@ -385,7 +391,7 @@ mod tests {
         let path = "0::/kubepods-besteffort-pod8.slice:cri-containerd:8";
         assert_eq!(
             parse_cgroups_v2_path(path).unwrap(),
-            "/sys/fs/cgroup/kubepods-besteffort-pod8.slice:cri-containerd:8"
+            PathBuf::from("/sys/fs/cgroup/kubepods-besteffort-pod8.slice:cri-containerd:8")
         );
     }
 }
