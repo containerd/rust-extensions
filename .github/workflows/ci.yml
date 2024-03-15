@@ -29,6 +29,9 @@ jobs:
 
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings
+      
+      # the shim has sync code that is not covered when running with --all-features 
+      - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
 
       - run: cargo doc --no-deps --features docs
         env:
@@ -70,6 +73,9 @@ jobs:
           mkdir -p /tmp/dummy-xdr
           sudo -E $(command -v cargo) test
           sudo -E $(command -v cargo) test --all-features
+          
+          # the shim has sync code that is not covered when running with --all-features 
+          sudo -E $(command -v cargo) test -p containerd-shim
         if: ${{ !contains(matrix.os, 'windows') }}
         env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
