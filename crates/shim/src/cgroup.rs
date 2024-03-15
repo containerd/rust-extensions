@@ -209,7 +209,7 @@ pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<PathBuf> {
 // https://github.com/opencontainers/runc/blob/1950892f69597aa844cbf000fbdf77610dda3a44/libcontainer/cgroups/fs2/defaultpath.go#L83
 fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
     // the entry for cgroup v2 is always in the format like `0::$PATH`
-    // where 0 is the hierarchy ID, the controller name is ommit in cgroup v2
+    // where 0 is the hierarchy ID, the controller name is omitted in cgroup v2
     // and $PATH is the cgroup path
     // see https://docs.kernel.org/admin-guide/cgroup-v2.html
     let Some(path) = content.strip_prefix("0::") else {
