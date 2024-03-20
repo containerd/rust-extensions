@@ -21,8 +21,8 @@ use libc::mode_t;
 use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
 use tokio::{
-    fs::OpenOptions,
-    io::{AsyncReadExt, AsyncWriteExt},
+    fs::{self, OpenOptions},
+    io::AsyncWriteExt,
     task::spawn_blocking,
 };
 
@@ -39,22 +39,6 @@ where
     spawn_blocking(f)
         .await
         .map_err(other_error!(e, "failed to spawn blocking task"))?
-}
-
-pub async fn read_file_to_str(path: impl AsRef<Path>) -> Result<String> {
-    let mut file = tokio::fs::File::open(&path).await.map_err(io_error!(
-        e,
-        "failed to open file {}",
-        path.as_ref().display()
-    ))?;
-
-    let mut content = String::new();
-    file.read_to_string(&mut content).await.map_err(io_error!(
-        e,
-        "failed to read {}",
-        path.as_ref().display()
-    ))?;
-    Ok(content)
 }
 
 pub async fn write_str_to_file(filename: impl AsRef<Path>, s: impl AsRef<str>) -> Result<()> {
@@ -89,20 +73,21 @@ pub async fn write_str_to_file(filename: impl AsRef<Path>, s: impl AsRef<str>) -
 
 pub async fn read_spec(bundle: impl AsRef<Path>) -> Result<Spec> {
     let path = bundle.as_ref().join(CONFIG_FILE_NAME);
-    let content = read_file_to_str(&path).await?;
+    let content = fs::read_to_string(path).await?;
     serde_json::from_str::<Spec>(content.as_str()).map_err(other_error!(e, "read spec"))
 }
 
 pub async fn read_options(bundle: impl AsRef<Path>) -> Result<Options> {
     let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
-    let opts_str = read_file_to_str(path).await?;
+    let opts_str = fs::read_to_string(path).await?;
     let opts =
         serde_json::from_str::<JsonOptions>(&opts_str).map_err(other_error!(e, "read options"))?;
     Ok(opts.into())
 }
 
 pub async fn read_runtime(bundle: impl AsRef<Path>) -> Result<String> {
-    read_file_to_str(bundle.as_ref().join(RUNTIME_FILE_NAME)).await
+    let content = fs::read_to_string(bundle.as_ref().join(RUNTIME_FILE_NAME)).await?;
+    Ok(content)
 }
 
 pub async fn write_options(bundle: impl AsRef<Path>, opt: &Options) -> Result<()> {
@@ -143,7 +128,9 @@ pub async fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::{read_file_to_str, write_str_to_file};
+    use tokio::fs;
+
+    use crate::util::write_str_to_file;
 
     #[tokio::test]
     async fn test_read_write_str() {
@@ -151,7 +138,8 @@ mod tests {
         let tmp_file = tmpdir.path().join("test");
         let test_str = "this is a test";
         write_str_to_file(&tmp_file, test_str).await.unwrap();
-        let read_str = read_file_to_str(&tmp_file).await.unwrap();
+
+        let read_str = fs::read_to_string(&tmp_file).await.unwrap();
         assert_eq!(read_str, test_str);
     }
 }

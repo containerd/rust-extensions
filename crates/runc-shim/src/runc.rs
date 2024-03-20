@@ -40,7 +40,7 @@ use containerd_shim::{
         cgroups::metrics::Metrics,
         protobuf::{CodedInputStream, Message},
     },
-    util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
+    util::{asyncify, mkdir, mount_rootfs, write_options, write_runtime},
     Console, Error, ExitSignal, Result,
 };
 use log::{debug, error};
@@ -48,7 +48,7 @@ use nix::{sys::signal::kill, unistd::Pid};
 use oci_spec::runtime::{LinuxResources, Process};
 use runc::{Command, Runc, Spawner};
 use tokio::{
-    fs::{remove_file, File, OpenOptions},
+    fs::{self, remove_file, File, OpenOptions},
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
 };
 
@@ -179,7 +179,7 @@ impl RuncFactory {
             return Err(runtime_error(bundle, e, "OCI runtime create failed").await);
         }
         copy_io_or_console(init, socket, pio, init.lifecycle.exit_signal.clone()).await?;
-        let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
+        let pid = fs::read_to_string(pid_path).await?.parse::<i32>()?;
         init.pid = pid;
         Ok(())
     }
@@ -427,7 +427,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         }
 
         copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
-        let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
+        let pid = fs::read_to_string(pid_path).await?.parse::<i32>()?;
         p.pid = pid;
         p.state = Status::RUNNING;
         Ok(())

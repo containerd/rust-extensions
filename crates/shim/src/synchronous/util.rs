@@ -14,11 +14,7 @@
    limitations under the License.
 */
 
-use std::{
-    fs::{rename, File, OpenOptions},
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 
 use containerd_shim_protos::shim::oci::Options;
 #[cfg(unix)]
@@ -33,40 +29,27 @@ use crate::{
     Error,
 };
 
-pub fn read_file_to_str<P: AsRef<Path>>(filename: P) -> crate::Result<String> {
-    let mut file = File::open(&filename).map_err(io_error!(
-        e,
-        "open {}",
-        filename.as_ref().to_string_lossy()
-    ))?;
-    let mut content: String = String::new();
-    file.read_to_string(&mut content).map_err(io_error!(
-        e,
-        "read {}",
-        filename.as_ref().to_string_lossy()
-    ))?;
-    Ok(content)
-}
-
 pub fn read_options(bundle: impl AsRef<Path>) -> crate::Result<Options> {
     let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
-    let opts_str = read_file_to_str(path)?;
+    let opts_str = fs::read_to_string(path)?;
     let json_opt: JsonOptions = serde_json::from_str(&opts_str)?;
     Ok(json_opt.into())
 }
 
 pub fn read_runtime(bundle: impl AsRef<Path>) -> crate::Result<String> {
     let path = bundle.as_ref().join(RUNTIME_FILE_NAME);
-    read_file_to_str(path)
+    let data = fs::read_to_string(path)?;
+    Ok(data)
 }
 
 pub fn read_address() -> crate::Result<String> {
     let path = Path::new("address");
-    read_file_to_str(path)
+    let data = fs::read_to_string(path)?;
+    Ok(data)
 }
 
 pub fn read_pid_from_file(pid_path: &Path) -> crate::Result<i32> {
-    let pid_str = read_file_to_str(pid_path)?;
+    let pid_str = fs::read_to_string(pid_path)?;
     let pid = pid_str.parse::<i32>()?;
     Ok(pid)
 }
@@ -82,14 +65,14 @@ pub fn write_str_to_path(filename: &Path, s: &str) -> crate::Result<()> {
     let tmp_path = tmp_path
         .to_str()
         .ok_or_else(|| Error::InvalidArgument(String::from("failed to get path")))?;
-    let mut f = OpenOptions::new()
+    let mut f = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(tmp_path)
         .map_err(io_error!(e, "open {}", filename.to_str().unwrap()))?;
     f.write_all(s.as_bytes())
         .map_err(io_error!(e, "write tmp file"))?;
-    rename(tmp_path, filename).map_err(io_error!(
+    fs::rename(tmp_path, filename).map_err(io_error!(
         e,
         "rename tmp file to {}",
         filename.to_str().unwrap()
