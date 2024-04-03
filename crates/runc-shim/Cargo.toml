@@ -45,4 +45,4 @@ tokio = { workspace = true, features = ["full"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3.3"
-nix = { workspace = true, features = ["event"] }
+nix = { workspace = true, features = ["event", "inotify"] }
