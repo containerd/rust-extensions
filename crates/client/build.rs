@@ -65,9 +65,12 @@ const FIXUP_MODULES: &[&str] = &[
 ];
 
 fn main() {
+    let mut config = prost_build::Config::new();
+    config.enable_type_names();
+
     tonic_build::configure()
         .build_server(false)
-        .compile(PROTO_FILES, &["vendor/"])
+        .compile_with_config(config, PROTO_FILES, &["vendor/"])
         .expect("Failed to generate GRPC bindings");
 
     for module in FIXUP_MODULES {
