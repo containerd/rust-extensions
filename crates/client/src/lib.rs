@@ -82,7 +82,6 @@ pub mod events {
 pub async fn connect(
     path: impl AsRef<std::path::Path>,
 ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
-    use tokio::net::UnixStream;
     use tonic::transport::Endpoint;
 
     let path = path.as_ref().to_path_buf();
@@ -91,7 +90,18 @@ pub async fn connect(
     let channel = Endpoint::try_from("https://[::]")
         .unwrap()
         .connect_with_connector(tower::service_fn(move |_| {
-            UnixStream::connect(path.clone())
+            #[cfg(unix)]
+            {
+                tokio::net::UnixStream::connect(path.clone())
+            }
+
+            #[cfg(windows)]
+            {
+                let client = tokio::net::windows::named_pipe::ClientOptions::new()
+                    .open(path.clone())
+                    .map_err(|e| std::io::Error::from(e));
+                async move { client }
+            }
         }))
         .await?;
 

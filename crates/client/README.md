@@ -9,6 +9,8 @@ This crate implements a GRPC client to query containerd APIs.
 
 ## Example
 
+Run with `cargo run --example version`
+
 ```rust
 use containerd_client::{connect, services::v1::version_client::VersionClient};
 
