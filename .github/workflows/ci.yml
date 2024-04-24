@@ -46,13 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/install-protobuf.sh
-      - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos
+      - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos -p containerd-client
       
       - run: rustup toolchain install nightly --component rustfmt
-      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -- --check --files-with-diff
+      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -p containerd-client -- --check --files-with-diff
       
       - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
-      - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos
+      - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos -p containerd-client
         env:
           RUSTDOCFLAGS: -Dwarnings
 
@@ -80,7 +80,7 @@ jobs:
         env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
           XDG_RUNTIME_DIR: /tmp/dummy-xdr
-      - run: cargo test -p containerd-shim -p containerd-shim-protos
+      - run: cargo test -p containerd-shim -p containerd-shim-protos -p containerd-client
         if: ${{ contains(matrix.os, 'windows') }}
 
   # Collect build timings
@@ -219,6 +219,12 @@ jobs:
           cargo run -p containerd-shim-protos --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
           $skeleton = get-process skeleton -ErrorAction SilentlyContinue
           if ($skeleton) { exit 1 }
+      - name: Run client
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          get-service containerd
+          cargo run -p containerd-client --example version
 
   # Currently Github actions UI supports no masks to mark matrix jobs as required to pass status checks.
   # This means that every time version of Go, containerd, or OS is changed, a corresponding job should

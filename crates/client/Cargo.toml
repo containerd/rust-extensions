@@ -32,6 +32,9 @@ tower = { workspace = true, optional = true }
 [build-dependencies]
 tonic-build.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"]}
+
 [features]
 connect = ["tokio", "tower"]
 docs = []
