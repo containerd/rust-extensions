@@ -11,7 +11,7 @@ elif [ "$RUNNER_OS" == 'macOS' ]; then
     brew install protobuf
 elif [ "$RUNNER_OS" == 'Windows' ]; then
     # Install on Windows
-    choco install protoc
+    choco install -y protoc
 else
     echo "Unsupported OS: $RUNNER_OS"
     exit 1
