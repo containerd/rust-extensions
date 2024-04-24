@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Helper script for Github Actions to install protobuf on different runners.
+echo "OS: $RUNNER_OS"
 
 if [ "$RUNNER_OS" == 'Linux' ]; then
     # Install on Linux
