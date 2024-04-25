@@ -255,3 +255,23 @@ impl Client {
         ContainersClient::new(self.channel())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::events::ContainerCreate;
+    use prost_types::Any;
+
+    #[test]
+    fn any_roundtrip() {
+        let original = ContainerCreate {
+            id: "test".to_string(),
+            image: "test".to_string(),
+            runtime: None,
+        };
+
+        let any = Any::from_msg(&original).expect("should not fail to encode");
+        let decoded: ContainerCreate = any.to_msg().expect("should not fail to decode");
+
+        assert_eq!(original, decoded)
+    }
+}
