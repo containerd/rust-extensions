@@ -258,8 +258,9 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use crate::events::ContainerCreate;
     use prost_types::Any;
+
+    use crate::events::ContainerCreate;
 
     #[test]
     fn any_roundtrip() {
