@@ -42,24 +42,41 @@ async fn main() {
                 if let Some(event) = event {
                     match event.topic.as_str() {
                         "/containers/create" => {
-                            if let Some(payload) = event.event {
+                            if let Some(mut payload) = event.event {
+                                // Containerd doesn't send event payloads with a leading slash on the type URL, which is
+                                // required by the `Any` type specification. We add it manually here so that `prost` can
+                                // properly decode the payload.
+                                if !payload.type_url.starts_with('/') {
+                                    payload.type_url.insert_str(0, "/");
+                                }
+
                                 let payload: ContainerCreate = payload
                                     .to_msg()
                                     .expect("failed to parse ContainerCreate payload");
 
                                 println!(
-                                    "container created: id={} image={}",
-                                    payload.id, payload.image
+                                    "container created: id={} payload={:?}",
+                                    payload.id, payload
                                 );
                             }
                         }
                         "/containers/delete" => {
-                            if let Some(payload) = event.event {
+                            if let Some(mut payload) = event.event {
+                                // Containerd doesn't send event payloads with a leading slash on the type URL, which is
+                                // required by the `Any` type specification. We add it manually here so that `prost` can
+                                // properly decode the payload.
+                                if !payload.type_url.starts_with('/') {
+                                    payload.type_url.insert_str(0, "/");
+                                }
+
                                 let payload: ContainerDelete = payload
                                     .to_msg()
                                     .expect("failed to parse ContainerDelete payload");
 
-                                println!("container deleted: id={}", payload.id);
+                                println!(
+                                    "container deleted: id={} payload={:?}",
+                                    payload.id, payload
+                                );
                             }
                         }
                         _ => {}
