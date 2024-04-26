@@ -47,7 +47,7 @@ async fn main() {
                                 // required by the `Any` type specification. We add it manually here so that `prost` can
                                 // properly decode the payload.
                                 if !payload.type_url.starts_with('/') {
-                                    payload.type_url.insert_str(0, "/");
+                                    payload.type_url.insert(0, '/');
                                 }
 
                                 let payload: ContainerCreate = payload
@@ -66,7 +66,7 @@ async fn main() {
                                 // required by the `Any` type specification. We add it manually here so that `prost` can
                                 // properly decode the payload.
                                 if !payload.type_url.starts_with('/') {
-                                    payload.type_url.insert_str(0, "/");
+                                    payload.type_url.insert(0, '/');
                                 }
 
                                 let payload: ContainerDelete = payload
