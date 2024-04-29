@@ -28,6 +28,8 @@ use log::error;
 #[cfg(target_os = "linux")]
 use nix::mount::{mount, MsFlags};
 #[cfg(target_os = "linux")]
+use nix::sched::{unshare, CloneFlags};
+#[cfg(target_os = "linux")]
 use nix::unistd::{fork, ForkResult};
 
 use crate::error::{Error, Result};
@@ -530,7 +532,15 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
-    //TODO compactLowerdirOption for overlay
+    let max_size = page_size::get();
+    // NOTE: 512 id a buffer during pagesize check.
+    let (chdir, options) =
+        if fs_type.unwrap_or("") == "overlay" && options_size(options) >= max_size - 512 {
+            LowerdirCompactor::new(options).compact()
+        } else {
+            (None, options.to_vec())
+        };
+
     let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
     let mut data = Vec::new();
     options.iter().for_each(|x| {
@@ -552,6 +562,12 @@ pub fn mount_rootfs(
         None
     };
 
+    unshare(CloneFlags::CLONE_FS).unwrap();
+    if let Some(workdir) = chdir {
+        env::set_current_dir(Path::new(&workdir)).unwrap_or_else(|_| {
+            unsafe { libc::_exit(i32::from(MountExitCode::ChdirErr)) };
+        });
+    }
     // mount with non-propagation first, or remount with changed data
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
     let zero: MsFlags = MsFlags::from_bits(0).unwrap();
