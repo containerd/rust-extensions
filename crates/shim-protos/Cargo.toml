@@ -58,7 +58,7 @@ ttrpc-codegen = "0.4"
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 log.workspace = true
-simple_logger = { version = "4.0", default-features = false, features = [
+simple_logger = { version = "5.0", default-features = false, features = [
   "stderr",
 ] }
 tokio = { workspace = true, features = ["full"] }
