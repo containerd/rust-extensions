@@ -86,7 +86,9 @@ pub async fn connect(
 
     let path = path.as_ref().to_path_buf();
 
-    // Taken from https://github.com/hyperium/tonic/commit/b90c3408001f762a32409f7e2cf688ebae39d89e#diff-f27114adeedf7b42e8656c8a86205685a54bae7a7929b895ab62516bdf9ff252R15
+    // Taken from https://github.com/hyperium/tonic/blob/eeb3268f71ae5d1107c937392389db63d8f721fb/examples/src/uds/client.rs#L19
+    // There will ignore this uri because uds do not use it
+    // and make connection with UnixStream::connect.
     let channel = Endpoint::try_from("http://[::]")
         .unwrap()
         .connect_with_connector(tower::service_fn(move |_| {
