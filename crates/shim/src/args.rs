@@ -16,7 +16,7 @@
 
 use std::ffi::OsStr;
 
-use tracing::{instrument, Span};
+use shim_instrument::shim_instrument as instrument;
 
 use crate::error::{Error, Result};
 
@@ -46,7 +46,7 @@ pub struct Flags {
 }
 
 /// Parses command line arguments passed to the shim.
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     let mut flags = Flags::default();
 

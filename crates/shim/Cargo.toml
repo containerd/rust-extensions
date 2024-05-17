@@ -22,6 +22,7 @@ async = [
   "signal-hook-tokio",
   "tokio",
 ]
+tracing = ["dep:tracing", "shim_instrument/tracing"]
 docs = []
 
 [[example]]
@@ -53,7 +54,10 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tracing = "0.1"
+
+# tracing
+tracing = { version = "0.1", optional = true }
+shim_instrument = { path = "../shim_instrument" }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
