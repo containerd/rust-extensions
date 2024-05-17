@@ -30,6 +30,7 @@ pub use protos::{
     shim::shim::DeleteResponse,
     ttrpc::{context::Context, Result as TtrpcResult},
 };
+use tracing::{instrument, Span};
 #[cfg(unix)]
 ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
 
@@ -167,6 +168,7 @@ pub const SOCKET_ROOT: &str = "/var/run/containerd";
 pub const SOCKET_ROOT: &str = r"\\.\pipe\containerd-containerd";
 
 /// Make socket path from containerd socket path, namespace and id.
+#[instrument(parent = Span::current(), level= "Info")]
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
         .join(namespace)
