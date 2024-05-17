@@ -22,12 +22,12 @@ use syn::{AttributeArgs, Meta, NestedMeta};
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn shim_instrument(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn shim_instrument(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemFn);
 
     #[cfg(feature = "tracing")]
     let output = {
-        let args = parse_macro_input!(args as AttributeArgs);
+        let args = parse_macro_input!(_args as AttributeArgs);
         let span_parent = quote! { parent = tracing::Span::current(), };
         let attrs = args.iter().map(|arg| match arg {
             NestedMeta::Meta(Meta::NameValue(nv)) => quote! { #nv },
