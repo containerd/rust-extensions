@@ -58,7 +58,7 @@ use std::{
 };
 
 pub use log::{debug, error, info, warn};
-use tracing::{instrument, Span};
+use shim_instrument::shim_instrument as instrument;
 use util::{read_address, write_address};
 
 use crate::{
@@ -183,7 +183,7 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn run<T>(runtime_id: &str, opts: Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
@@ -194,7 +194,7 @@ where
     }
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
     T: Shim + Send + Sync + 'static,
@@ -292,7 +292,7 @@ where
     }
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 fn create_server(_flags: args::Flags) -> Result<Server> {
     let mut server = Server::new();
 
@@ -310,7 +310,7 @@ fn create_server(_flags: args::Flags) -> Result<Server> {
     Ok(server)
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 fn setup_signals(_config: &Config) -> Option<AppSignals> {
     #[cfg(unix)]
     {
@@ -346,7 +346,7 @@ unsafe extern "system" fn signal_handler(_: u32) -> i32 {
     1
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 fn handle_signals(mut _signals: Option<AppSignals>) {
     #[cfg(unix)]
     {
@@ -408,7 +408,7 @@ fn handle_signals(mut _signals: Option<AppSignals>) {
     }
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
     for _i in 0..count {
         match Client::connect(address) {
@@ -423,12 +423,12 @@ fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result
     Err(other!("time out waiting for socket {}", address))
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn remove_socket_silently(address: &str) {
     remove_socket(address).unwrap_or_else(|e| warn!("failed to remove file {} {:?}", address, e))
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn remove_socket(address: &str) -> Result<()> {
     #[cfg(unix)]
     {
@@ -457,7 +457,7 @@ fn remove_socket(address: &str) -> Result<()> {
 
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<(u32, String)> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;

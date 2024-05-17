@@ -31,14 +31,14 @@ use containerd_shim_protos::{
     shim::oci::Options,
 };
 use oci_spec::runtime::LinuxResources;
-use tracing::{instrument, Span};
+use shim_instrument::shim_instrument as instrument;
 
 use crate::error::{Error, Result};
 
 // OOM_SCORE_ADJ_MAX is from https://github.com/torvalds/linux/blob/master/include/uapi/linux/oom.h#L10
 const OOM_SCORE_ADJ_MAX: i64 = 1000;
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn set_cgroup_and_oom_score(pid: u32) -> Result<()> {
     if pid == 0 {
         return Ok(());
@@ -64,7 +64,7 @@ pub fn set_cgroup_and_oom_score(pid: u32) -> Result<()> {
 }
 
 /// Add a process to the given relative cgroup path
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn add_task_to_cgroup(path: &str, pid: u32) -> Result<()> {
     let h = hierarchies::auto();
     // use relative path here, need to trim prefix '/'
@@ -77,7 +77,7 @@ pub fn add_task_to_cgroup(path: &str, pid: u32) -> Result<()> {
 
 /// Sets the OOM score for the process to the parents OOM score + 1
 /// to ensure that they parent has a lower score than the shim
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn adjust_oom_score(pid: u32) -> Result<()> {
     let score = read_process_oom_score(std::os::unix::process::parent_id())?;
     if score < OOM_SCORE_ADJ_MAX {
@@ -86,7 +86,7 @@ pub fn adjust_oom_score(pid: u32) -> Result<()> {
     Ok(())
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn read_process_oom_score(pid: u32) -> Result<i64> {
     let content = fs::read_to_string(format!("/proc/{}/oom_score_adj", pid))
         .map_err(io_error!(e, "read oom score"))?;
@@ -97,14 +97,14 @@ fn read_process_oom_score(pid: u32) -> Result<i64> {
     Ok(score)
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn write_process_oom_score(pid: u32, score: i64) -> Result<()> {
     fs::write(format!("/proc/{}/oom_score_adj", pid), score.to_string())
         .map_err(io_error!(e, "write oom score"))
 }
 
 /// Collect process cgroup stats, return only necessary parts of it
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn collect_metrics(pid: u32) -> Result<Metrics> {
     let mut metrics = Metrics::new();
 
@@ -186,7 +186,7 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
 }
 
 // get_cgroup will return either cgroup v1 or v2 depending on system configuration
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn get_cgroup(pid: u32) -> Result<Cgroup> {
     let hierarchies = hierarchies::auto();
     let cgroup = if hierarchies.v2() {
@@ -202,7 +202,7 @@ fn get_cgroup(pid: u32) -> Result<Cgroup> {
 }
 
 /// Get the cgroups v2 path given a PID
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<PathBuf> {
     // todo: should upstream to cgroups-rs
     let path = format!("/proc/{}/cgroup", pid);
@@ -216,7 +216,7 @@ pub fn get_cgroups_v2_path_by_pid(pid: u32) -> Result<PathBuf> {
 }
 
 // https://github.com/opencontainers/runc/blob/1950892f69597aa844cbf000fbdf77610dda3a44/libcontainer/cgroups/fs2/defaultpath.go#L83
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
     // the entry for cgroup v2 is always in the format like `0::$PATH`
     // where 0 is the hierarchy ID, the controller name is omitted in cgroup v2
@@ -232,7 +232,7 @@ fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
 }
 
 /// Update process cgroup limits
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
     // get container main process cgroup
     let cgroup = get_cgroup(pid)?;

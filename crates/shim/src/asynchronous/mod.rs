@@ -46,9 +46,9 @@ use nix::{
     },
     unistd::Pid,
 };
+use shim_instrument::shim_instrument as instrument;
 use signal_hook_tokio::Signals;
 use tokio::{io::AsyncWriteExt, sync::Notify};
-use tracing::{instrument, Span};
 
 use crate::{
     args,
@@ -100,7 +100,7 @@ pub trait Shim {
 }
 
 /// Async Shim entry point that must be invoked from tokio `main`.
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub async fn run<T>(runtime_id: &str, opts: Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
@@ -111,7 +111,7 @@ where
     }
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 async fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
     T: Shim + Send + Sync + 'static,
@@ -242,7 +242,7 @@ impl ExitSignal {
 
 /// Spawn is a helper func to launch shim process asynchronously.
 /// Typically this expected to be called from `StartShim`.
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<String> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;
@@ -303,7 +303,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     Ok(address)
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 fn setup_signals_tokio(config: &Config) -> Signals {
     if config.no_reaper {
         Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed")
@@ -312,7 +312,7 @@ fn setup_signals_tokio(config: &Config) -> Signals {
     }
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 async fn handle_signals(signals: Signals) {
     let mut signals = signals.fuse();
     while let Some(sig) = signals.next().await {
@@ -366,14 +366,14 @@ async fn handle_signals(signals: Signals) {
     }
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 async fn remove_socket_silently(address: &str) {
     remove_socket(address)
         .await
         .unwrap_or_else(|e| warn!("failed to remove socket: {}", e))
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 async fn remove_socket(address: &str) -> Result<()> {
     let path = parse_sockaddr(address);
     if let Ok(md) = Path::new(path).metadata() {
@@ -388,7 +388,7 @@ async fn remove_socket(address: &str) -> Result<()> {
     Ok(())
 }
 
-#[instrument(skip_all, parent = Span::current(), level= "Info")]
+#[instrument(skip_all, level = "Info")]
 async fn start_listener(address: &str) -> Result<UnixListener> {
     let addr = address.to_string();
     asyncify(move || -> Result<UnixListener> {
@@ -400,7 +400,7 @@ async fn start_listener(address: &str) -> Result<UnixListener> {
     .await
 }
 
-#[instrument(parent = Span::current(), level= "Info")]
+#[instrument(level = "Info")]
 async fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
     for _i in 0..count {
         match Client::connect(address) {
