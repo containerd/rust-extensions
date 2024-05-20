@@ -44,7 +44,7 @@ pub struct Flags {
 }
 
 /// Parses command line arguments passed to the shim.
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), skip_all, level = "Info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "Info"))]
 pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     let mut flags = Flags::default();
 

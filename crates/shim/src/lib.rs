@@ -168,7 +168,7 @@ pub const SOCKET_ROOT: &str = "/var/run/containerd";
 pub const SOCKET_ROOT: &str = r"\\.\pipe\containerd-containerd";
 
 /// Make socket path from containerd socket path, namespace and id.
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "Info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "Info"))]
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
         .join(namespace)

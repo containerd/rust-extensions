@@ -182,7 +182,7 @@ pub trait Shim {
 }
 
 /// Shim entry point that must be invoked from `main`.
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 pub fn run<T>(runtime_id: &str, opts: Option<Config>)
 where
     T: Shim + Send + Sync + 'static,
@@ -193,7 +193,7 @@ where
     }
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
     T: Shim + Send + Sync + 'static,
@@ -291,7 +291,7 @@ where
     }
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), skip_all, level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
 fn create_server(_flags: args::Flags) -> Result<Server> {
     let mut server = Server::new();
 
@@ -309,7 +309,7 @@ fn create_server(_flags: args::Flags) -> Result<Server> {
     Ok(server)
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), skip_all, level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
 fn setup_signals(_config: &Config) -> Option<AppSignals> {
     #[cfg(unix)]
     {
@@ -345,7 +345,7 @@ unsafe extern "system" fn signal_handler(_: u32) -> i32 {
     1
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), skip_all, level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
 fn handle_signals(mut _signals: Option<AppSignals>) {
     #[cfg(unix)]
     {
@@ -407,7 +407,7 @@ fn handle_signals(mut _signals: Option<AppSignals>) {
     }
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
     for _i in 0..count {
         match Client::connect(address) {
@@ -422,12 +422,12 @@ fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result
     Err(other!("time out waiting for socket {}", address))
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 fn remove_socket_silently(address: &str) {
     remove_socket(address).unwrap_or_else(|e| warn!("failed to remove file {} {:?}", address, e))
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 fn remove_socket(address: &str) -> Result<()> {
     #[cfg(unix)]
     {
@@ -456,7 +456,7 @@ fn remove_socket(address: &str) -> Result<()> {
 
 /// Spawn is a helper func to launch shim process.
 /// Typically this expected to be called from `StartShim`.
-#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), level = "info"))]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<(u32, String)> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;
