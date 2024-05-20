@@ -16,8 +16,6 @@
 
 use std::ffi::OsStr;
 
-use shim_instrument::shim_instrument as instrument;
-
 use crate::error::{Error, Result};
 
 /// Flags to be passed from containerd daemon to a shim binary.
@@ -46,7 +44,7 @@ pub struct Flags {
 }
 
 /// Parses command line arguments passed to the shim.
-#[instrument(skip_all, level = "Info")]
+#[cfg_attr(feature = "tracing", tracing::instrument(parent = tracing::Span::current(), skip_all, level = "Info"))]
 pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     let mut flags = Flags::default();
 

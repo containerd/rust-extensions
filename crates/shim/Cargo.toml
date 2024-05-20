@@ -22,7 +22,7 @@ async = [
   "signal-hook-tokio",
   "tokio",
 ]
-tracing = ["dep:tracing", "shim_instrument/tracing"]
+tracing = ["dep:tracing"]
 docs = []
 
 [[example]]
@@ -57,7 +57,6 @@ time.workspace = true
 
 # tracing
 tracing = { version = "0.1", optional = true }
-shim_instrument = { path = "../shim_instrument" }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
