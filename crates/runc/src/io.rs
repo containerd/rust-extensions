@@ -336,6 +336,14 @@ impl Io for FIFO {
                 .read(true)
                 .custom_flags(libc::O_NONBLOCK)
                 .open(path)?;
+            unsafe {
+                let cur_flag = libc::fcntl(stdin.as_raw_fd(), libc::F_GETFL);
+                libc::fcntl(
+                    stdin.as_raw_fd(),
+                    libc::F_SETFL,
+                    cur_flag & !libc::O_NONBLOCK,
+                );
+            }
             cmd.stdin(stdin);
         }
 
