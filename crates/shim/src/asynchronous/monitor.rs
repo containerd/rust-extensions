@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 use log::error;
 use tokio::sync::{
-    mpsc::{channel, Receiver, Sender},
+    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     Mutex,
 };
 
@@ -68,17 +68,17 @@ pub struct Monitor {
 
 pub(crate) struct Subscriber {
     pub(crate) topic: Topic,
-    pub(crate) tx: Sender<ExitEvent>,
+    pub(crate) tx: UnboundedSender<ExitEvent>,
 }
 
 pub struct Subscription {
     pub id: i64,
-    pub rx: Receiver<ExitEvent>,
+    pub rx: UnboundedReceiver<ExitEvent>,
 }
 
 impl Monitor {
     pub fn subscribe(&mut self, topic: Topic) -> Result<Subscription> {
-        let (tx, rx) = channel::<ExitEvent>(128);
+        let (tx, rx) = unbounded_channel::<ExitEvent>();
         let id = self.seq_id;
         self.seq_id += 1;
         let subscriber = Subscriber {
@@ -120,7 +120,6 @@ impl Monitor {
                         subject: subject.clone(),
                         exit_code,
                     })
-                    .await
                     .map_err(other_error!(e, "failed to send exit code"));
                 results.push(res);
             }
