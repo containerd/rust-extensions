@@ -8,7 +8,7 @@
 Shim v2 runtime supports pluggable logging binaries via stdio URIs.
 This crate implement `logging::run` to easy custom logger implementations in Rust.
 
-[containerd Documentation](https://github.com/containerd/containerd/tree/master/runtime/v2#logging)
+[containerd Documentation](https://github.com/containerd/containerd/tree/master/core/runtime/v2#logging)
 
 ## Example
 

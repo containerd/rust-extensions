@@ -19,7 +19,7 @@ This crate simplifies shim v2 runtime development for containerd. It handles com
 as command line parsing, setting up shim's TTRPC server, logging, events, etc.
 
 Clients are expected to implement [Shim] and [Task] traits with task handling routines.
-This generally replicates same API as in Go [version](https://github.com/containerd/containerd/blob/main/runtime/v2/example/cmd/main.go).
+This generally replicates same API as in Go [version](https://github.com/containerd/containerd/blob/main/core/runtime/v2/example/cmd/main.go).
 
 Once implemented, shim's bootstrap code is as easy as:
 ```text

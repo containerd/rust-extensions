@@ -41,7 +41,7 @@ $ ctr i pull --snapshotter custom docker.io/library/hello-world:latest
 ## Getting started
 
 Snapshotters are required to implement `Snapshotter` trait (which is very similar to containerd's
-[Snapshotter](https://github.com/containerd/containerd/blob/main/snapshots/snapshotter.go) interface).
+[Snapshotter](https://github.com/containerd/containerd/blob/main/core/snapshots/snapshotter.go) interface).
 
 ```rust,ignore
 use std::collections::HashMap;
