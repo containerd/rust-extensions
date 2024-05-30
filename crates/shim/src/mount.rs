@@ -562,8 +562,8 @@ pub fn mount_rootfs(
         None
     };
 
-    unshare(CloneFlags::CLONE_FS).unwrap();
     if let Some(workdir) = chdir {
+        unshare(CloneFlags::CLONE_FS).unwrap();
         env::set_current_dir(Path::new(&workdir)).unwrap_or_else(|_| {
             unsafe { libc::_exit(i32::from(MountExitCode::ChdirErr)) };
         });
@@ -721,6 +721,49 @@ mod tests {
             let (chdir, options) = LowerdirCompactor::new(&case).compact();
             assert_eq!(chdir, expected_chdir);
             assert_eq!(options, expected_options);
+        }
+    }
+
+    #[test]
+    fn test_mount_rootfs() {
+        let fs_type = Some("overlay");
+        let source = Some("overlay");
+        let workdir =
+            "/var/lib/containerd-test/io.containerd.snapshotter.v1.overlayfs/snapshots/0/work";
+        std::fs::create_dir_all(workdir).unwrap();
+        let upperdir =
+            "/var/lib/containerd-test/io.containerd.snapshotter.v1.overlayfs/snapshots/0/fs";
+        std::fs::create_dir_all(upperdir).unwrap();
+        let mut dirs: Vec<String> = Vec::with_capacity(125);
+        for i in 1..=125 {
+            let mut dir =
+                "/var/lib/containerd-test/io.containerd.snapshotter.v1.overlayfs/snapshots/"
+                    .to_string()
+                    + i.to_string().as_str()
+                    + "/fs";
+            std::fs::create_dir_all(&dir).unwrap();
+            dirs.push(dir);
+        }
+        let options = vec![
+            "index=off".to_string(),
+            "workdir=".to_string() + workdir,
+            "upperdir=".to_string() + upperdir,
+            "lowerdir=".to_string() + dirs.join(":").as_str(),
+        ];
+
+        let target = "/run/containerd/io.containerd.runtime.v2.task/k8s.io/mount-test/rootfs";
+        std::fs::create_dir_all(target).unwrap();
+        let current_dir = env::current_dir().unwrap();
+        std::thread::spawn(move || mount_rootfs(fs_type, source, &options, target).unwrap());
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let current_dir_after_mount = env::current_dir().unwrap();
+        assert_eq!(current_dir, current_dir_after_mount);
+        nix::mount::umount(target).unwrap();
+        std::fs::remove_dir_all(target).unwrap();
+        std::fs::remove_dir_all(upperdir).unwrap();
+        std::fs::remove_dir_all(workdir).unwrap();
+        for dir in dirs {
+            std::fs::remove_dir_all(dir).unwrap();
         }
     }
 }
