@@ -107,7 +107,8 @@ impl log::Log for FifoLogger {
                 guard.borrow_mut(),
                 "time=\"{}\" level={}{} msg=\"{}\"\n",
                 rfc3339_formated(),
-                record.level().as_str().to_lowercase(),
+                //record.level().as_str().to_lowercase(),
+                &foramt!("{}", record.level()).to_lowercase(),
                 writer.as_str(),
                 record.args()
             );
