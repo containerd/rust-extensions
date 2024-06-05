@@ -118,7 +118,7 @@ macro_rules! with_namespace {
     ($req : ident, $ns: expr) => {{
         let mut req = Request::new($req);
         let md = req.metadata_mut();
-        // https://github.com/containerd/containerd/blob/main/namespaces/grpc.go#L27
+        // https://github.com/containerd/containerd/blob/main/pkg/namespaces/grpc.go#L27
         md.insert("containerd-namespace", $ns.parse().unwrap());
         req
     }};
