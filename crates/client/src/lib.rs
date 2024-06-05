@@ -77,7 +77,7 @@ pub mod events {
 
 /// Connect creates a unix channel to containerd GRPC socket.
 ///
-/// This helper inteded to be used in conjuction with [Tokio](https://tokio.rs) runtime.
+/// This helper intended to be used in conjunction with [Tokio](https://tokio.rs) runtime.
 #[cfg(feature = "connect")]
 pub async fn connect(
     path: impl AsRef<std::path::Path>,
