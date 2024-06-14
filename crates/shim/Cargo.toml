@@ -74,7 +74,7 @@ cgroups-rs = "0.3.4"
 command-fds = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
-mio = { version = "0.8", features = ["os-ext", "os-poll"] }
+mio = { version = "1.0", features = ["os-ext", "os-poll"] }
 os_pipe.workspace = true
 windows-sys = { version = "0.52.0", features = [
   "Win32_Foundation",
