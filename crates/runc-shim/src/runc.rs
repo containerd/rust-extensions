@@ -349,6 +349,54 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             })
             .collect())
     }
+
+    #[cfg(target_os = "linux")]
+    async fn pause(&self, p: &mut InitProcess) -> Result<()> {
+        match p.state {
+            Status::UNKNOWN => Err(other!("cannot pause an unknown process")),
+            Status::CREATED => Err(other!("cannot pause a created process")),
+            Status::RUNNING => {
+                p.state = Status::PAUSING;
+                if let Err(e) = self.runtime.pause(p.id.as_str()).await {
+                    p.state = Status::RUNNING;
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                p.state = Status::PAUSED;
+                Ok(())
+            }
+            Status::STOPPED => Err(other!("cannot pause a stopped process")),
+            Status::PAUSED => Err(other!("cannot pause a paused process")),
+            Status::PAUSING => Err(other!("cannot pause a pausing process")),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn pause(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("pause".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn resume(&self, p: &mut InitProcess) -> Result<()> {
+        match p.state {
+            Status::UNKNOWN => Err(other!("cannot resume an unknown process")),
+            Status::CREATED => Err(other!("cannot resume a created process")),
+            Status::RUNNING => Err(other!("cannot resume a running process")),
+            Status::STOPPED => Err(other!("cannot resume a stopped process")),
+            Status::PAUSED => {
+                if let Err(e) = self.runtime.resume(p.id.as_str()).await {
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                p.state = Status::RUNNING;
+                Ok(())
+            }
+            Status::PAUSING => Err(other!("cannot resume a pausing process")),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn resume(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("resume".to_string()))
+    }
 }
 
 impl RuncInitLifecycle {
@@ -472,6 +520,14 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
 
     async fn ps(&self, _p: &ExecProcess) -> Result<Vec<ProcessInfo>> {
         Err(Error::Unimplemented("exec ps".to_string()))
+    }
+
+    async fn pause(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec pause".to_string()))
+    }
+
+    async fn resume(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec resume".to_string()))
     }
 }
 
