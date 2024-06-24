@@ -55,6 +55,8 @@ pub trait Process {
     async fn stats(&self) -> Result<Metrics>;
     async fn ps(&self) -> Result<Vec<ProcessInfo>>;
     async fn close_io(&mut self) -> Result<()>;
+    async fn pause(&mut self) -> Result<()>;
+    async fn resume(&mut self) -> Result<()>;
 }
 
 #[async_trait]
@@ -65,6 +67,8 @@ pub trait ProcessLifecycle<P: Process> {
     async fn update(&self, p: &mut P, resources: &LinuxResources) -> Result<()>;
     async fn stats(&self, p: &P) -> Result<Metrics>;
     async fn ps(&self, p: &P) -> Result<Vec<ProcessInfo>>;
+    async fn pause(&self, p: &mut P) -> Result<()>;
+    async fn resume(&self, p: &mut P) -> Result<()>;
 }
 
 pub struct ProcessTemplate<S> {
@@ -197,5 +201,13 @@ where
             drop(stdin_w_file);
         }
         Ok(())
+    }
+
+    async fn pause(&mut self) -> Result<()> {
+        self.lifecycle.clone().pause(self).await
+    }
+
+    async fn resume(&mut self) -> Result<()> {
+        self.lifecycle.clone().resume(self).await
     }
 }

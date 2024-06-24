@@ -56,6 +56,8 @@ pub trait Container {
     async fn stats(&self) -> Result<Metrics>;
     async fn all_processes(&self) -> Result<Vec<ProcessInfo>>;
     async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()>;
+    async fn pause(&mut self) -> Result<()>;
+    async fn resume(&mut self) -> Result<()>;
 }
 
 #[async_trait]
@@ -211,6 +213,14 @@ where
     async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
         let process = self.get_mut_process(exec_id)?;
         process.close_io().await
+    }
+
+    async fn pause(&mut self) -> Result<()> {
+        self.init.pause().await
+    }
+
+    async fn resume(&mut self) -> Result<()> {
+        self.init.resume().await
     }
 }
 
