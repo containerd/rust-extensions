@@ -224,7 +224,7 @@ impl ProcessFactory<ExecProcess> for RuncExecFactory {
     async fn create(&self, req: &ExecProcessRequest) -> Result<ExecProcess> {
         let p = get_spec_from_request(req)?;
         Ok(ExecProcess {
-            state: Status::CREATED,
+            state: tokio::sync::Mutex::new(Status::CREATED),
             id: req.exec_id.to_string(),
             stdio: Stdio {
                 stdin: req.stdin.to_string(),
@@ -264,7 +264,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
         if let Err(e) = self.runtime.start(p.id.as_str()).await {
             return Err(runtime_error(&p.lifecycle.bundle, e, "OCI runtime start failed").await);
         }
-        p.state = Status::RUNNING;
+        *p.state.lock().await = Status::RUNNING;
         Ok(())
     }
 
@@ -349,6 +349,56 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             })
             .collect())
     }
+
+    #[cfg(target_os = "linux")]
+    async fn pause(&self, p: &mut InitProcess) -> Result<()> {
+        let mut state = p.state.lock().await;
+        match *state {
+            Status::UNKNOWN => Err(other!("cannot pause an unknown process")),
+            Status::CREATED => Err(other!("cannot pause a created process")),
+            Status::RUNNING => {
+                *state = Status::PAUSING;
+                if let Err(e) = self.runtime.pause(p.id.as_str()).await {
+                    *state = Status::RUNNING;
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                *state = Status::PAUSED;
+                Ok(())
+            }
+            Status::STOPPED => Err(other!("cannot pause a stopped process")),
+            Status::PAUSED => Err(other!("cannot pause a paused process")),
+            Status::PAUSING => Err(other!("cannot pause a pausing process")),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn pause(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("pause".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn resume(&self, p: &mut InitProcess) -> Result<()> {
+        let mut state = p.state.lock().await;
+        match *state {
+            Status::UNKNOWN => Err(other!("cannot resume an unknown process")),
+            Status::CREATED => Err(other!("cannot resume a created process")),
+            Status::RUNNING => Err(other!("cannot resume a running process")),
+            Status::STOPPED => Err(other!("cannot resume a stopped process")),
+            Status::PAUSED => {
+                if let Err(e) = self.runtime.resume(p.id.as_str()).await {
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                *state = Status::RUNNING;
+                Ok(())
+            }
+            Status::PAUSING => Err(other!("cannot resume a pausing process")),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn resume(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("resume".to_string()))
+    }
 }
 
 impl RuncInitLifecycle {
@@ -429,7 +479,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         p.pid = pid;
-        p.state = Status::RUNNING;
+        *p.state.lock().await = Status::RUNNING;
         Ok(())
     }
 
@@ -472,6 +522,14 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
 
     async fn ps(&self, _p: &ExecProcess) -> Result<Vec<ProcessInfo>> {
         Err(Error::Unimplemented("exec ps".to_string()))
+    }
+
+    async fn pause(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec pause".to_string()))
+    }
+
+    async fn resume(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec resume".to_string()))
     }
 }
 

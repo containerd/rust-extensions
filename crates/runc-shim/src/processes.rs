@@ -55,6 +55,8 @@ pub trait Process {
     async fn stats(&self) -> Result<Metrics>;
     async fn ps(&self) -> Result<Vec<ProcessInfo>>;
     async fn close_io(&mut self) -> Result<()>;
+    async fn pause(&mut self) -> Result<()>;
+    async fn resume(&mut self) -> Result<()>;
 }
 
 #[async_trait]
@@ -65,10 +67,12 @@ pub trait ProcessLifecycle<P: Process> {
     async fn update(&self, p: &mut P, resources: &LinuxResources) -> Result<()>;
     async fn stats(&self, p: &P) -> Result<Metrics>;
     async fn ps(&self, p: &P) -> Result<Vec<ProcessInfo>>;
+    async fn pause(&self, p: &mut P) -> Result<()>;
+    async fn resume(&self, p: &mut P) -> Result<()>;
 }
 
 pub struct ProcessTemplate<S> {
-    pub state: Status,
+    pub state: tokio::sync::Mutex<Status>,
     pub id: String,
     pub stdio: Stdio,
     pub pid: i32,
@@ -83,7 +87,7 @@ pub struct ProcessTemplate<S> {
 impl<S> ProcessTemplate<S> {
     pub fn new(id: &str, stdio: Stdio, lifecycle: S) -> Self {
         Self {
-            state: Status::CREATED,
+            state: tokio::sync::Mutex::new(Status::CREATED),
             id: id.to_string(),
             stdio,
             pid: 0,
@@ -108,7 +112,7 @@ where
     }
 
     async fn set_exited(&mut self, exit_code: i32) {
-        self.state = Status::STOPPED;
+        *self.state.lock().await = Status::STOPPED;
         self.exit_code = exit_code;
         self.exited_at = Some(OffsetDateTime::now_utc());
         // set wait_chan_tx to empty, to trigger the drop of the initialized Receiver.
@@ -122,7 +126,7 @@ where
     async fn state(&self) -> Result<StateResponse> {
         let mut resp = StateResponse::new();
         resp.id = self.id.to_string();
-        resp.set_status(self.state);
+        resp.set_status(*self.state.lock().await);
         resp.pid = self.pid as u32;
         resp.terminal = self.stdio.terminal;
         resp.stdin = self.stdio.stdin.to_string();
@@ -148,7 +152,7 @@ where
 
     async fn wait_channel(&mut self) -> Result<Receiver<()>> {
         let (tx, rx) = channel::<()>();
-        if self.state != Status::STOPPED {
+        if *self.state.lock().await != Status::STOPPED {
             self.wait_chan_tx.push(tx);
         }
         Ok(rx)
@@ -197,5 +201,13 @@ where
             drop(stdin_w_file);
         }
         Ok(())
+    }
+
+    async fn pause(&mut self) -> Result<()> {
+        self.lifecycle.clone().pause(self).await
+    }
+
+    async fn resume(&mut self) -> Result<()> {
+        self.lifecycle.clone().resume(self).await
     }
 }
