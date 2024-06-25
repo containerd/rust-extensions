@@ -72,8 +72,7 @@ pub trait ProcessLifecycle<P: Process> {
 }
 
 pub struct ProcessTemplate<S> {
-    // TODO: state should be Mutex
-    pub state: Status,
+    pub state: tokio::sync::Mutex<Status>,
     pub id: String,
     pub stdio: Stdio,
     pub pid: i32,
@@ -88,7 +87,7 @@ pub struct ProcessTemplate<S> {
 impl<S> ProcessTemplate<S> {
     pub fn new(id: &str, stdio: Stdio, lifecycle: S) -> Self {
         Self {
-            state: Status::CREATED,
+            state: tokio::sync::Mutex::new(Status::CREATED),
             id: id.to_string(),
             stdio,
             pid: 0,
@@ -113,7 +112,7 @@ where
     }
 
     async fn set_exited(&mut self, exit_code: i32) {
-        self.state = Status::STOPPED;
+        *self.state.lock().await = Status::STOPPED;
         self.exit_code = exit_code;
         self.exited_at = Some(OffsetDateTime::now_utc());
         // set wait_chan_tx to empty, to trigger the drop of the initialized Receiver.
@@ -127,7 +126,7 @@ where
     async fn state(&self) -> Result<StateResponse> {
         let mut resp = StateResponse::new();
         resp.id = self.id.to_string();
-        resp.set_status(self.state);
+        resp.set_status(*self.state.lock().await);
         resp.pid = self.pid as u32;
         resp.terminal = self.stdio.terminal;
         resp.stdin = self.stdio.stdin.to_string();
@@ -153,7 +152,7 @@ where
 
     async fn wait_channel(&mut self) -> Result<Receiver<()>> {
         let (tx, rx) = channel::<()>();
-        if self.state != Status::STOPPED {
+        if *self.state.lock().await != Status::STOPPED {
             self.wait_chan_tx.push(tx);
         }
         Ok(rx)
