@@ -30,6 +30,8 @@ use oci_spec::runtime::LinuxResources;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
 
+use crate::common::get_file_lsof;
+
 use super::processes::Process;
 
 #[async_trait]
@@ -138,8 +140,36 @@ where
             Err(Error::NotFoundError(_)) => return Ok((pid, code, exited_at)),
             Err(e) => return Err(e),
         }
+        //io still in use by other process
+        let mut io_error = false;
+        let mut n_stderr = String::new();
+        let mut n_stdout = String::new();
+        let now_process_io = self.get_process(exec_id_opt);
+        if let Ok(p) = now_process_io {
+            let mut resp = p.state().await;
+            if let Ok(resp) = resp {
+                n_stderr = resp.stderr;
+                n_stdout = resp.stdout;
+            }
+        }
+        if !n_stderr.is_empty()
+        {
+            io_error = get_file_lsof(n_stderr.as_str());
+        }
+        if !n_stdout.is_empty()
+        {
+            io_error = get_file_lsof(n_stderr.as_str());
+        }
         if let Some(exec_id) = exec_id_opt {
             self.processes.remove(exec_id);
+        }
+        if io_error
+        {
+            return Err(Error::IoError{
+                context: "io still in use by other process".to_string(),
+                err:std::io::Error::new(std::io::ErrorKind::Other, "no"),
+               });
+           
         }
         Ok((pid, code, exited_at))
     }

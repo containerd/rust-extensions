@@ -24,7 +24,7 @@ use std::{
         unix::io::RawFd,
     },
     path::Path,
-    sync::Arc,
+    sync::Arc, process::Command,
 };
 
 use containerd_shim::{
@@ -247,4 +247,28 @@ pub fn has_shared_pid_namespace(spec: &Spec) -> bool {
 pub(crate) fn xdg_runtime_dir() -> String {
     env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| env::temp_dir().to_str().unwrap_or(".").to_string())
+}
+
+pub fn get_file_lsof(filepath: &str)->bool
+{
+    let mut cmd = Command::new("lsof");
+    cmd.arg(filepath);
+    let output = cmd.output();
+    if let Ok(output) = output{
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let output_lines: Vec<&str> = output_str.split("\n").collect();
+        for i in output_lines{
+            let words: Vec<&str> = i.split(' ').collect();
+            if words.len()>0{
+                if words[0].is_empty()
+                {
+                    continue;
+                }
+                if words[0] != "container" && words[0]!= "COMMAND" {
+                    return true;
+                }
+            }
+        }
+    }
+    return false; 
 }
