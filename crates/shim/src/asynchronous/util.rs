@@ -87,6 +87,12 @@ pub async fn write_str_to_file(filename: impl AsRef<Path>, s: impl AsRef<str>) -
     Ok(())
 }
 
+pub async fn read_pid_from_file(pid_path: &Path) -> Result<i32> {
+    let pid_str = read_file_to_str(pid_path).await?;
+    let pid = pid_str.parse::<i32>()?;
+    Ok(pid)
+}
+
 pub async fn read_spec(bundle: impl AsRef<Path>) -> Result<Spec> {
     let path = bundle.as_ref().join(CONFIG_FILE_NAME);
     let content = read_file_to_str(&path).await?;

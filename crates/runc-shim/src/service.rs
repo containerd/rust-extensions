@@ -29,7 +29,8 @@ use containerd_shim::{
     monitor::{Subject, Topic},
     protos::{events::task::TaskExit, protobuf::MessageDyn},
     util::{
-        convert_to_timestamp, read_options, read_runtime, read_spec, timestamp, write_str_to_file,
+        convert_to_timestamp, read_options, read_pid_from_file, read_runtime, read_spec, timestamp,
+        write_str_to_file,
     },
     Config, Context, DeleteResponse, Error, Flags, StartOpts,
 };
@@ -37,7 +38,7 @@ use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::{
-    common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS},
+    common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS, INIT_PID_FILE},
     container::Container,
     processes::Process,
     runc::{RuncContainer, RuncFactory},
@@ -116,6 +117,7 @@ impl Shim for Service {
             &opts,
             Some(Arc::new(ShimExecutor::default())),
         )?;
+        let pid = read_pid_from_file(&bundle.join(INIT_PID_FILE)).await?;
 
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .await
@@ -124,6 +126,7 @@ impl Shim for Service {
         // sigkill
         resp.set_exit_status(137);
         resp.set_exited_at(timestamp()?);
+        resp.set_pid(pid as u32);
         Ok(resp)
     }
 
