@@ -399,11 +399,14 @@ where
         req: ConnectRequest,
     ) -> TtrpcResult<ConnectResponse> {
         info!("Connect request for {:?}", req);
-        let container = self.get_container(req.id()).await?;
+        let mut pid: u32 = 0;
+        if let Ok(container) = self.get_container(req.id()).await {
+            pid = container.pid().await as u32;
+        }
 
         Ok(ConnectResponse {
             shim_pid: std::process::id(),
-            task_pid: container.pid().await as u32,
+            task_pid: pid,
             ..Default::default()
         })
     }
