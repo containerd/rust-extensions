@@ -22,6 +22,7 @@ use containerd_shim::{
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
         cgroups::metrics::Metrics,
+        protobuf::{well_known_types::any::Any, Message},
     },
     Error,
 };
@@ -185,7 +186,16 @@ where
     }
 
     async fn all_processes(&self) -> Result<Vec<ProcessInfo>> {
-        self.init.ps().await
+        let mut processes_info = self.init.ps().await?;
+        for process_info in &mut processes_info {
+            for (exec_id, process) in &self.processes {
+                if process_info.pid as i32 == process.pid().await {
+                    process_info.set_info(Any::parse_from_bytes(exec_id.as_bytes())?);
+                    break;
+                }
+            }
+        }
+        Ok(processes_info)
     }
 
     async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
