@@ -18,10 +18,12 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use containerd_shim::{
+    api::Status,
     error::Result,
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
         cgroups::metrics::Metrics,
+        protobuf::EnumOrUnknown,
     },
     Error,
 };
@@ -100,6 +102,12 @@ where
     async fn state(&self, exec_id: Option<&str>) -> Result<StateResponse> {
         let process = self.get_process(exec_id)?;
         let mut resp = process.state().await?;
+        let init_state = self.init.state().await?.status;
+        if init_state == EnumOrUnknown::new(Status::PAUSING)
+            || init_state == EnumOrUnknown::new(Status::PAUSED)
+        {
+            resp.status = init_state;
+        }
         resp.bundle = self.bundle.to_string();
         debug!("container state: {:?}", resp);
         Ok(resp)
