@@ -87,10 +87,7 @@ impl Monitor {
         };
 
         self.subscribers.insert(id, subscriber);
-        self.topic_subs
-            .entry(topic)
-            .or_insert_with(Vec::new)
-            .push(id);
+        self.topic_subs.entry(topic).or_default().push(id);
         Ok(Subscription { id, rx })
     }
 
