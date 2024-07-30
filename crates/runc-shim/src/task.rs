@@ -250,19 +250,20 @@ where
         let exec_id_opt = req.exec_id().as_option();
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
         self.factory.cleanup(&self.namespace, container).await?;
-        if req.exec_id().is_empty() {
-            containers.remove(req.id());
-        }
 
         let ts = convert_to_timestamp(exited_at);
-        self.send_event(TaskDelete {
-            container_id: id,
-            pid: pid as u32,
-            exit_status: exit_status as u32,
-            exited_at: Some(ts.clone()).into(),
-            ..Default::default()
-        })
-        .await;
+        // if we deleted an init task, send the task delete event
+        if req.exec_id().is_empty() {
+            containers.remove(req.id());
+            self.send_event(TaskDelete {
+                container_id: id,
+                pid: pid as u32,
+                exit_status: exit_status as u32,
+                exited_at: Some(ts.clone()).into(),
+                ..Default::default()
+            })
+            .await;
+        }
 
         let mut resp = DeleteResponse::new();
         resp.set_exited_at(ts);
