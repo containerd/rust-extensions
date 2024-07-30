@@ -26,7 +26,7 @@ doc = false
 
 [dependencies]
 containerd-shim = { path = "../shim", version = "0.7.1", features = ["async"] }
-crossbeam = "0.8.1"
+crossbeam.workspace = true
 libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["socket", "uio", "term"] }
@@ -44,5 +44,5 @@ futures.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.3.3"
+cgroups-rs.workspace = true
 nix = { workspace = true, features = ["event"] }
