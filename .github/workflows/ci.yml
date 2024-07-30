@@ -30,8 +30,8 @@ jobs:
 
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      
-      # the shim has sync code that is not covered when running with --all-features 
+
+      # the shim has sync code that is not covered when running with --all-features
       - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
 
       - run: cargo doc --no-deps --features docs
@@ -49,10 +49,10 @@ jobs:
       - run: ./scripts/install-protobuf.sh
         shell: bash
       - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos -p containerd-client
-      
+
       - run: rustup toolchain install nightly --component rustfmt
       - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -p containerd-client -- --check --files-with-diff
-      
+
       - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
       - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos -p containerd-client
         env:
@@ -76,8 +76,8 @@ jobs:
           mkdir -p /tmp/dummy-xdr
           sudo -E $(command -v cargo) test
           sudo -E $(command -v cargo) test --all-features
-          
-          # the shim has sync code that is not covered when running with --all-features 
+
+          # the shim has sync code that is not covered when running with --all-features
           sudo -E $(command -v cargo) test -p containerd-shim
         if: ${{ !contains(matrix.os, 'windows') }}
         env:
@@ -171,7 +171,7 @@ jobs:
         run: |
           sudo -E PATH=$PATH make integration
         working-directory: src/github.com/containerd/containerd
-  
+
   windows-integration:
     name: Windows Integration
     runs-on: ${{ matrix.os }}
@@ -217,11 +217,11 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           get-service containerd
-          $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"  
+          $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"
 
-          # run the example 
-          cargo run -p containerd-shim --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start 
-          ps skeleton 
+          # run the example
+          cargo run -p containerd-shim --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start
+          ps skeleton
           cargo run -p containerd-shim-protos --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
           $skeleton = get-process skeleton -ErrorAction SilentlyContinue
           if ($skeleton) { exit 1 }
