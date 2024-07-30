@@ -30,10 +30,9 @@ tokio = { workspace = true, features = ["sync"] }
 tokio-stream = "0.1.8"
 
 [dev-dependencies]
-async-stream = "0.3.2"
 futures.workspace = true
 log.workspace = true
-simple_logger = { version = "5.0", default-features = false }
+simple_logger.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
