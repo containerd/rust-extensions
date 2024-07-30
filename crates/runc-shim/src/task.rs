@@ -131,22 +131,31 @@ fn run_oom_monitor(mut rx: Receiver<String>, id: String, tx: EventSender) {
 
 #[cfg(target_os = "linux")]
 async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
+    // std::thread::sleep(std::time::Duration::from_secs(20));
+    let rx: Receiver<String>;
     if !is_cgroup2_unified_mode() {
         let path_from_cgorup = cgroup_memory::get_path_from_cgorup(pid).await?;
         let (mount_root, mount_point) =
             cgroup_memory::get_existing_cgroup_mem_path(path_from_cgorup).await?;
 
         let mem_cgroup_path = mount_point + &mount_root;
-        let rx = cgroup_memory::register_memory_event(
+        rx = cgroup_memory::register_memory_event(
             id,
             Path::new(&mem_cgroup_path),
             "memory.oom_control",
         )
         .await
         .map_err(other_error!(e, "register_memory_event failed:"))?;
+    } else {
+        let path_from_cgorup = cgroup_memory::get_path_from_cgorup_v2(pid).await?;
+        let mem_cgroup_path = cgroup_memory::DEFAULT_CGROUPV2_PATH.to_owned() + &path_from_cgorup;
 
-        run_oom_monitor(rx, id.to_string(), tx);
+        rx = cgroup_memory::register_memory_event_v2(id, Path::new(&mem_cgroup_path))
+            .await
+            .map_err(other_error!(e, "register_memory_event failed:"))?;
     }
+
+    run_oom_monitor(rx, id.to_string(), tx);
     Ok(())
 }
 
