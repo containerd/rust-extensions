@@ -48,7 +48,7 @@ path = "examples/connect-async.rs"
 required-features = ["async"]
 
 [dependencies]
-async-trait = { version = "0.1.48", optional = true }
+async-trait = { workspace = true, optional = true }
 protobuf = "=3.1"
 ttrpc = "0.8"
 
@@ -58,11 +58,9 @@ ttrpc-codegen = "0.4"
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 log.workspace = true
-simple_logger = { version = "5.0", default-features = false, features = [
-  "stderr",
-] }
+simple_logger = { workspace = true, features = ["stderr"] }
 tokio = { workspace = true, features = ["full"] }
-crossbeam = "0.8.0" # Used by create_ttrpc_context()
+crossbeam.workspace = true # Used by create_ttrpc_context()
 
 [package.metadata.docs.rs]
 features = ["docs"]
