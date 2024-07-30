@@ -15,7 +15,7 @@
 */
 
 use std::env;
-
+use tokio::runtime::Builder;
 use containerd_shim::{asynchronous::run, parse};
 
 mod cgroup_memory;
@@ -43,8 +43,21 @@ fn parse_version() {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let num_threads = std::env::var("RUSTMAXPROCS")
+        .map(|v| v.parse::<usize>().unwrap_or(2))
+        .unwrap_or(2);
+
+    let rt = Builder::new_multi_thread()
+        .worker_threads(num_threads)
+        .enable_all()
+        .build()
+        .expect("Failed to build Tokio runtime");
+
+    rt.block_on(async_main());
+}
+
+async fn async_main() {
     parse_version();
     run::<Service>("io.containerd.runc.v2-rs", None).await;
 }
