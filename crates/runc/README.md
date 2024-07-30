@@ -5,7 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/l/containerd-shim)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![CI](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml)
 
-A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go. 
+A crate for consuming the runc binary in your Rust applications, similar to [go-runc](https://github.com/containerd/go-runc) for Go.
 This crate is based on archived [rust-runc](https://github.com/pwFoo/rust-runc).
 
 ## Usage
@@ -29,7 +29,7 @@ async fn main() {
     let opts = runc::options::CreateOpts::new()
         .pid_file("/path/to/pid/file")
         .no_pivot(true);
-    
+
     client.create("container-id", "path/to/bundle", Some(&opts)).unwrap();
 }
 ```
