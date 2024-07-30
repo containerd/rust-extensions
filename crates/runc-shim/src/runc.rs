@@ -456,6 +456,9 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     }
 
     async fn delete(&self, p: &mut ExecProcess) -> Result<()> {
+        if p.state == Status::RUNNING {
+            return Err(Error::Other("cannot delete a running process".to_string()));
+        }
         self.exit_signal.signal();
         let exec_pid_path = Path::new(self.bundle.as_str()).join(format!("{}.pid", p.id));
         remove_file(exec_pid_path).await.unwrap_or_default();
