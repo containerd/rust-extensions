@@ -460,6 +460,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             return Err(Error::Other("cannot delete a running process".to_string()));
         }
         self.exit_signal.signal();
+        self.exit_signal.wait_for_exit(tokio::time::Duration::from_secs(2)).await;
         let exec_pid_path = Path::new(self.bundle.as_str()).join(format!("{}.pid", p.id));
         remove_file(exec_pid_path).await.unwrap_or_default();
         Ok(())

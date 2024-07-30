@@ -47,7 +47,7 @@ use nix::{
     unistd::Pid,
 };
 use signal_hook_tokio::Signals;
-use tokio::{io::AsyncWriteExt, sync::Notify};
+use tokio::{self, io::AsyncWriteExt, sync::Notify,time::Duration};
 
 use crate::{
     args,
@@ -232,6 +232,22 @@ impl ExitSignal {
                 return;
             }
             notified.await;
+        }
+    }
+
+    /// Wait for the exit signal to be set or return after a timeout.
+    pub async fn wait_for_exit(&self, timeout_duration: Duration) {
+        let timeout_task = async {
+            tokio::time::sleep(timeout_duration).await;
+        };
+
+        let exit_task = async {
+            self.wait().await;
+        };
+
+        tokio::select! {
+            _ = timeout_task => {},
+            _ = exit_task => {},
         }
     }
 }
