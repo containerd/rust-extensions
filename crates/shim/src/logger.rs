@@ -22,6 +22,7 @@ use std::{
     path::Path,
     str::FromStr,
     sync::Mutex,
+    os::unix::io::AsRawFd,
 };
 
 use log::{
@@ -57,6 +58,12 @@ impl FifoLogger {
         Ok(FifoLogger {
             file: Mutex::new(f),
         })
+    }
+
+    #[allow(dead_code)]
+    pub fn get_raw_fd(&self) -> io::Result<libc::c_int> {
+        let file = self.file.lock().map_err(|_| io::Error::new(io::ErrorKind::Other, "Mutex poisoned"))?;
+        Ok(file.as_raw_fd())
     }
 }
 
@@ -152,6 +159,10 @@ fn configure_logging_level(debug: bool, default_log_level: &str) {
     } else {
         debug_level
     };
+    let raw_fd = logger.get_raw_fd().unwrap();
+    unsafe {
+        libc::dup2(raw_fd, libc::STDERR_FILENO);
+    }
     log::set_max_level(level);
 }
 
