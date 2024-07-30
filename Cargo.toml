@@ -34,7 +34,7 @@ nix = "0.28"
 oci-spec = "0.6"
 os_pipe = "1.1"
 prctl = "1.0.0"
-prost = "0.12"
+prost = "0.13"
 prost-build = "0.12"
 prost-types = "0.12"
 serde = { version = "1.0", features = ["derive"] }
