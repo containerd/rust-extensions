@@ -112,7 +112,7 @@ pub async fn register_memory_event(
         let mut eventfd_file = unsafe { File::from_raw_fd(eventfd.as_raw_fd()) };
         loop {
             match eventfd_file.read(&mut buf).await {
-                Ok(bytes_read) if bytes_read == 0 => return,
+                Ok(0) => return,
                 Err(_) => return,
                 _ => (),
             }
