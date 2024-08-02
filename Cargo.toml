@@ -8,6 +8,7 @@ members = [
   "crates/shim-protos",
   "crates/snapshots",
 ]
+resolver = "2"
 
 [profile.release]
 # Keep binary as small as possible
@@ -30,7 +31,7 @@ crossbeam = "0.8.1"
 futures = "0.3.19"
 libc = "0.2.112"
 log = {version = "0.4.2", features=["kv_unstable"]}
-nix = "0.28"
+nix = "0.29"
 oci-spec = "0.6"
 os_pipe = "1.1"
 prctl = "1.0.0"
