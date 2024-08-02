@@ -86,23 +86,28 @@ pub async fn connect(
 
     let path = path.as_ref().to_path_buf();
 
-    // Taken from https://github.com/hyperium/tonic/blob/eeb3268f71ae5d1107c937392389db63d8f721fb/examples/src/uds/client.rs#L19
+    // Taken from https://github.com/hyperium/tonic/blob/71fca362d7ffbb230547f23b3f2fb75c414063a8/examples/src/uds/client.rs#L21-L28
     // There will ignore this uri because uds do not use it
     // and make connection with UnixStream::connect.
-    let channel = Endpoint::try_from("http://[::]")
-        .unwrap()
+    let channel = Endpoint::try_from("http://[::]")?
         .connect_with_connector(tower::service_fn(move |_| {
-            #[cfg(unix)]
-            {
-                tokio::net::UnixStream::connect(path.clone())
-            }
+            let path = path.clone();
 
-            #[cfg(windows)]
-            {
-                let client = tokio::net::windows::named_pipe::ClientOptions::new()
-                    .open(path.clone())
-                    .map_err(|e| std::io::Error::from(e));
-                async move { client }
+            async move {
+                #[cfg(unix)]
+                {
+                    Ok::<_, std::io::Error>(hyper_util::rt::TokioIo::new(
+                        tokio::net::UnixStream::connect(path).await?,
+                    ))
+                }
+
+                #[cfg(windows)]
+                {
+                    let client = tokio::net::windows::named_pipe::ClientOptions::new()
+                        .open(path)
+                        .map_err(|e| std::io::Error::from(e));
+                    client.await
+                }
             }
         }))
         .await?;

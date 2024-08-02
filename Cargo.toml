@@ -35,9 +35,9 @@ nix = "0.29"
 oci-spec = "0.6"
 os_pipe = "1.1"
 prctl = "1.0.0"
-prost = "0.12"
-prost-build = "0.12"
-prost-types = "0.12"
+prost = "0.13"
+prost-build = "0.13"
+prost-types = "0.13"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simple_logger = { version = "5.0", default-features = false }
@@ -45,7 +45,7 @@ tempfile = "3.6"
 thiserror = "1.0"
 time = { version = "0.3.29", features = ["serde", "std", "formatting"] }
 tokio = "1.26"
-tonic = "0.11"
-tonic-build = "0.11"
+tonic = "0.12"
+tonic-build = "0.12"
 tower = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
