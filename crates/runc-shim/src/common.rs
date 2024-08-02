@@ -194,8 +194,8 @@ pub fn receive_socket(stream_fd: RawFd) -> containerd_shim::Result<OwnedFd> {
     let (path, fds) =
         match recvmsg::<UnixAddr>(stream_fd, &mut iovec, Some(&mut space), MsgFlags::empty()) {
             Ok(msg) => {
-                let mut iter = msg.cmsgs();
-                if let Some(ControlMessageOwned::ScmRights(fds)) = iter.next() {
+                let iter = msg.cmsgs();
+                if let Some(ControlMessageOwned::ScmRights(fds)) = iter?.next() {
                     (iovec[0].deref(), fds)
                 } else {
                     return Err(other!("received message is empty"));
