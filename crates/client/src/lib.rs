@@ -103,9 +103,10 @@ pub async fn connect(
 
                 #[cfg(windows)]
                 {
-                    tokio::net::windows::named_pipe::ClientOptions::new()
-                        .open(path)
-                        .map_err(|e| std::io::Error::from(e))
+                    let client = tokio::net::windows::named_pipe::ClientOptions::new()
+                        .open(path.clone())
+                        .map_err(|e| std::io::Error::from(e));
+                    async move { client }
                 }
             }
         }))
