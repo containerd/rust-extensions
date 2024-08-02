@@ -49,7 +49,7 @@ required-features = ["async"]
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
-protobuf = "=3.1"
+protobuf = "=3.5"
 ttrpc = "0.8"
 
 [build-dependencies]
