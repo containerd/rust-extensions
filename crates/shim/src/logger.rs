@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 use std::{
     borrow::BorrowMut,
     fmt::Write as fmtwrite,
@@ -57,6 +59,15 @@ impl FifoLogger {
         Ok(FifoLogger {
             file: Mutex::new(f),
         })
+    }
+
+    #[cfg(unix)]
+    pub fn get_raw_fd(&self) -> io::Result<libc::c_int> {
+        let file = self
+            .file
+            .lock()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Mutex poisoned"))?;
+        Ok(file.as_raw_fd())
     }
 }
 
@@ -120,6 +131,15 @@ impl log::Log for FifoLogger {
     }
 }
 
+#[cfg(unix)]
+fn redirect_stderr_unix(logger: &FifoLogger) -> io::Result<()> {
+    let raw_fd = logger.get_raw_fd()?;
+    unsafe {
+        libc::dup2(raw_fd, libc::STDERR_FILENO);
+    }
+    Ok(())
+}
+
 pub fn init(
     debug: bool,
     default_log_level: &str,
@@ -140,6 +160,10 @@ pub fn init(
         NamedPipeLogger::new(_namespace, _id).map_err(io_error!(e, "failed to init logger"))?;
 
     configure_logging_level(debug, default_log_level);
+
+    #[cfg(unix)]
+    redirect_stderr_unix(&logger).unwrap();
+
     log::set_boxed_logger(Box::new(logger))?;
     Ok(())
 }
