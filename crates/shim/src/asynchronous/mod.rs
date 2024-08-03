@@ -125,6 +125,9 @@ where
 
     // Setup signals
     let signals = setup_signals_tokio(&config);
+    tokio::spawn(async move {
+        handle_signals(signals).await;
+    });
 
     if !config.no_sub_reaper {
         reap::set_subreaper()?;
@@ -154,9 +157,6 @@ where
             Ok(())
         }
         "delete" => {
-            tokio::spawn(async move {
-                handle_signals(signals).await;
-            });
             let response = shim.delete_shim().await?;
             let resp_bytes = response.write_to_bytes()?;
             tokio::io::stdout()
@@ -185,9 +185,6 @@ where
             server.start().await?;
 
             info!("Shim successfully started, waiting for exit signal...");
-            tokio::spawn(async move {
-                handle_signals(signals).await;
-            });
             shim.wait().await;
 
             info!("Shutting down shim instance");
