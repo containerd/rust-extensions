@@ -75,6 +75,9 @@ pub trait Io: Debug + Send + Sync {
 
     /// Only close write side (should be stdout/err "from" runc process)
     fn close_after_start(&self);
+
+    /// Close read side
+    fn close_all_sid(&self);
 }
 
 #[derive(Debug, Clone)]
@@ -227,7 +230,7 @@ impl Io for PipedIo {
 
         if let Some(p) = self.stderr.as_ref() {
             let pw = p.wr.try_clone()?;
-            cmd.stdout(pw);
+            cmd.stderr(pw);
         }
 
         Ok(())
@@ -240,6 +243,17 @@ impl Io for PipedIo {
 
         if let Some(p) = self.stderr.as_ref() {
             nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
+        }
+    }
+
+    fn close_all_sid(&self) {
+        if let Some(p) = self.stdout.as_ref() {
+            debug!("close pipe read from stdout");
+            nix::unistd::close(p.rd.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
+        }
+        if let Some(p) = self.stderr.as_ref() {
+            debug!("close pipe read from stderr");
+            nix::unistd::close(p.rd.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
         }
     }
 }
@@ -273,6 +287,8 @@ impl Io for NullIo {
         let mut m = self.dev_null.lock().unwrap();
         let _ = m.take();
     }
+
+    fn close_all_sid(&self) {}
 }
 
 /// Io driver based on Stdio::inherited(), to direct outputs/errors to stdio.
@@ -296,6 +312,8 @@ impl Io for InheritedStdIo {
     }
 
     fn close_after_start(&self) {}
+
+    fn close_all_sid(&self) {}
 }
 
 /// Io driver based on Stdio::piped(), to capture outputs/errors from runC.
@@ -319,6 +337,8 @@ impl Io for PipedStdIo {
     }
 
     fn close_after_start(&self) {}
+
+    fn close_all_sid(&self) {}
 }
 
 /// FIFO for the scenario that set FIFO for command Io.
@@ -353,6 +373,8 @@ impl Io for FIFO {
     }
 
     fn close_after_start(&self) {}
+
+    fn close_all_sid(&self) {}
 }
 
 #[cfg(test)]
