@@ -22,7 +22,8 @@ use containerd_shim::{
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
         cgroups::metrics::Metrics,
-        protobuf::{well_known_types::any::Any, Message},
+        protobuf::{well_known_types::any::Any, Message, MessageDyn},
+        shim::oci::ProcessDetails,
     },
     Error,
 };
@@ -190,7 +191,16 @@ where
         for process_info in &mut processes_info {
             for (exec_id, process) in &self.processes {
                 if process_info.pid as i32 == process.pid().await {
-                    process_info.set_info(Any::parse_from_bytes(exec_id.as_bytes())?);
+                    let process_details = ProcessDetails {
+                        exec_id: exec_id.to_string(),
+                        special_fields: Default::default(),
+                    };
+                    let v = Any {
+                        type_url: process_details.descriptor_dyn().full_name().to_string(),
+                        value: process_details.write_to_bytes()?,
+                        special_fields: Default::default(),
+                    };
+                    process_info.set_info(v);
                     break;
                 }
             }
