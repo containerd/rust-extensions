@@ -50,6 +50,10 @@ use std::path::Path;
 
 #[cfg(target_os = "linux")]
 use cgroups_rs::hierarchies::is_cgroup2_unified_mode;
+use containerd_shim::{
+    api::{PauseRequest, ResumeRequest},
+    protos::events::task::{TaskPaused, TaskResumed},
+};
 #[cfg(target_os = "linux")]
 use containerd_shim::{
     error::{Error, Result},
@@ -286,6 +290,32 @@ where
             processes,
             ..Default::default()
         })
+    }
+
+    async fn pause(&self, _ctx: &TtrpcContext, req: PauseRequest) -> TtrpcResult<Empty> {
+        info!("pause request for {:?}", req);
+        let mut container = self.get_container(req.id()).await?;
+        container.pause().await?;
+        self.send_event(TaskPaused {
+            container_id: req.id.to_string(),
+            ..Default::default()
+        })
+        .await;
+        info!("pause request for {:?} returns successfully", req);
+        Ok(Empty::new())
+    }
+
+    async fn resume(&self, _ctx: &TtrpcContext, req: ResumeRequest) -> TtrpcResult<Empty> {
+        info!("resume request for {:?}", req);
+        let mut container = self.get_container(req.id()).await?;
+        container.resume().await?;
+        self.send_event(TaskResumed {
+            container_id: req.id.to_string(),
+            ..Default::default()
+        })
+        .await;
+        info!("resume request for {:?} returns successfully", req);
+        Ok(Empty::new())
     }
 
     async fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
