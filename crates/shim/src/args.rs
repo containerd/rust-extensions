@@ -60,7 +60,7 @@ pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     })
     .map_err(|e| Error::InvalidArgument(e.to_string()))?;
 
-    if let Some(action) = args.get(0) {
+    if let Some(action) = args.first() {
         flags.action = action.into();
     }
 

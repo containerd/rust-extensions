@@ -98,6 +98,7 @@ pub async fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<String,
     let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
     let mut f = tokio::fs::OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .await
