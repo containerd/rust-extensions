@@ -100,7 +100,7 @@ impl log::Log for NamedPipeLogger {
                 .current_connection
                 .lock()
                 .unwrap()
-                .write(message.as_bytes())
+                .write_all(message.as_bytes())
             {
                 Ok(_) => {}
                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
