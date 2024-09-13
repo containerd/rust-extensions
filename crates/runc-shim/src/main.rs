@@ -32,7 +32,13 @@ use service::Service;
 
 fn parse_version() {
     let os_args: Vec<_> = env::args_os().collect();
-    let flags = parse(&os_args[1..]).unwrap();
+    let flags = match parse(&os_args[1..]) {
+        Ok(flags) => flags,
+        Err(e) => {
+            eprintln!("Error parsing arguments: {}", e);
+            std::process::exit(1);
+        }
+    };
     if flags.version {
         println!("{}:", os_args[0].to_string_lossy());
         println!("  Version: {}", env!("CARGO_PKG_VERSION"));
