@@ -12,7 +12,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-async = ["tokio", "async-trait", "futures", "tokio-pipe"]
+async = ["tokio", "async-trait", "tokio-pipe"]
 docs = []
 
 [dependencies]
@@ -23,7 +23,6 @@ oci-spec.workspace = true
 os_pipe.workspace = true
 path-absolutize = "3.0.11"
 prctl.workspace = true
-rand = "0.8.5"
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
@@ -33,7 +32,6 @@ uuid.workspace = true
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 tokio-pipe = { version = "0.2.10", optional = true }
 
