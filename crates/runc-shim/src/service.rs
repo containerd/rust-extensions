@@ -159,52 +159,51 @@ async fn process_exits(
             if let Subject::Pid(pid) = e.subject {
                 debug!("receive exit event: {}", &e);
                 let exit_code = e.exit_code;
-                for (_k, cont) in containers.lock().await.iter_mut() {
-                    let bundle = cont.bundle.to_string();
-                    // pid belongs to container init process
-                    if cont.init.pid == pid {
-                        // kill all children process if the container has a private PID namespace
-                        if should_kill_all_on_exit(&bundle).await {
-                            cont.kill(None, 9, true).await.unwrap_or_else(|e| {
-                                error!("failed to kill init's children: {}", e)
-                            });
-                        }
-                        // set exit for init process
-                        cont.init.set_exited(exit_code).await;
+                let containers = containers.clone();
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    for (_k, cont) in containers.lock().await.iter_mut() {
+                        let bundle = cont.bundle.to_string();
+                        // pid belongs to container init process
+                        if cont.init.pid == pid {
+                            // kill all children process if the container has a private PID namespace
+                            if should_kill_all_on_exit(&bundle).await {
+                                cont.kill(None, 9, true).await.unwrap_or_else(|e| {
+                                    error!("failed to kill init's children: {}", e)
+                                });
+                            }
+                            // set exit for init process
+                            cont.init.set_exited(exit_code).await;
 
-                        // publish event
-                        let (_, code, exited_at) = match cont.get_exit_info(None).await {
-                            Ok(info) => info,
-                            Err(_) => break,
-                        };
+                            // publish event
+                            let (_, code, exited_at) = match cont.get_exit_info(None).await {
+                                Ok(info) => info,
+                                Err(_) => break,
+                            };
 
-                        let ts = convert_to_timestamp(exited_at);
-                        let event = TaskExit {
-                            container_id: cont.id.to_string(),
-                            id: cont.id.to_string(),
-                            pid: cont.pid().await as u32,
-                            exit_status: code as u32,
-                            exited_at: Some(ts).into(),
-                            ..Default::default()
-                        };
-                        let topic = event.topic();
-                        tx.send((topic.to_string(), Box::new(event)))
-                            .await
-                            .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
+                            let ts = convert_to_timestamp(exited_at);
+                            let event = TaskExit {
+                                container_id: cont.id.to_string(),
+                                id: cont.id.to_string(),
+                                pid: cont.pid().await as u32,
+                                exit_status: code as u32,
+                                exited_at: Some(ts).into(),
+                                ..Default::default()
+                            };
+                            let topic = event.topic();
+                            tx.send((topic.to_string(), Box::new(event)))
+                                .await
+                                .unwrap_or_else(|e| warn!("send {} to publisher: {}", topic, e));
 
-                        break;
-                    }
-
-                    // pid belongs to container common process
-                    for (_exec_id, p) in cont.processes.iter_mut() {
-                        // set exit for exec process
-                        if p.pid == pid {
-                            p.set_exited(exit_code).await;
-                            // TODO: publish event
                             break;
                         }
+
+                        // pid belongs to container common process
+                        if let Some(p) = cont.processes.values_mut().find(|p| p.pid == pid) {
+                            p.set_exited(exit_code).await;
+                        }
                     }
-                }
+                });
             }
         }
         monitor_unsubscribe(s.id).await.unwrap_or_default();
