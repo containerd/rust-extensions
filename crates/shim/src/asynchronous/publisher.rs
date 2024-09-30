@@ -18,34 +18,110 @@ use std::os::unix::io::RawFd;
 
 use async_trait::async_trait;
 use containerd_shim_protos::{
-    api::Empty,
+    api::{Empty, Envelope},
     protobuf::MessageDyn,
     shim::events,
     shim_async::{Client, Events, EventsClient},
     ttrpc,
     ttrpc::{context::Context, r#async::TtrpcContext},
 };
+use log::debug;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::{
-    error::Result,
+    asynchronous::Arc,
+    error::{self, Result},
     util::{asyncify, connect, convert_to_any, timestamp},
 };
+//Mas queue size
+const QUEUE_SIZE: i64 = 1024;
+//Max try five times
+const MAX_REQUEUE: i64 = 5;
 
 /// Async Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
-    client: EventsClient,
+    pub address: String,
+    client: Arc<Mutex<EventsClient>>,
+    sender: mpsc::Sender<Item>,
+    receiver: Arc<Mutex<mpsc::Receiver<Item>>>,
 }
 
+#[derive(Clone)]
+pub struct Item {
+    ev: Envelope,
+    ctx: Context,
+    count: i64,
+}
 impl RemotePublisher {
     /// Connect to containerd's TTRPC endpoint asynchronously.
     ///
     /// containerd uses `/run/containerd/containerd.sock.ttrpc` by default
     pub async fn new(address: impl AsRef<str>) -> Result<RemotePublisher> {
-        let client = Self::connect(address).await?;
+        let client = Self::connect(address.as_ref()).await?;
+        let (sender, receiver) = mpsc::channel::<Item>(QUEUE_SIZE as usize);
+        let rt = RemotePublisher {
+            address: address.as_ref().to_string(),
+            client: Arc::new(Mutex::new(EventsClient::new(client))),
+            sender,
+            receiver: Arc::new(Mutex::new(receiver)),
+        };
+        rt.process_queue().await;
+        Ok(rt)
+    }
+    pub async fn close(&self) {
+        self.receiver.lock().await.close();
+    }
 
-        Ok(RemotePublisher {
-            client: EventsClient::new(client),
-        })
+    pub async fn process_queue(&self) {
+        let receiver = self.receiver.clone();
+        let client = self.client.clone();
+        let sender = self.sender.clone();
+        let address = self.address.clone();
+        tokio::spawn(async move {
+            //only this use receiver
+            let mut recver = receiver.lock().await;
+            while let Some(item) = recver.recv().await {
+                if item.count > MAX_REQUEUE {
+                    debug!("drop event");
+                    continue;
+                }
+                let mut req = events::ForwardRequest::new();
+                req.set_envelope(item.ev.clone());
+                let new_item = Item {
+                    ev: item.ev.clone(),
+                    ctx: item.ctx.clone(),
+                    count: item.count + 1,
+                };
+                if let Err(e) = client
+                    .lock()
+                    .await
+                    .forward(new_item.ctx.clone(), &req)
+                    .await
+                {
+                    debug!("publish error {:?}", e);
+                    // This is a bug from ttrpc, ttrpc should return RemoteClosed error. change it in future
+                    // if e == ttrpc::error::Error::RemoteClosed
+                    // reconnect client
+                    let new_client = Self::connect(address.as_str()).await.map_err(|e| {
+                        debug!("reconnect the ttrpc client {:?} fail", e);
+                    });
+                    //client change
+                    if let Ok(c) = new_client {
+                        *client.lock().await = EventsClient::new(c);
+                    }
+                    let sender_ref = sender.clone();
+                    tokio::spawn(async move {
+                        //wait for time and send for imporving the succeuss ratio
+                        tokio::time::sleep(tokio::time::Duration::from_secs(new_item.count as u64))
+                            .await;
+                        //if channel send fail ,release it after 3 seconds
+                        let _ = sender_ref
+                            .send_timeout(new_item, tokio::time::Duration::from_secs(3))
+                            .await;
+                    });
+                }
+            }
+        });
     }
 
     async fn connect(address: impl AsRef<str>) -> Result<Client> {
@@ -76,10 +152,22 @@ impl RemotePublisher {
         envelope.set_timestamp(timestamp()?);
         envelope.set_event(convert_to_any(event)?);
 
+        let item = Item {
+            ev: envelope.clone(),
+            ctx: ctx.clone(),
+            count: 0,
+        };
         let mut req = events::ForwardRequest::new();
         req.set_envelope(envelope);
 
-        self.client.forward(ctx, &req).await?;
+        if let Err(e) = self.client.lock().await.forward(ctx, &req).await {
+            //if channel send fail ,release it after 3 seconds
+            let _ = self
+                .sender
+                .send_timeout(item, tokio::time::Duration::from_secs(3))
+                .await;
+            return Err(error::Error::Ttrpc(e));
+        }
 
         Ok(())
     }
@@ -92,7 +180,11 @@ impl Events for RemotePublisher {
         _ctx: &TtrpcContext,
         req: events::ForwardRequest,
     ) -> ttrpc::Result<Empty> {
-        self.client.forward(Context::default(), &req).await
+        self.client
+            .lock()
+            .await
+            .forward(Context::default(), &req)
+            .await
     }
 }
 
