@@ -37,6 +37,9 @@ jobs:
       - run: cargo doc --no-deps --features docs
         env:
           RUSTDOCFLAGS: -Dwarnings
+      
+      - name: check unused dependencies
+        uses: bnjbvr/cargo-machete@v0.7.0
 
   # TODO: Merge this with the checks job above
   windows-checks:
