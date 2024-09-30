@@ -16,24 +16,42 @@
 
 use std::os::unix::io::RawFd;
 
-use async_trait::async_trait;
 use containerd_shim_protos::{
-    api::Empty,
+    api::Envelope,
     protobuf::MessageDyn,
     shim::events,
-    shim_async::{Client, Events, EventsClient},
+    shim_async::{Client, EventsClient},
     ttrpc,
-    ttrpc::{context::Context, r#async::TtrpcContext},
+    ttrpc::context::Context,
 };
+use log::debug;
+use tokio::sync::mpsc;
 
 use crate::{
-    error::Result,
+    error::{self, Result},
     util::{asyncify, connect, convert_to_any, timestamp},
 };
 
+/// The publisher reports events and uses a queue to retry the event reporting.
+/// The maximum number of attempts to report is 5 times.
+/// When the ttrpc client fails to report, it attempts to reconnect to the client and report.
+
+/// Max queue size
+const QUEUE_SIZE: i64 = 1024;
+/// Max try five times
+const MAX_REQUEUE: i64 = 5;
+
 /// Async Remote publisher connects to containerd's TTRPC endpoint to publish events from shim.
 pub struct RemotePublisher {
-    client: EventsClient,
+    pub address: String,
+    sender: mpsc::Sender<Item>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Item {
+    ev: Envelope,
+    ctx: Context,
+    count: i64,
 }
 
 impl RemotePublisher {
@@ -41,11 +59,65 @@ impl RemotePublisher {
     ///
     /// containerd uses `/run/containerd/containerd.sock.ttrpc` by default
     pub async fn new(address: impl AsRef<str>) -> Result<RemotePublisher> {
-        let client = Self::connect(address).await?;
+        let client = Self::connect(address.as_ref()).await?;
+        // Init the queue channel
+        let (sender, receiver) = mpsc::channel::<Item>(QUEUE_SIZE as usize);
+        let rt = RemotePublisher {
+            address: address.as_ref().to_string(),
+            sender,
+        };
+        rt.process_queue(client, receiver).await;
+        Ok(rt)
+    }
 
-        Ok(RemotePublisher {
-            client: EventsClient::new(client),
-        })
+    /// Process_queue for push events
+    ///
+    /// This is a loop task for dealing event tasks
+    pub async fn process_queue(&self, ttrpc_client: Client, mut receiver: mpsc::Receiver<Item>) {
+        let mut client = EventsClient::new(ttrpc_client);
+        let sender = self.sender.clone();
+        let address = self.address.clone();
+        tokio::spawn(async move {
+            // only this use receiver
+            while let Some(item) = receiver.recv().await {
+                // drop this event after MAX_REQUEUE try
+                if item.count > MAX_REQUEUE {
+                    debug!("drop event {:?}", item);
+                    continue;
+                }
+                let mut req = events::ForwardRequest::new();
+                req.set_envelope(item.ev.clone());
+                let new_item = Item {
+                    ev: item.ev.clone(),
+                    ctx: item.ctx.clone(),
+                    count: item.count + 1,
+                };
+                if let Err(e) = client.forward(new_item.ctx.clone(), &req).await {
+                    debug!("publish error {:?}", e);
+                    // This is a bug from ttrpc, ttrpc should return RemoteClosed|ClientClosed error. change it in future
+                    // if e == (ttrpc::error::Error::RemoteClosed || ttrpc::error::Error::ClientClosed)
+                    // reconnect client
+                    let new_client = Self::connect(address.as_str()).await.map_err(|e| {
+                        debug!("reconnect the ttrpc client {:?} fail", e);
+                    });
+                    if let Ok(c) = new_client {
+                        client = EventsClient::new(c);
+                    }
+                    let sender_ref = sender.clone();
+                    // Take a another task requeue , for no blocking the recv task
+                    tokio::spawn(async move {
+                        // wait for few time and send for imporving the success ratio
+                        tokio::time::sleep(tokio::time::Duration::from_secs(new_item.count as u64))
+                            .await;
+                        // if channel is full and send fail ,release it after 3 seconds
+                        let _ = sender_ref
+                            .send_timeout(new_item, tokio::time::Duration::from_secs(3))
+                            .await;
+                    });
+                }
+            }
+        });
+        debug!("publisher 'process_queue' quit complete");
     }
 
     async fn connect(address: impl AsRef<str>) -> Result<Client> {
@@ -76,23 +148,19 @@ impl RemotePublisher {
         envelope.set_timestamp(timestamp()?);
         envelope.set_event(convert_to_any(event)?);
 
-        let mut req = events::ForwardRequest::new();
-        req.set_envelope(envelope);
+        let item = Item {
+            ev: envelope.clone(),
+            ctx: ctx.clone(),
+            count: 0,
+        };
 
-        self.client.forward(ctx, &req).await?;
+        //if channel is full and send fail ,release it after 3 seconds
+        self.sender
+            .send_timeout(item, tokio::time::Duration::from_secs(3))
+            .await
+            .map_err(|e| error::Error::Ttrpc(ttrpc::error::Error::Others(e.to_string())))?;
 
         Ok(())
-    }
-}
-
-#[async_trait]
-impl Events for RemotePublisher {
-    async fn forward(
-        &self,
-        _ctx: &TtrpcContext,
-        req: events::ForwardRequest,
-    ) -> ttrpc::Result<Empty> {
-        self.client.forward(Context::default(), &req).await
     }
 }
 
@@ -103,10 +171,11 @@ mod tests {
         sync::Arc,
     };
 
+    use async_trait::async_trait;
     use containerd_shim_protos::{
         api::{Empty, ForwardRequest},
         events::task::TaskOOM,
-        shim_async::create_events,
+        shim_async::{create_events, Events},
         ttrpc::asynchronous::Server,
     };
     use tokio::sync::{
@@ -115,6 +184,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::publisher::ttrpc::r#async::TtrpcContext;
 
     struct FakeServer {
         tx: Sender<i32>,
