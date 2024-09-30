@@ -13,22 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+
 #[cfg(not(feature = "async"))]
 use std::io::{Read, Write};
 use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
     io::Result,
-    os::unix::{fs::OpenOptionsExt, io::AsRawFd},
+    os::unix::fs::OpenOptionsExt,
     process::Stdio,
     sync::Mutex,
 };
-
-use log::debug;
-use nix::unistd::{Gid, Uid};
-use os_pipe::{PipeReader, PipeWriter};
 #[cfg(feature = "async")]
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::unix::pipe::{self, Receiver, Sender};
 
 use crate::Command;
 
@@ -100,8 +98,8 @@ impl Default for IOOption {
 /// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
-    rd: PipeReader,
-    wr: PipeWriter,
+    rd: Mutex<Option<Receiver>>,
+    wr: Mutex<Option<Sender>>,
 }
 
 #[derive(Debug)]
@@ -113,8 +111,11 @@ pub struct PipedIo {
 
 impl Pipe {
     fn new() -> std::io::Result<Self> {
-        let (rd, wr) = os_pipe::pipe()?;
-        Ok(Self { rd, wr })
+        let (rd, wr) = pipe::pipe()?;
+        Ok(Self {
+            rd: Mutex::new(Some(wr)),
+            wr: Mutex::new(Some(rd)),
+        })
     }
 }
 
@@ -128,25 +129,16 @@ impl PipedIo {
     }
 
     fn create_pipe(
-        uid: u32,
-        gid: u32,
+        _uid: u32,
+        _gid: u32,
         enabled: bool,
-        stdin: bool,
+        _stdin: bool,
     ) -> std::io::Result<Option<Pipe>> {
         if !enabled {
             return Ok(None);
         }
 
         let pipe = Pipe::new()?;
-        let uid = Some(Uid::from_raw(uid));
-        let gid = Some(Gid::from_raw(gid));
-        if stdin {
-            let rd = pipe.rd.try_clone()?;
-            nix::unistd::fchown(rd.as_raw_fd(), uid, gid)?;
-        } else {
-            let wr = pipe.wr.try_clone()?;
-            nix::unistd::fchown(wr.as_raw_fd(), uid, gid)?;
-        }
         Ok(Some(pipe))
     }
 }
@@ -154,94 +146,140 @@ impl PipedIo {
 impl Io for PipedIo {
     #[cfg(not(feature = "async"))]
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
-        self.stdin.as_ref().and_then(|pipe| {
-            pipe.wr
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
-                .ok()
-        })
+        self.stdin
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.wr.try_lock() {
+                    if let Some(writer) = guard.take() {
+                        return Some(Box::new(writer) as Box<dyn Write + Send + Sync>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     #[cfg(feature = "async")]
     fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
-        self.stdin.as_ref().and_then(|pipe| {
-            let fd = pipe.wr.as_raw_fd();
-            tokio_pipe::PipeWrite::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncWrite + Send + Sync + Unpin>)
-                .ok()
-        })
+        self.stdin
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.wr.try_lock() {
+                    if let Some(writer) = guard.take() {
+                        return Some(Box::new(writer) as Box<dyn AsyncWrite + Send + Sync + Unpin>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     #[cfg(not(feature = "async"))]
     fn stdout(&self) -> Option<Box<dyn Read + Send>> {
-        self.stdout.as_ref().and_then(|pipe| {
-            pipe.rd
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Read + Send>)
-                .ok()
-        })
+        self.stdout
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.rd.try_lock() {
+                    if let Some(reader) = guard.take() {
+                        return Some(Box::new(reader) as Box<dyn Read + Send + Sync>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     #[cfg(feature = "async")]
     fn stdout(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
-        self.stdout.as_ref().and_then(|pipe| {
-            let fd = pipe.rd.as_raw_fd();
-            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
-                .ok()
-        })
+        self.stdout
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.rd.try_lock() {
+                    if let Some(reader) = guard.take() {
+                        return Some(Box::new(reader) as Box<dyn AsyncRead + Send + Sync + Unpin>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     #[cfg(not(feature = "async"))]
     fn stderr(&self) -> Option<Box<dyn Read + Send>> {
-        self.stderr.as_ref().and_then(|pipe| {
-            pipe.rd
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Read + Send>)
-                .ok()
-        })
+        self.stderr
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.rd.try_lock() {
+                    if let Some(reader) = guard.take() {
+                        return Some(Box::new(reader) as Box<dyn Read + Send>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     #[cfg(feature = "async")]
     fn stderr(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
-        self.stderr.as_ref().and_then(|pipe| {
-            let fd = pipe.rd.as_raw_fd();
-            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
-                .ok()
-        })
+        self.stderr
+            .as_ref()
+            .map(|pipe| {
+                if let Ok(mut guard) = pipe.rd.try_lock() {
+                    if let Some(reader) = guard.take() {
+                        return Some(Box::new(reader) as Box<dyn AsyncRead + Send + Sync + Unpin>);
+                    }
+                }
+                None
+            })
+            .unwrap_or(None)
     }
 
     // Note that this internally use [`std::fs::File`]'s `try_clone()`.
     // Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
         if let Some(p) = self.stdin.as_ref() {
-            let pr = p.rd.try_clone()?;
-            cmd.stdin(pr);
+            let pr =
+                p.rd.lock()
+                    .map_err(|e| std::io::Error::other(e.to_string()))?
+                    .take();
+            if let Some(pr) = pr {
+                cmd.stdin(
+                    pr.into_blocking_fd()
+                        .map_err(|e| std::io::Error::other(e.to_string()))?,
+                );
+            }
         }
 
         if let Some(p) = self.stdout.as_ref() {
-            let pw = p.wr.try_clone()?;
-            cmd.stdout(pw);
+            let pw =
+                p.wr.lock()
+                    .map_err(|e| std::io::Error::other(e.to_string()))?
+                    .take();
+            if let Some(pw) = pw {
+                cmd.stdout(
+                    pw.into_blocking_fd()
+                        .map_err(|e| std::io::Error::other(e.to_string()))?,
+                );
+            }
         }
 
         if let Some(p) = self.stderr.as_ref() {
-            let pw = p.wr.try_clone()?;
-            cmd.stdout(pw);
+            let pw =
+                p.wr.lock()
+                    .map_err(|e| std::io::Error::other(e.to_string()))?
+                    .take();
+            if let Some(pw) = pw {
+                cmd.stderr(
+                    pw.into_blocking_fd()
+                        .map_err(|e| std::io::Error::other(e.to_string()))?,
+                );
+            }
         }
 
         Ok(())
     }
 
-    fn close_after_start(&self) {
-        if let Some(p) = self.stdout.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
-        }
-
-        if let Some(p) = self.stderr.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
-        }
-    }
+    fn close_after_start(&self) {}
 }
 
 /// IO driver to direct output/error messages to /dev/null.
