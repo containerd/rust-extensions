@@ -1,6 +1,6 @@
 [package]
 name = "containerd-shim"
-version = "0.7.2"
+version = "0.7.3"
 authors = [
   "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
   "The containerd Authors",
@@ -34,7 +34,7 @@ name = "windows-log-reader"
 path = "examples/windows_log_reader.rs"
 
 [dependencies]
-containerd-shim-protos = { path = "../shim-protos", version = "0.7.0" }
+containerd-shim-protos = { path = "../shim-protos", version = "0.7.1" }
 go-flag = "0.1.0"
 lazy_static = "1.4.0"
 libc.workspace = true
