@@ -26,7 +26,7 @@ const FIXUP_MODULES: &[&str] = &["containerd.services.snapshots.v1"];
 fn main() {
     tonic_build::configure()
         .build_server(true)
-        .compile(PROTO_FILES, &["vendor/"])
+        .compile_protos(PROTO_FILES, &["vendor/"])
         .expect("Failed to generate GRPC bindings");
 
     for module in FIXUP_MODULES {
