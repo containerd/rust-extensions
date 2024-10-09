@@ -137,7 +137,6 @@ where
         let process = self.get_mut_process(exec_id_opt);
         match process {
             Ok(p) => p.delete().await?,
-            Err(Error::NotFoundError(_)) => return Ok((pid, code, exited_at)),
             Err(e) => return Err(e),
         }
         if let Some(exec_id) = exec_id_opt {
