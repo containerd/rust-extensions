@@ -383,7 +383,6 @@ impl Runc {
                 Ok(())
             });
         }
-
         let (status, pid, stdout, stderr) = self.spawner.execute(cmd).await?;
         if status.success() {
             let output = if combined_output {
@@ -425,6 +424,7 @@ impl Runc {
         }
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
+
         match opts {
             Some(CreateOpts { io: Some(io), .. }) => {
                 io.set(&mut cmd).map_err(Error::UnavailableIO)?;
@@ -618,6 +618,7 @@ impl Spawner for DefaultExecutor {
         let mut cmd = cmd;
         let child = cmd.spawn().map_err(Error::ProcessSpawnFailed)?;
         let pid = child.id().unwrap();
+
         let result = child
             .wait_with_output()
             .await
