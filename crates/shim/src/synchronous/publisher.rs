@@ -188,8 +188,7 @@ mod tests {
             use std::os::unix::{io::AsRawFd, net::UnixListener};
             let listener = UnixListener::bind(server_address).unwrap();
             listener.set_nonblocking(true).unwrap();
-            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
-            let service = client::create_events(t);
+            let service = client::create_events(Arc::new(FakeServer {}));
             let server = Server::new()
                 .add_listener(listener.as_raw_fd())
                 .unwrap()
@@ -200,8 +199,7 @@ mod tests {
 
         #[cfg(windows)]
         {
-            let t = Arc::new(Box::new(FakeServer {}) as Box<dyn Events + Send + Sync>);
-            let service = client::create_events(t);
+            let service = client::create_events(Arc::new(FakeServer {}));
 
             Server::new()
                 .bind(server_address)
