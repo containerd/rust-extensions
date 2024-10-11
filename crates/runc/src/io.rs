@@ -19,16 +19,19 @@ use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
     io::Result,
-    os::unix::{fs::OpenOptionsExt, io::AsRawFd},
+    os::unix::{
+        fs::OpenOptionsExt,
+        io::{AsRawFd, OwnedFd},
+    },
     process::Stdio,
     sync::Mutex,
 };
 
 use log::debug;
 use nix::unistd::{Gid, Uid};
-use os_pipe::{PipeReader, PipeWriter};
 #[cfg(feature = "async")]
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::unix::pipe;
 
 use crate::Command;
 
@@ -100,8 +103,8 @@ impl Default for IOOption {
 /// When one side of the pipe is closed, the state will be represented with [`None`].
 #[derive(Debug)]
 pub struct Pipe {
-    rd: PipeReader,
-    wr: PipeWriter,
+    rd: OwnedFd,
+    wr: OwnedFd,
 }
 
 #[derive(Debug)]
@@ -113,7 +116,9 @@ pub struct PipedIo {
 
 impl Pipe {
     fn new() -> std::io::Result<Self> {
-        let (rd, wr) = os_pipe::pipe()?;
+        let (tx, rx) = pipe::pipe()?;
+        let rd = tx.into_blocking_fd()?;
+        let wr = rx.into_blocking_fd()?;
         Ok(Self { rd, wr })
     }
 }
