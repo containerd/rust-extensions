@@ -17,4 +17,5 @@
 #[cfg(windows)]
 pub(crate) mod windows;
 #[cfg(windows)]
+#[allow(unused_imports)]
 pub use crate::sys::windows::NamedPipeLogger;
