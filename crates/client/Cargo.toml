@@ -49,3 +49,6 @@ default = ["connect"]
 
 [package.metadata.docs.rs]
 features = ["docs"]
+
+[package.metadata.cargo-machete]
+ignored = ["prost"]
