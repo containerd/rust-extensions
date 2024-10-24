@@ -160,6 +160,23 @@ jobs:
         with:
           go-version: '1.20.12'
 
+      - name: Install containerd dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gperf dmsetup strace xfsprogs
+          script/setup/install-seccomp
+          script/setup/install-runc
+          script/setup/install-cni $(grep containernetworking/plugins go.mod | awk '{print $2}')
+          script/setup/install-critools
+          script/setup/install-failpoint-binaries
+        working-directory: src/github.com/containerd/containerd
+
+      - name: cri-integration
+        env:
+          RUNC_FLAVOR: "runc"
+        run: |
+          sudo -E PATH=$PATH CONTAINERD_RUNTIME=io.containerd.runc.v2-rs make BUILDTAGS="no_btrfs" cri-integration
+        working-directory: src/github.com/containerd/containerd
       - name: Integration
         env:
           TEST_RUNTIME: "io.containerd.runc.v2-rs"
@@ -171,7 +188,6 @@ jobs:
         run: |
           sudo -E PATH=$PATH make integration
         working-directory: src/github.com/containerd/containerd
-
   windows-integration:
     name: Windows Integration
     runs-on: ${{ matrix.os }}
