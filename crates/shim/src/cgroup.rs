@@ -71,7 +71,7 @@ pub fn add_task_to_cgroup(path: &str, pid: u32) -> Result<()> {
 
     Cgroup::load(h, path)
         .add_task_by_tgid(CgroupPid::from(pid as u64))
-        .map_err(other_error!(e, "add task to cgroup"))
+        .map_err(other_error!("add task to cgroup"))
 }
 
 /// Sets the OOM score for the process to the parents OOM score + 1
@@ -92,7 +92,7 @@ fn read_process_oom_score(pid: u32) -> Result<i64> {
     let score = content
         .trim()
         .parse::<i64>()
-        .map_err(other_error!(e, "parse oom score"))?;
+        .map_err(other_error!("parse oom score"))?;
     Ok(score)
 }
 
@@ -164,7 +164,7 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
                 pid_stats.set_current(
                     pid_ctr
                         .get_pid_current()
-                        .map_err(other_error!(e, "get current pid"))?,
+                        .map_err(other_error!("get current pid"))?,
                 );
                 pid_stats.set_limit(
                     pid_ctr
@@ -174,7 +174,7 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
                             cgroups_rs::MaxValue::Max => 0,
                             cgroups_rs::MaxValue::Value(val) => val as u64,
                         })
-                        .map_err(other_error!(e, "get pid limit"))?,
+                        .map_err(other_error!("get pid limit"))?,
                 );
                 metrics.set_pids(pid_stats)
             }
@@ -193,8 +193,8 @@ fn get_cgroup(pid: u32) -> Result<Cgroup> {
         Cgroup::load(hierarchies, path)
     } else {
         // get container main process cgroup
-        let path = get_cgroups_relative_paths_by_pid(pid)
-            .map_err(other_error!(e, "get process cgroup"))?;
+        let path =
+            get_cgroups_relative_paths_by_pid(pid).map_err(other_error!("get process cgroup"))?;
         Cgroup::load_with_relative_paths(hierarchies::auto(), Path::new("."), path)
     };
     Ok(cgroup)
@@ -243,7 +243,7 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                 if let Some(pids) = resources.pids() {
                     pid_ctr
                         .set_pid_max(MaxValue::Value(pids.limit()))
-                        .map_err(other_error!(e, "set pid max"))?;
+                        .map_err(other_error!("set pid max"))?;
                 }
             }
             Subsystem::Mem(mem_ctr) => {
@@ -257,24 +257,24 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                         if current < swap {
                             mem_ctr
                                 .set_memswap_limit(swap)
-                                .map_err(other_error!(e, "set memsw limit"))?;
+                                .map_err(other_error!("set memsw limit"))?;
                             mem_ctr
                                 .set_limit(limit)
-                                .map_err(other_error!(e, "set mem limit"))?;
+                                .map_err(other_error!("set mem limit"))?;
                         }
                     }
                     // set memory limit in bytes
                     if let Some(limit) = memory.limit() {
                         mem_ctr
                             .set_limit(limit)
-                            .map_err(other_error!(e, "set mem limit"))?;
+                            .map_err(other_error!("set mem limit"))?;
                     }
 
                     // set memory swap limit in bytes
                     if let Some(swap) = memory.swap() {
                         mem_ctr
                             .set_memswap_limit(swap)
-                            .map_err(other_error!(e, "set memsw limit"))?;
+                            .map_err(other_error!("set memsw limit"))?;
                     }
                 }
             }
@@ -284,14 +284,14 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                     if let Some(cpus) = cpu.cpus() {
                         cpuset_ctr
                             .set_cpus(cpus)
-                            .map_err(other_error!(e, "set CPU sets"))?;
+                            .map_err(other_error!("set CPU sets"))?;
                     }
 
                     // set list of memory nodes in the cpuset
                     if let Some(mems) = cpu.mems() {
                         cpuset_ctr
                             .set_mems(mems)
-                            .map_err(other_error!(e, "set CPU memes"))?;
+                            .map_err(other_error!("set CPU memes"))?;
                     }
                 }
             }
@@ -301,21 +301,21 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                     if let Some(shares) = cpu.shares() {
                         cpu_ctr
                             .set_shares(shares)
-                            .map_err(other_error!(e, "set CPU share"))?;
+                            .map_err(other_error!("set CPU share"))?;
                     }
 
                     // set CPU hardcap limit
                     if let Some(quota) = cpu.quota() {
                         cpu_ctr
                             .set_cfs_quota(quota)
-                            .map_err(other_error!(e, "set CPU quota"))?;
+                            .map_err(other_error!("set CPU quota"))?;
                     }
 
                     // set CPU hardcap period
                     if let Some(period) = cpu.period() {
                         cpu_ctr
                             .set_cfs_period(period)
-                            .map_err(other_error!(e, "set CPU period"))?;
+                            .map_err(other_error!("set CPU period"))?;
                     }
                 }
             }
@@ -325,7 +325,7 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
                     for limit in hp_limits {
                         ht_ctr
                             .set_limit_in_bytes(limit.page_size().as_str(), limit.limit() as u64)
-                            .map_err(other_error!(e, "set huge page limit"))?;
+                            .map_err(other_error!("set huge page limit"))?;
                     }
                 }
             }
