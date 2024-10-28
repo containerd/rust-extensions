@@ -17,13 +17,15 @@
 #![cfg(target_os = "linux")]
 
 use std::{
+    error::Error as StdError,
     fs,
     io::Read,
     path::{Path, PathBuf},
 };
 
 use cgroups_rs::{
-    cgroup::get_cgroups_relative_paths_by_pid, hierarchies, Cgroup, CgroupPid, MaxValue, Subsystem,
+    cgroup::get_cgroups_relative_paths_by_pid, error::Result as CgResult, hierarchies, Cgroup,
+    CgroupPid, MaxValue, Subsystem,
 };
 use containerd_shim_protos::{
     cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle},
@@ -160,21 +162,34 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
                 metrics.set_memory(mem_stat);
             }
             Subsystem::Pid(pid_ctr) => {
+                // ignore cgroup NotFound error
+                let ignore_err = |cr: CgResult<u64>| -> CgResult<u64> {
+                    cr.or_else(|e| {
+                        if e.source()
+                            .and_then(<dyn StdError>::downcast_ref::<std::io::Error>)
+                            .map(std::io::Error::kind)
+                            == Some(std::io::ErrorKind::NotFound)
+                        {
+                            Ok(0)
+                        } else {
+                            Err(e)
+                        }
+                    })
+                };
+
                 let mut pid_stats = PidsStat::new();
                 pid_stats.set_current(
-                    pid_ctr
-                        .get_pid_current()
+                    ignore_err(pid_ctr.get_pid_current())
                         .map_err(other_error!("get current pid"))?,
                 );
+
                 pid_stats.set_limit(
-                    pid_ctr
-                        .get_pid_max()
-                        .map(|val| match val {
-                            // See https://github.com/opencontainers/runc/blob/dbe8434359ca35af1c1e10df42b1f4391c1e1010/libcontainer/cgroups/fs/pids.go#L55
-                            cgroups_rs::MaxValue::Max => 0,
-                            cgroups_rs::MaxValue::Value(val) => val as u64,
-                        })
-                        .map_err(other_error!("get pid limit"))?,
+                    ignore_err(pid_ctr.get_pid_max().map(|val| match val {
+                        // See https://github.com/opencontainers/runc/blob/dbe8434359ca35af1c1e10df42b1f4391c1e1010/libcontainer/cgroups/fs/pids.go#L55
+                        cgroups_rs::MaxValue::Max => 0,
+                        cgroups_rs::MaxValue::Value(val) => val as u64,
+                    }))
+                    .map_err(other_error!("get pid limit"))?,
                 );
                 metrics.set_pids(pid_stats)
             }
