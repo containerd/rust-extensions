@@ -340,7 +340,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             .runtime
             .ps(&p.id)
             .await
-            .map_err(other_error!(e, "failed to execute runc ps"))?;
+            .map_err(other_error!("failed to execute runc ps"))?;
         Ok(pids
             .iter()
             .map(|&x| ProcessInfo {

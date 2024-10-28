@@ -181,7 +181,7 @@ pub fn create_runc(
     }
     gopts
         .build()
-        .map_err(other_error!(e, "unable to create runc instance"))
+        .map_err(other_error!("unable to create runc instance"))
 }
 
 #[derive(Default)]

@@ -93,7 +93,7 @@ pub async fn register_memory_event(
     let path = cg_dir.join(event_name);
     let event_file = fs::File::open(path.clone())
         .await
-        .map_err(other_error!(e, "Error get path:"))?;
+        .map_err(other_error!("Error get path:"))?;
 
     let eventfd = EventFd::from_value_and_flags(0, EfdFlags::EFD_CLOEXEC)?;
 
@@ -101,7 +101,7 @@ pub async fn register_memory_event(
     let data = format!("{} {}", eventfd.as_raw_fd(), event_file.as_raw_fd());
     fs::write(&event_control_path, data.clone())
         .await
-        .map_err(other_error!(e, "Error write eventfd:"))?;
+        .map_err(other_error!("Error write eventfd:"))?;
 
     let mut buf = [0u8; 8];
 

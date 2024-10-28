@@ -143,7 +143,7 @@ async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
             "memory.oom_control",
         )
         .await
-        .map_err(other_error!(e, "register_memory_event failed:"))?;
+        .map_err(other_error!("register_memory_event failed:"))?;
 
         run_oom_monitor(rx, id.to_string(), tx);
     }
