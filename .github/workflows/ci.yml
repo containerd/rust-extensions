@@ -222,7 +222,7 @@ jobs:
           # run the example
           cargo run -p containerd-shim --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd"  -publish-binary ./bin/containerd start
           ps skeleton
-          cargo run -p containerd-shim-protos --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
+          cargo run -p containerd-shim-protos --example shim-proto-connect \\.\pipe\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe
           $skeleton = get-process skeleton -ErrorAction SilentlyContinue
           if ($skeleton) { exit 1 }
       - name: Run client
