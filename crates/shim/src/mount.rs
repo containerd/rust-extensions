@@ -22,6 +22,8 @@ use std::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
     path::Path,
 };
+#[cfg(target_os = "linux")]
+use std::{fs::File, os::fd::AsRawFd};
 
 use lazy_static::lazy_static;
 use log::error;
@@ -42,7 +44,62 @@ struct Flag {
     flags: MsFlags,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Default)]
+pub struct LoopParams {
+    readonly: bool,
+    auto_clear: bool,
+    direct: bool,
+}
+
+#[cfg(target_os = "linux")]
+#[repr(C)]
+#[derive(Debug)]
+pub struct LoopInfo {
+    device: u64,
+    inode: u64,
+    rdevice: u64,
+    offset: u64,
+    size_limit: u64,
+    number: u32,
+    encrypt_type: u32,
+    encrypt_key_size: u32,
+    flags: u32,
+    file_name: [u8; 64],
+    crypt_name: [u8; 64],
+    encrypt_key: [u8; 32],
+    init: [u64; 2],
+}
+
+#[cfg(target_os = "linux")]
+impl Default for LoopInfo {
+    fn default() -> Self {
+        LoopInfo {
+            device: 0,
+            inode: 0,
+            rdevice: 0,
+            offset: 0,
+            size_limit: 0,
+            number: 0,
+            encrypt_type: 0,
+            encrypt_key_size: 0,
+            flags: 0,
+            file_name: [0; 64],
+            crypt_name: [0; 64],
+            encrypt_key: [0; 32],
+            init: [0; 2],
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
+#[cfg(target_os = "linux")]
+const LOOP_CONTROL_PATH: &str = "/dev/loop-control";
+#[cfg(target_os = "linux")]
+const LOOP_DEV_FORMAT: &str = "/dev/loop";
+#[cfg(target_os = "linux")]
+const EBUSY_STRING: &str = "device or resource busy";
 
 #[cfg(target_os = "linux")]
 lazy_static! {
@@ -543,6 +600,8 @@ pub fn mount_rootfs(
 
     let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
     let mut data = Vec::new();
+    let mut lo_setup = false;
+    let mut loop_params = LoopParams::default();
     options.iter().for_each(|x| {
         if let Some(f) = MOUNT_FLAGS.get(x.as_str()) {
             if f.clear {
@@ -550,6 +609,8 @@ pub fn mount_rootfs(
             } else {
                 flags.bitor_assign(f.flags)
             }
+        } else if x.as_str() == "loop" {
+            lo_setup = true;
         } else {
             data.push(x.as_str())
         }
@@ -570,9 +631,23 @@ pub fn mount_rootfs(
     }
     // mount with non-propagation first, or remount with changed data
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
+    if lo_setup {
+        loop_params = LoopParams {
+            readonly: oflags.bitand(MsFlags::MS_RDONLY) == MsFlags::MS_RDONLY,
+            auto_clear: true,
+            direct: false,
+        };
+    }
     let zero: MsFlags = MsFlags::from_bits(0).unwrap();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
-        mount(source, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
+        let mut lo_file = String::new();
+        let s = if lo_setup {
+            lo_file = setup_loop(source, loop_params)?;
+            Some(lo_file.as_str())
+        } else {
+            source
+        };
+        mount(s, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
             e,
             "Mount {:?} to {}",
             source,
@@ -613,6 +688,164 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     Err(Error::Unimplemented("start".to_string()))
+}
+
+#[cfg(target_os = "linux")]
+pub fn setup_loop(source: Option<&str>, params: LoopParams) -> Result<String> {
+    if source.is_none() {
+        return Err(Error::Other("not exist".to_string()));
+    }
+    for _ in 0..100 {
+        let num = get_free_loop_dev()?;
+        let loop_dev = format!("{}{}", LOOP_DEV_FORMAT, num);
+        match setup_loop_dev(source.unwrap(), loop_dev.as_str(), &params) {
+            Ok(_) => return Ok(loop_dev),
+            Err(e) => {
+                if e.to_string().contains(EBUSY_STRING) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Err(Error::Other(
+        "creating new loopback device after 100 times".to_string(),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_free_loop_dev() -> Result<i32> {
+    const LOOP_CTL_GET_FREE: i32 = 0x4c82;
+    let loop_control = File::options()
+        .read(true)
+        .write(true)
+        .open(LOOP_CONTROL_PATH)
+        .map_err(|e| Error::IoError {
+            context: format!("open {} error: ", LOOP_CONTROL_PATH),
+            err: e,
+        })?;
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_control.as_raw_fd() as libc::c_int,
+            LOOP_CTL_GET_FREE as libc::c_ulong,
+        ) as i32;
+        #[cfg(target_env = "musl")]
+        let ret = libc::ioctl(
+            loop_control.as_raw_fd() as libc::c_int,
+            LOOP_CTL_GET_FREE as libc::c_int,
+        ) as i32;
+        match nix::errno::Errno::result(ret) {
+            Ok(ret) => Ok(ret),
+            Err(e) => Err(Error::Nix(e)),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn setup_loop_dev(backing_file: &str, loop_dev: &str, params: &LoopParams) -> Result<File> {
+    const LOOP_SET_FD: u32 = 0x4c00;
+    const LOOP_CLR_FD: u32 = 0x4c01;
+    const LOOP_SET_STATUS64: u32 = 0x4c04;
+    const LOOP_SET_DIRECT_IO: u32 = 0x4c08;
+    const LO_FLAGS_READ_ONLY: u32 = 0x1;
+    const LO_FLAGS_AUTOCLEAR: u32 = 0x4;
+    let mut open_options = File::options();
+    open_options.read(true);
+    if !params.readonly {
+        open_options.write(true);
+    }
+    // 1. open backing file
+    let back = open_options
+        .open(backing_file)
+        .map_err(|e| Error::IoError {
+            context: format!("open {} error: ", backing_file),
+            err: e,
+        })?;
+    let loop_dev = open_options.open(loop_dev).map_err(|e| Error::IoError {
+        context: format!("open {} error: ", loop_dev),
+        err: e,
+    })?;
+    // 2. set FD
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_FD as libc::c_ulong,
+            back.as_raw_fd() as libc::c_int,
+        );
+        #[cfg(target_env = "musl")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_FD as libc::c_int,
+            back.as_raw_fd() as libc::c_int,
+        );
+        if let Err(e) = nix::errno::Errno::result(ret) {
+            return Err(Error::Nix(e));
+        }
+    }
+    // 3. set info
+    let mut info = LoopInfo::default();
+    info.file_name[..backing_file.as_bytes().len()].copy_from_slice(backing_file.as_bytes());
+    if params.readonly {
+        info.flags |= LO_FLAGS_READ_ONLY;
+    }
+
+    if params.auto_clear {
+        info.flags |= LO_FLAGS_AUTOCLEAR;
+    }
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_STATUS64 as libc::c_ulong,
+            info,
+        );
+        #[cfg(target_env = "musl")]
+        if let Err(e) = nix::errno::Errno::result(ret) {
+            libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_CLR_FD as libc::c_int,
+                0,
+            );
+            return Err(Error::Nix(e));
+        }
+    }
+
+    // 4. Set Direct IO
+    if params.direct {
+        unsafe {
+            #[cfg(target_env = "gnu")]
+            let ret = libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_SET_DIRECT_IO as libc::c_ulong,
+                1,
+            );
+            #[cfg(target_env = "musl")]
+            let ret = libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_SET_DIRECT_IO as libc::c_int,
+                1,
+            );
+            if let Err(e) = nix::errno::Errno::result(ret) {
+                #[cfg(target_env = "gnu")]
+                libc::ioctl(
+                    loop_dev.as_raw_fd() as libc::c_int,
+                    LOOP_CLR_FD as libc::c_ulong,
+                    0,
+                );
+                #[cfg(target_env = "musl")]
+                libc::ioctl(
+                    loop_dev.as_raw_fd() as libc::c_int,
+                    LOOP_CLR_FD as libc::c_int,
+                    0,
+                );
+                return Err(Error::Nix(e));
+            }
+        }
+    }
+    Ok(loop_dev)
 }
 
 #[cfg(test)]
