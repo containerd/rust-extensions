@@ -51,7 +51,7 @@ required-features = ["async"]
 async-trait = { workspace = true, optional = true }
 # protobuf 3.5 introduces a breaking change: https://github.com/containerd/rust-extensions/issues/295
 # pinning to <3.5.0 until we can update the generated code
-protobuf = ">= 3.0, <3.5.0"
+protobuf = ">= 3.0, <3.8.0"
 ttrpc = "0.8.2"
 
 [build-dependencies]
