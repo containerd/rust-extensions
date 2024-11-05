@@ -39,7 +39,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{error::Error, io::Io, utils, DefaultExecutor, LogFormat, Runc, Spawner};
+use crate::{error::Error, utils, DefaultExecutor, Io, LogFormat, Runc, Spawner};
 
 // constants for log format
 pub const JSON: &str = "json";
