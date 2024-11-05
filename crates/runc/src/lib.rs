@@ -50,8 +50,14 @@ use async_trait::async_trait;
 use log::debug;
 use oci_spec::runtime::{LinuxResources, Process};
 
+#[cfg(feature = "async")]
+pub use crate::asynchronous::*;
+#[cfg(not(feature = "async"))]
+pub use crate::synchronous::*;
 use crate::{container::Container, error::Error, options::*, utils::write_value_to_temp_file};
 
+#[cfg(feature = "async")]
+pub mod asynchronous;
 pub mod container;
 pub mod error;
 pub mod events;
@@ -59,6 +65,7 @@ pub mod io;
 #[cfg(feature = "async")]
 pub mod monitor;
 pub mod options;
+pub mod synchronous;
 pub mod utils;
 
 pub type Result<T> = std::result::Result<T, crate::error::Error>;
