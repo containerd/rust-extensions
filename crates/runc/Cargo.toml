@@ -20,7 +20,6 @@ libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["user", "fs"] }
 oci-spec.workspace = true
-os_pipe.workspace = true
 path-absolutize = "3.0.11"
 prctl.workspace = true
 serde.workspace = true
