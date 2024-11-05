@@ -43,7 +43,7 @@ use nix::{
 };
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 use runc::{
-    io::{Io, NullIo, FIFO},
+    io::{IOOption, Io, NullIo, PipedIo},
     options::GlobalOpts,
     Runc, Spawner,
 };
@@ -76,8 +76,8 @@ pub struct ProcessIO {
 
 pub fn create_io(
     id: &str,
-    _io_uid: u32,
-    _io_gid: u32,
+    io_uid: u32,
+    io_gid: u32,
     stdio: &Stdio,
 ) -> containerd_shim::Result<ProcessIO> {
     let mut pio = ProcessIO::default();
@@ -106,13 +106,15 @@ pub fn create_io(
             stdio.stdout.as_str(),
             stdio.stderr.as_str()
         );
-        let io = FIFO {
-            stdin: stdio.stdin.to_string().none_if(|x| x.is_empty()),
-            stdout: stdio.stdout.to_string().none_if(|x| x.is_empty()),
-            stderr: stdio.stderr.to_string().none_if(|x| x.is_empty()),
+        let opts = IOOption{
+            open_stdin:!stdio.stdin.is_empty(),
+            open_stdout:!stdio.stdout.is_empty(),
+            open_stderr:!stdio.stdout.is_empty(),
         };
+
+        let io = PipedIo::new(io_uid, io_gid, &opts).unwrap();
         pio.io = Some(Arc::new(io));
-        pio.copy = false;
+        pio.copy = true;
     }
     Ok(pio)
 }
