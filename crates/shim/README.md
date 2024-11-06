@@ -175,7 +175,7 @@ $ cat log
 $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"
 
 $ cargo run --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd" start
-\\.\pipe\containerd-shim-17630016127144989388-pipe
+\\.\pipe\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe
 
 # (Optional) Run the log collector in a separate command window
 # note: log reader won't work if containerd is connected to the named pipe, this works when running manually to help debug locally
@@ -183,8 +183,8 @@ $ cargo run --example windows-log-reader \\.\pipe\containerd-shim-default-1234-l
 Reading logs from: \\.\pipe\containerd-shim-default-1234-log
 <logs will appear after next command>
 
-$ cargo run --example shim-proto-connect \\.\pipe\containerd-shim-17630016127144989388-pipe
-Connecting to \\.\pipe\containerd-shim-17630016127144989388-pipe...
+$ cargo run --example shim-proto-connect \\.\pipe\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe
+Connecting to \\.\pipe\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe...
 Sending `Connect` request...
 Connect response: version: "example"
 Sending `Shutdown` request...

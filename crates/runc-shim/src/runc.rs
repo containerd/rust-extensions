@@ -360,7 +360,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             .runtime
             .ps(&p.id)
             .await
-            .map_err(other_error!(e, "failed to execute runc ps"))?;
+            .map_err(other_error!("failed to execute runc ps"))?;
         Ok(pids
             .iter()
             .map(|&x| ProcessInfo {
@@ -368,6 +368,46 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 ..Default::default()
             })
             .collect())
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn pause(&self, p: &mut InitProcess) -> Result<()> {
+        match p.state {
+            Status::RUNNING => {
+                p.state = Status::PAUSING;
+                if let Err(e) = self.runtime.pause(p.id.as_str()).await {
+                    p.state = Status::RUNNING;
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                p.state = Status::PAUSED;
+                Ok(())
+            }
+            _ => Err(other!("cannot pause when in {:?} state", p.state)),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn pause(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("pause".to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn resume(&self, p: &mut InitProcess) -> Result<()> {
+        match p.state {
+            Status::PAUSED => {
+                if let Err(e) = self.runtime.resume(p.id.as_str()).await {
+                    return Err(runtime_error(&self.bundle, e, "OCI runtime pause failed").await);
+                }
+                p.state = Status::RUNNING;
+                Ok(())
+            }
+            _ => Err(other!("cannot resume when in {:?} state", p.state)),
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn resume(&self, _p: &mut InitProcess) -> Result<()> {
+        Err(Error::Unimplemented("resume".to_string()))
     }
 }
 
@@ -494,6 +534,14 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
 
     async fn ps(&self, _p: &ExecProcess) -> Result<Vec<ProcessInfo>> {
         Err(Error::Unimplemented("exec ps".to_string()))
+    }
+
+    async fn pause(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec pause".to_string()))
+    }
+
+    async fn resume(&self, _p: &mut ExecProcess) -> Result<()> {
+        Err(Error::Unimplemented("exec resume".to_string()))
     }
 }
 

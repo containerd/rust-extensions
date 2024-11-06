@@ -16,7 +16,7 @@
 
 #![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 
-use std::{collections::hash_map::DefaultHasher, fs::File, hash::Hasher, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 #[cfg(unix)]
 use std::{
     os::unix::{io::RawFd, net::UnixListener},
@@ -30,6 +30,7 @@ pub use protos::{
     shim::shim::DeleteResponse,
     ttrpc::{context::Context, Result as TtrpcResult},
 };
+use sha2::{Digest, Sha256};
 
 #[cfg(unix)]
 ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
@@ -173,17 +174,15 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         .join(id)
         .display()
         .to_string();
-
     let hash = {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(path.as_bytes());
-        hasher.finish()
+        let mut hasher = Sha256::new();
+        hasher.update(path);
+        hasher.finalize()
     };
-
     if cfg!(unix) {
-        format!("unix://{}/{:x}.sock", SOCKET_ROOT, hash)
+        format!("unix://{}/s/{:x}", SOCKET_ROOT, hash)
     } else if cfg!(windows) {
-        format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
+        format!(r"\\.\pipe\containerd-shim-{:x}-pipe", hash)
     } else {
         panic!("unsupported platform")
     }

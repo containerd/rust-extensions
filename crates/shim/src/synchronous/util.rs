@@ -116,7 +116,7 @@ pub fn write_address(address: &str) -> crate::Result<()> {
 
 pub fn read_spec_from_file(bundle: &str) -> crate::Result<Spec> {
     let path = Path::new(bundle).join("config.json");
-    Spec::load(path).map_err(other_error!(e, "read spec file"))
+    Spec::load(path).map_err(other_error!("read spec file"))
 }
 
 #[cfg(unix)]

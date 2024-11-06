@@ -138,7 +138,7 @@ macro_rules! other {
 
 #[macro_export]
 macro_rules! other_error {
-    ($e:ident, $s:expr) => {
-        |$e| Error::Other($s.to_string() + &": ".to_string() + &$e.to_string())
+    ($s:expr) => {
+        |e| Error::Other(format!("{}: {}", $s, e))
     };
 }

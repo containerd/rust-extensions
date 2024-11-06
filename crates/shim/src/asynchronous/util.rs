@@ -38,7 +38,7 @@ where
 {
     spawn_blocking(f)
         .await
-        .map_err(other_error!(e, "failed to spawn blocking task"))?
+        .map_err(other_error!("failed to spawn blocking task"))?
 }
 
 pub async fn read_file_to_str(path: impl AsRef<Path>) -> Result<String> {
@@ -96,14 +96,14 @@ pub async fn read_pid_from_file(pid_path: &Path) -> Result<i32> {
 pub async fn read_spec(bundle: impl AsRef<Path>) -> Result<Spec> {
     let path = bundle.as_ref().join(CONFIG_FILE_NAME);
     let content = read_file_to_str(&path).await?;
-    serde_json::from_str::<Spec>(content.as_str()).map_err(other_error!(e, "read spec"))
+    serde_json::from_str::<Spec>(content.as_str()).map_err(other_error!("read spec"))
 }
 
 pub async fn read_options(bundle: impl AsRef<Path>) -> Result<Options> {
     let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
     let opts_str = read_file_to_str(path).await?;
     let opts =
-        serde_json::from_str::<JsonOptions>(&opts_str).map_err(other_error!(e, "read options"))?;
+        serde_json::from_str::<JsonOptions>(&opts_str).map_err(other_error!("read options"))?;
     Ok(opts.into())
 }
 

@@ -27,7 +27,7 @@ use crate::error::Result;
 /// on the process to discover its termination status.
 pub fn set_subreaper() -> Result<()> {
     use crate::error::Error;
-    prctl::set_child_subreaper(true).map_err(other_error!(code, "linux prctl returned"))
+    prctl::set_child_subreaper(true).map_err(other_error!("linux prctl returned"))
 }
 
 #[cfg(not(target_os = "linux"))]

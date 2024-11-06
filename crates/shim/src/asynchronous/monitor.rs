@@ -117,7 +117,7 @@ impl Monitor {
                         subject: subject.clone(),
                         exit_code,
                     })
-                    .map_err(other_error!(e, "failed to send exit code"));
+                    .map_err(other_error!("failed to send exit code"));
                 results.push(res);
             }
         }

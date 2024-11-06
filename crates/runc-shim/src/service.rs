@@ -27,12 +27,12 @@ use containerd_shim::{
     event::Event,
     io_error,
     monitor::{Subject, Topic},
-    protos::{events::task::TaskExit, protobuf::MessageDyn},
+    protos::{events::task::TaskExit, protobuf::MessageDyn, ttrpc::context::with_timeout},
     util::{
         convert_to_timestamp, read_options, read_pid_from_file, read_runtime, read_spec, timestamp,
         write_str_to_file,
     },
-    Config, Context, DeleteResponse, Error, Flags, StartOpts,
+    Config, DeleteResponse, Error, Flags, StartOpts,
 };
 use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -218,8 +218,11 @@ async fn forward(
 ) {
     tokio::spawn(async move {
         while let Some((topic, e)) = rx.recv().await {
+            // While ttrpc push the event,give it a 5 seconds timeout.
+            // Prevent event reporting from taking too long time.
+            // Learnd from goshim's containerd/runtime/v2/shim/publisher.go
             publisher
-                .publish(Context::default(), &topic, &ns, e)
+                .publish(with_timeout(5000000000), &topic, &ns, e)
                 .await
                 .unwrap_or_else(|e| warn!("publish {} to containerd: {}", topic, e));
         }

@@ -37,6 +37,7 @@ path = "examples/windows_log_reader.rs"
 containerd-shim-protos = { path = "../shim-protos", version = "0.7.2" }
 go-flag = "0.1.0"
 lazy_static = "1.4.0"
+sha2 = "0.10.2"
 libc.workspace = true
 log = { workspace = true, features = ["std", "kv_unstable" ] }
 nix = { workspace = true, features = [
