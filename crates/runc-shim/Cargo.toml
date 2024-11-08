@@ -44,3 +44,4 @@ tokio = { workspace = true, features = ["full"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs.workspace = true
 nix = { workspace = true, features = ["event"] }
+tokio-eventfd = "0.2.1"
