@@ -16,21 +16,18 @@
 
 #![cfg(target_os = "linux")]
 
-use std::{
-    os::unix::io::{AsRawFd, FromRawFd},
-    path::Path,
-};
+use std::{os::unix::io::AsRawFd, path::Path};
 
 use containerd_shim::{
     error::{Error, Result},
     io_error, other_error,
 };
-use nix::sys::eventfd::{EfdFlags, EventFd};
 use tokio::{
-    fs::{self, read_to_string, File},
+    fs::{self, read_to_string},
     io::AsyncReadExt,
     sync::mpsc::{self, Receiver},
 };
+use tokio_eventfd::EventFd;
 
 pub async fn get_path_from_cgorup(pid: u32) -> Result<String> {
     let proc_path = format!("/proc/{}/cgroup", pid);
@@ -94,9 +91,7 @@ pub async fn register_memory_event(
     let event_file = fs::File::open(path.clone())
         .await
         .map_err(other_error!("Error get path:"))?;
-
-    let eventfd = EventFd::from_value_and_flags(0, EfdFlags::EFD_CLOEXEC)?;
-
+    let mut eventfd = EventFd::new(0, false).map_err(other_error!("Error create eventfd:"))?;
     let event_control_path = cg_dir.join("cgroup.event_control");
     let data = format!("{} {}", eventfd.as_raw_fd(), event_file.as_raw_fd());
     fs::write(&event_control_path, data.clone())
@@ -109,9 +104,8 @@ pub async fn register_memory_event(
     let key = key.to_string();
 
     tokio::spawn(async move {
-        let mut eventfd_file = unsafe { File::from_raw_fd(eventfd.as_raw_fd()) };
         loop {
-            match eventfd_file.read(&mut buf).await {
+            match eventfd.read(&mut buf).await {
                 Ok(0) => return,
                 Err(_) => return,
                 _ => (),
