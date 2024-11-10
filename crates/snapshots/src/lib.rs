@@ -49,7 +49,7 @@ pub mod api {
 }
 
 /// Snapshot kinds.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum Kind {
     #[default]
     Unknown,
@@ -59,7 +59,7 @@ pub enum Kind {
 }
 
 /// Information about a particular snapshot.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Info {
     /// Active or committed snapshot.
     pub kind: Kind,
@@ -92,7 +92,7 @@ impl Default for Info {
 ///
 // These resources only include the resources consumed by the snapshot itself and does not include
 // resources usage by the parent.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Usage {
     /// Number of inodes in use.
     pub inodes: i64,
