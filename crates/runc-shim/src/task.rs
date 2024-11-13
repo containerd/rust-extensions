@@ -40,7 +40,9 @@ use containerd_shim::{
 };
 use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
-use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
+use tokio::sync::{
+    mpsc::Sender, RwLock, RwLockMappedWriteGuard, RwLockReadGuard, RwLockWriteGuard,
+};
 
 use super::container::{Container, ContainerFactory};
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
@@ -73,7 +75,10 @@ use crate::cgroup_memory;
 /// parameter of `Service`, and implements their own `ContainerFactory` and `Container`.
 pub struct TaskService<F, C> {
     pub factory: F,
-    pub containers: Arc<Mutex<HashMap<String, C>>>,
+    // In comparison, a Mutex does not distinguish between readers or writers that acquire the lock,
+    // therefore causing any tasks waiting for the lock to become available to yield.
+    // An RwLock will allow any number of readers to acquire the lock as long as a writer is not holding the lock.
+    pub containers: Arc<RwLock<HashMap<String, C>>>,
     pub namespace: String,
     pub exit: Arc<ExitSignal>,
     pub tx: EventSender,
@@ -86,7 +91,7 @@ where
     pub fn new(ns: &str, exit: Arc<ExitSignal>, tx: EventSender) -> Self {
         Self {
             factory: Default::default(),
-            containers: Arc::new(Mutex::new(Default::default())),
+            containers: Arc::new(RwLock::new(Default::default())),
             namespace: ns.to_string(),
             exit,
             tx,
@@ -95,15 +100,27 @@ where
 }
 
 impl<F, C> TaskService<F, C> {
-    pub async fn get_container(&self, id: &str) -> TtrpcResult<MappedMutexGuard<'_, C>> {
-        let mut containers = self.containers.lock().await;
+    pub async fn container_mut(&self, id: &str) -> TtrpcResult<RwLockMappedWriteGuard<'_, C>> {
+        let mut containers = self.containers.write().await;
         containers.get_mut(id).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
                 ttrpc::Code::NOT_FOUND,
                 format!("can not find container by id {}", id),
             ))
         })?;
-        let container = MutexGuard::map(containers, |m| m.get_mut(id).unwrap());
+        let container = RwLockWriteGuard::map(containers, |m| m.get_mut(id).unwrap());
+        Ok(container)
+    }
+
+    pub async fn container(&self, id: &str) -> TtrpcResult<RwLockReadGuard<'_, C>> {
+        let containers = self.containers.read().await;
+        containers.get(id).ok_or_else(|| {
+            ttrpc::Error::RpcStatus(ttrpc::get_status(
+                ttrpc::Code::NOT_FOUND,
+                format!("can not find container by id {}", id),
+            ))
+        })?;
+        let container = RwLockReadGuard::map(containers, |m| m.get(id).unwrap());
         Ok(container)
     }
 
@@ -161,7 +178,7 @@ where
     C: Container + Sync + Send + 'static,
 {
     async fn state(&self, _ctx: &TtrpcContext, req: StateRequest) -> TtrpcResult<StateResponse> {
-        let container = self.get_container(req.id()).await?;
+        let container = self.container(req.id()).await?;
         let exec_id = req.exec_id().as_option();
         let resp = container.state(exec_id).await?;
         Ok(resp)
@@ -175,7 +192,7 @@ where
         info!("Create request for {:?}", &req);
         // Note: Get containers here is for getting the lock,
         // to make sure no other threads manipulate the containers metadata;
-        let mut containers = self.containers.lock().await;
+        let mut containers = self.containers.write().await;
 
         let ns = self.namespace.as_str();
         let id = req.id.as_str();
@@ -210,7 +227,7 @@ where
 
     async fn start(&self, _ctx: &TtrpcContext, req: StartRequest) -> TtrpcResult<StartResponse> {
         info!("Start request for {:?}", &req);
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         let pid = container.start(req.exec_id.as_str().as_option()).await?;
 
         let mut resp = StartResponse::new();
@@ -243,7 +260,7 @@ where
 
     async fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
-        let mut containers = self.containers.lock().await;
+        let mut containers = self.containers.write().await;
         let container = containers.get_mut(req.id()).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
                 ttrpc::Code::NOT_FOUND,
@@ -283,7 +300,7 @@ where
 
     async fn pids(&self, _ctx: &TtrpcContext, req: PidsRequest) -> TtrpcResult<PidsResponse> {
         debug!("Pids request for {:?}", req);
-        let container = self.get_container(req.id()).await?;
+        let container = self.container(req.id()).await?;
         let processes = container.all_processes().await?;
         debug!("Pids request for {:?} returns successfully", req);
         Ok(PidsResponse {
@@ -294,7 +311,7 @@ where
 
     async fn pause(&self, _ctx: &TtrpcContext, req: PauseRequest) -> TtrpcResult<Empty> {
         info!("pause request for {:?}", req);
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container.pause().await?;
         self.send_event(TaskPaused {
             container_id: req.id.to_string(),
@@ -307,7 +324,7 @@ where
 
     async fn resume(&self, _ctx: &TtrpcContext, req: ResumeRequest) -> TtrpcResult<Empty> {
         info!("resume request for {:?}", req);
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container.resume().await?;
         self.send_event(TaskResumed {
             container_id: req.id.to_string(),
@@ -320,7 +337,7 @@ where
 
     async fn kill(&self, _ctx: &TtrpcContext, req: KillRequest) -> TtrpcResult<Empty> {
         info!("Kill request for {:?}", req);
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container
             .kill(req.exec_id().as_option(), req.signal, req.all)
             .await?;
@@ -331,7 +348,7 @@ where
     async fn exec(&self, _ctx: &TtrpcContext, req: ExecProcessRequest) -> TtrpcResult<Empty> {
         info!("Exec request for {:?}", req);
         let exec_id = req.exec_id().to_string();
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container.exec(req).await?;
 
         self.send_event(TaskExecAdded {
@@ -349,7 +366,7 @@ where
             "Resize pty request for container {}, exec_id: {}",
             &req.id, &req.exec_id
         );
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container
             .resize_pty(req.exec_id().as_option(), req.height, req.width)
             .await?;
@@ -357,7 +374,7 @@ where
     }
 
     async fn close_io(&self, _ctx: &TtrpcContext, req: CloseIORequest) -> TtrpcResult<Empty> {
-        let mut container = self.get_container(req.id()).await?;
+        let mut container = self.container_mut(req.id()).await?;
         container.close_io(req.exec_id().as_option()).await?;
         Ok(Empty::new())
     }
@@ -380,7 +397,7 @@ where
             ))
         })?;
 
-        let mut container = self.get_container(&id).await?;
+        let mut container = self.container_mut(&id).await?;
         container.update(&resources).await?;
         Ok(Empty::new())
     }
@@ -389,7 +406,7 @@ where
         info!("Wait request for {:?}", req);
         let exec_id = req.exec_id.as_str().as_option();
         let wait_rx = {
-            let mut container = self.get_container(req.id()).await?;
+            let mut container = self.container_mut(req.id()).await?;
             let state = container.state(exec_id).await?;
             if state.status() != Status::RUNNING && state.status() != Status::CREATED {
                 let mut resp = WaitResponse::new();
@@ -403,7 +420,7 @@ where
 
         wait_rx.await.unwrap_or_default();
         // get lock again.
-        let container = self.get_container(req.id()).await?;
+        let container = self.container(req.id()).await?;
         let (_, code, exited_at) = container.get_exit_info(exec_id).await?;
         let mut resp = WaitResponse::new();
         resp.set_exit_status(code as u32);
@@ -415,7 +432,7 @@ where
 
     async fn stats(&self, _ctx: &TtrpcContext, req: StatsRequest) -> TtrpcResult<StatsResponse> {
         debug!("Stats request for {:?}", req);
-        let container = self.get_container(req.id()).await?;
+        let container = self.container(req.id()).await?;
         let stats = container.stats().await?;
 
         let mut resp = StatsResponse::new();
@@ -430,7 +447,7 @@ where
     ) -> TtrpcResult<ConnectResponse> {
         info!("Connect request for {:?}", req);
         let mut pid: u32 = 0;
-        if let Ok(container) = self.get_container(req.id()).await {
+        if let Ok(container) = self.container(req.id()).await {
             pid = container.pid().await as u32;
         }
 
@@ -443,7 +460,7 @@ where
 
     async fn shutdown(&self, _ctx: &TtrpcContext, _req: ShutdownRequest) -> TtrpcResult<Empty> {
         debug!("Shutdown request");
-        let containers = self.containers.lock().await;
+        let containers = self.containers.read().await;
         if containers.len() > 0 {
             return Ok(Empty::new());
         }
