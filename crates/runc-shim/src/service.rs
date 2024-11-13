@@ -159,7 +159,7 @@ async fn process_exits(
             if let Subject::Pid(pid) = e.subject {
                 debug!("receive exit event: {}", &e);
                 let exit_code = e.exit_code;
-                for (_k, cont) in containers.lock().await.iter_mut() {
+                for (_k, cont) in containers.write().await.iter_mut() {
                     let bundle = cont.bundle.to_string();
                     // pid belongs to container init process
                     if cont.init.pid == pid {
