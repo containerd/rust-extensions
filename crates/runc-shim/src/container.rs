@@ -139,7 +139,6 @@ where
         let process = self.get_mut_process(exec_id_opt);
         match process {
             Ok(p) => p.delete().await?,
-            Err(Error::NotFoundError(_)) => return Ok((pid, code, exited_at)),
             Err(e) => return Err(e),
         }
         if let Some(exec_id) = exec_id_opt {
@@ -248,7 +247,7 @@ where
         match exec_id {
             Some(exec_id) => {
                 let p = self.processes.get_mut(exec_id).ok_or_else(|| {
-                    Error::NotFoundError("can not find the exec by id".to_string())
+                    Error::NotFoundError(format!("can not find the exec by id {}", exec_id))
                 })?;
                 Ok(p)
             }
