@@ -25,7 +25,8 @@ use std::{
 
 use nix::unistd::{Gid, Uid};
 
-use crate::{Command, Io, Pipe, PipedIo};
+pub use crate::Io;
+use crate::{Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
 pub struct IOOption {
