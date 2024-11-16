@@ -22,17 +22,20 @@ jobs:
       - run: ./scripts/install-protobuf.sh
         shell: bash
 
-      - run: cargo check --examples --tests --all-targets
-      - run: cargo check --examples --tests --all-targets --all-features
-
       - run: rustup toolchain install nightly --component rustfmt
       - run: cargo +nightly fmt --all -- --check --files-with-diff
 
+      # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
+      - run: cargo check -p runc --all-targets
+      - run: cargo clippy -p runc --all-targets -- -D warnings
+      - run: cargo check -p containerd-shim --all-targets
+      - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
+
+      # check the workspace
+      - run: cargo check --examples --tests --all-targets
+      - run: cargo check --examples --tests --all-targets --all-features
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings
-
-      # the shim has sync code that is not covered when running with --all-features
-      - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
 
       - run: cargo doc --no-deps --features docs
         env:
