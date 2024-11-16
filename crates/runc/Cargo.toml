@@ -28,6 +28,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 time.workspace = true
 uuid.workspace = true
+os_pipe.workspace = true
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
