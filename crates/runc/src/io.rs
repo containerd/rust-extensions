@@ -212,6 +212,8 @@ mod tests {
     #[cfg(not(feature = "async"))]
     #[test]
     fn test_create_piped_io() {
+        use std::io::{Read, Write};
+
         let opts = IOOption::default();
         let uid = nix::unistd::getuid();
         let gid = nix::unistd::getgid();
