@@ -44,7 +44,7 @@ simple_logger = { version = "5.0", default-features = false }
 tempfile = "3.6"
 thiserror = "1.0"
 time = { version = "0.3.29", features = ["serde", "std", "formatting"] }
-tokio = "1.26"
+tokio = "1.40"
 tonic = "0.12"
 tonic-build = "0.12"
 tower = "0.5"
