@@ -108,7 +108,7 @@ impl Shim for Service {
         let namespace = self.namespace.as_str();
         let bundle = current_dir().map_err(io_error!(e, "get current dir"))?;
         let opts = read_options(&bundle).await?;
-        let runtime = read_runtime(&bundle).await?;
+        let runtime = read_runtime(&bundle).await.unwrap_or_default();
 
         let runc = create_runc(
             &runtime,
@@ -117,7 +117,9 @@ impl Shim for Service {
             &opts,
             Some(Arc::new(ShimExecutor::default())),
         )?;
-        let pid = read_pid_from_file(&bundle.join(INIT_PID_FILE)).await?;
+        let pid = read_pid_from_file(&bundle.join(INIT_PID_FILE))
+            .await
+            .unwrap_or_default();
 
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .await

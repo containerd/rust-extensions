@@ -99,8 +99,13 @@ pub async fn read_spec(bundle: impl AsRef<Path>) -> Result<Spec> {
     serde_json::from_str::<Spec>(content.as_str()).map_err(other_error!("read spec"))
 }
 
+// read_options reads the option information from the path.
+// When the file does not exist, read_options returns nil without an error.
 pub async fn read_options(bundle: impl AsRef<Path>) -> Result<Options> {
     let path = bundle.as_ref().join(OPTIONS_FILE_NAME);
+    if !path.exists() {
+        return Ok(Options::default());
+    }
     let opts_str = read_file_to_str(path).await?;
     let opts =
         serde_json::from_str::<JsonOptions>(&opts_str).map_err(other_error!("read options"))?;
