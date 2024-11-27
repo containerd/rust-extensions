@@ -121,7 +121,7 @@ pub async fn connect(
 /// To use this macro, the `tonic::Request` is needed.
 #[macro_export]
 macro_rules! with_namespace {
-    ($req : ident, $ns: expr) => {{
+    ($req:expr, $ns:expr) => {{
         let mut req = Request::new($req);
         let md = req.metadata_mut();
         // https://github.com/containerd/containerd/blob/main/pkg/namespaces/grpc.go#L27
