@@ -59,8 +59,8 @@ use super::{
 };
 use crate::{
     common::{
-        check_kill_error, create_io, create_runc, get_spec_from_request, receive_socket,
-        CreateConfig, Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
+        check_kill_error, create_io, create_runc, get_spec_from_request, handle_file_open,
+        receive_socket, CreateConfig, Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
     },
     io::Stdio,
 };
@@ -538,11 +538,14 @@ async fn copy_console(
             .try_clone()
             .await
             .map_err(io_error!(e, "failed to clone console file"))?;
-        let stdin = OpenOptions::new()
-            .read(true)
-            .open(stdio.stdin.as_str())
-            .await
-            .map_err(io_error!(e, "failed to open stdin"))?;
+        let stdin = handle_file_open(|| async {
+            OpenOptions::new()
+                .read(true)
+                .open(stdio.stdin.as_str())
+                .await
+        })
+        .await
+        .map_err(io_error!(e, "failed to open stdin"))?;
         spawn_copy(stdin, console_stdin, exit_signal.clone(), None::<fn()>);
     }
 
@@ -587,11 +590,14 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal
         if let Some(w) = io.stdin() {
             debug!("copy_io: pipe stdin from {}", stdio.stdin.as_str());
             if !stdio.stdin.is_empty() {
-                let stdin = OpenOptions::new()
-                    .read(true)
-                    .open(stdio.stdin.as_str())
-                    .await
-                    .map_err(io_error!(e, "open stdin"))?;
+                let stdin = handle_file_open(|| async {
+                    OpenOptions::new()
+                        .read(true)
+                        .open(stdio.stdin.as_str())
+                        .await
+                })
+                .await
+                .map_err(io_error!(e, "open stdin"))?;
                 spawn_copy(stdin, w, exit_signal.clone(), None::<fn()>);
             }
         }
@@ -599,18 +605,24 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal
         if let Some(r) = io.stdout() {
             debug!("copy_io: pipe stdout from to {}", stdio.stdout.as_str());
             if !stdio.stdout.is_empty() {
-                let stdout = OpenOptions::new()
-                    .write(true)
-                    .open(stdio.stdout.as_str())
-                    .await
-                    .map_err(io_error!(e, "open stdout"))?;
+                let stdout = handle_file_open(|| async {
+                    OpenOptions::new()
+                        .write(true)
+                        .open(stdio.stdout.as_str())
+                        .await
+                })
+                .await
+                .map_err(io_error!(e, "open stdout"))?;
                 // open a read to make sure even if the read end of containerd shutdown,
                 // copy still continue until the restart of containerd succeed
-                let stdout_r = OpenOptions::new()
-                    .read(true)
-                    .open(stdio.stdout.as_str())
-                    .await
-                    .map_err(io_error!(e, "open stdout for read"))?;
+                let stdout_r = handle_file_open(|| async {
+                    OpenOptions::new()
+                        .read(true)
+                        .open(stdio.stdout.as_str())
+                        .await
+                })
+                .await
+                .map_err(io_error!(e, "open stdout for read"))?;
                 spawn_copy(
                     r,
                     stdout,
@@ -625,18 +637,24 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal
         if let Some(r) = io.stderr() {
             if !stdio.stderr.is_empty() {
                 debug!("copy_io: pipe stderr from to {}", stdio.stderr.as_str());
-                let stderr = OpenOptions::new()
-                    .write(true)
-                    .open(stdio.stderr.as_str())
-                    .await
-                    .map_err(io_error!(e, "open stderr"))?;
+                let stderr = handle_file_open(|| async {
+                    OpenOptions::new()
+                        .write(true)
+                        .open(stdio.stderr.as_str())
+                        .await
+                })
+                .await
+                .map_err(io_error!(e, "open stderr"))?;
                 // open a read to make sure even if the read end of containerd shutdown,
                 // copy still continue until the restart of containerd succeed
-                let stderr_r = OpenOptions::new()
-                    .read(true)
-                    .open(stdio.stderr.as_str())
-                    .await
-                    .map_err(io_error!(e, "open stderr for read"))?;
+                let stderr_r = handle_file_open(|| async {
+                    OpenOptions::new()
+                        .read(true)
+                        .open(stdio.stderr.as_str())
+                        .await
+                })
+                .await
+                .map_err(io_error!(e, "open stderr for read"))?;
                 spawn_copy(
                     r,
                     stderr,
