@@ -652,20 +652,19 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal
     Ok(())
 }
 
-fn spawn_copy<R, W, F>(from: R, to: W, exit_signal: Arc<ExitSignal>, on_close: Option<F>)
+fn spawn_copy<R, W, F>(from: R, mut to: W, exit_signal: Arc<ExitSignal>, on_close: Option<F>)
 where
     R: AsyncRead + Send + Unpin + 'static,
     W: AsyncWrite + Send + Unpin + 'static,
     F: FnOnce() + Send + 'static,
 {
-    let mut src = from;
-    let mut dst = to;
     tokio::spawn(async move {
+        let mut buf = tokio::io::BufReader::new(from);
         tokio::select! {
             _ = exit_signal.wait() => {
                 debug!("container exit, copy task should exit too");
             },
-            res = tokio::io::copy(&mut src, &mut dst) => {
+            res = tokio::io::copy_buf(&mut buf, &mut to) => {
                if let Err(e) = res {
                     error!("copy io failed {}", e);
                 }
