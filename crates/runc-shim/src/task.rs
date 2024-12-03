@@ -40,7 +40,7 @@ use containerd_shim::{
 };
 use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
-use tokio::sync::{mpsc::Sender, MappedMutexGuard, Mutex, MutexGuard};
+use tokio::sync::{mpsc::Sender, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::container::{Container, ContainerFactory};
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
@@ -73,7 +73,7 @@ use crate::cgroup_memory;
 /// parameter of `Service`, and implements their own `ContainerFactory` and `Container`.
 pub struct TaskService<F, C> {
     pub factory: F,
-    pub containers: Arc<Mutex<HashMap<String, C>>>,
+    pub containers: Arc<RwLock<HashMap<String, C>>>,
     pub namespace: String,
     pub exit: Arc<ExitSignal>,
     pub tx: EventSender,
@@ -86,7 +86,7 @@ where
     pub fn new(ns: &str, exit: Arc<ExitSignal>, tx: EventSender) -> Self {
         Self {
             factory: Default::default(),
-            containers: Arc::new(Mutex::new(Default::default())),
+            containers: Arc::new(RwLock::new(Default::default())),
             namespace: ns.to_string(),
             exit,
             tx,
@@ -95,15 +95,27 @@ where
 }
 
 impl<F, C> TaskService<F, C> {
-    pub async fn get_container(&self, id: &str) -> TtrpcResult<MappedMutexGuard<'_, C>> {
-        let mut containers = self.containers.lock().await;
-        containers.get_mut(id).ok_or_else(|| {
+    pub async fn get_container(&self, id: &str) -> TtrpcResult<impl std::ops::DerefMut<Target = C> + '_> {
+        let containers = self.containers.write().await;
+        if !containers.contains_key(id) {
+            return Err(ttrpc::Error::RpcStatus(ttrpc::get_status(
+                ttrpc::Code::NOT_FOUND,
+                format!("can not find container by id {}", id),
+            )));
+        }
+        let guard = RwLockWriteGuard::map(containers, |m| m.get_mut(id).unwrap());
+        Ok(guard)
+    }
+
+    pub async fn get_container_read(&self, id: &str) -> TtrpcResult<RwLockReadGuard<'_, C>> {
+        let containers = self.containers.read().await;
+        containers.get(id).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
                 ttrpc::Code::NOT_FOUND,
                 format!("can not find container by id {}", id),
             ))
         })?;
-        let container = MutexGuard::map(containers, |m| m.get_mut(id).unwrap());
+        let container = RwLockReadGuard::map(containers, |m| m.get(id).unwrap());
         Ok(container)
     }
 
@@ -173,9 +185,8 @@ where
         req: CreateTaskRequest,
     ) -> TtrpcResult<CreateTaskResponse> {
         info!("Create request for {:?}", &req);
-        // Note: Get containers here is for getting the lock,
-        // to make sure no other threads manipulate the containers metadata;
-        let mut containers = self.containers.lock().await;
+        // Get write lock to create and insert the new container
+        let mut containers = self.containers.write().await;
 
         let ns = self.namespace.as_str();
         let id = req.id.as_str();
@@ -243,7 +254,7 @@ where
 
     async fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
-        let mut containers = self.containers.lock().await;
+        let mut containers = self.containers.write().await;
         let container = containers.get_mut(req.id()).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
                 ttrpc::Code::NOT_FOUND,
@@ -443,7 +454,7 @@ where
 
     async fn shutdown(&self, _ctx: &TtrpcContext, _req: ShutdownRequest) -> TtrpcResult<Empty> {
         debug!("Shutdown request");
-        let containers = self.containers.lock().await;
+        let containers = self.containers.read().await;
         if containers.len() > 0 {
             return Ok(Empty::new());
         }
