@@ -30,10 +30,9 @@ use containerd_shim::{
             PidsResponse, StatsRequest, StatsResponse, UpdateTaskRequest,
         },
         events::task::{TaskCreate, TaskDelete, TaskExecAdded, TaskExecStarted, TaskIO, TaskStart},
-        protobuf::MessageDyn,
+        protobuf::{EnumOrUnknown, MessageDyn},
         shim_async::Task,
-        ttrpc,
-        ttrpc::r#async::TtrpcContext,
+        ttrpc::{self, r#async::TtrpcContext},
     },
     util::{convert_to_any, convert_to_timestamp, AsOption},
     TtrpcResult,
@@ -228,6 +227,15 @@ where
     async fn start(&self, _ctx: &TtrpcContext, req: StartRequest) -> TtrpcResult<StartResponse> {
         info!("Start request for {:?}", &req);
         let mut container = self.container_mut(req.id()).await?;
+        // Prevent the init process from exiting and continuing with start
+        // Return early to reduce the time it takes to return only when runc encounters an error
+        if container.init_state().await == EnumOrUnknown::new(Status::STOPPED) {
+            debug!("container init process has exited, start process should not continue");
+            return Err(ttrpc::Error::RpcStatus(ttrpc::get_status(
+                ttrpc::Code::FAILED_PRECONDITION,
+                format!("container init process has exited {}", container.id().await),
+            )));
+        }
         let pid = container.start(req.exec_id.as_str().as_option()).await?;
 
         let mut resp = StartResponse::new();

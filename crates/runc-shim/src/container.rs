@@ -18,11 +18,12 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use containerd_shim::{
+    api::Status,
     error::Result,
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
         cgroups::metrics::Metrics,
-        protobuf::{well_known_types::any::Any, Message, MessageDyn},
+        protobuf::{well_known_types::any::Any, EnumOrUnknown, Message, MessageDyn},
         shim::oci::ProcessDetails,
     },
     Error,
@@ -58,6 +59,7 @@ pub trait Container {
     async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()>;
     async fn pause(&mut self) -> Result<()>;
     async fn resume(&mut self) -> Result<()>;
+    async fn init_state(&self) -> EnumOrUnknown<Status>;
 }
 
 #[async_trait]
@@ -95,6 +97,11 @@ where
     E: Process + Send + Sync,
     P: ProcessFactory<E> + Send + Sync,
 {
+    async fn init_state(&self) -> EnumOrUnknown<Status> {
+        // Default should be unknown
+        self.init.state().await.unwrap_or_default().status
+    }
+
     async fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
         let process = self.get_mut_process(exec_id)?;
         process.start().await?;
