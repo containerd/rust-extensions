@@ -57,6 +57,7 @@ pub trait Process {
     async fn close_io(&mut self) -> Result<()>;
     async fn pause(&mut self) -> Result<()>;
     async fn resume(&mut self) -> Result<()>;
+    async fn id(&self) -> &str;
 }
 
 #[async_trait]
@@ -121,6 +122,10 @@ where
 
     async fn pid(&self) -> i32 {
         self.pid
+    }
+
+    async fn id(&self) -> &str {
+        self.id.as_str()
     }
 
     async fn state(&self) -> Result<StateResponse> {
