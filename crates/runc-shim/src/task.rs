@@ -228,6 +228,15 @@ where
     async fn start(&self, _ctx: &TtrpcContext, req: StartRequest) -> TtrpcResult<StartResponse> {
         info!("Start request for {:?}", &req);
         let mut container = self.container_mut(req.id()).await?;
+        // Prevent the init process from exiting and continuing with start
+        // Return early to reduce the time it takes to return only when runc encounters an error
+        if container.is_init_stopped().await {
+            debug!("container init process has exited, start process should not continue");
+            return Err(ttrpc::Error::RpcStatus(ttrpc::get_status(
+                ttrpc::Code::FAILED_PRECONDITION,
+                format!("container init process has exited {}", container.id().await),
+            )));
+        }
         let pid = container.start(req.exec_id.as_str().as_option()).await?;
 
         let mut resp = StartResponse::new();
