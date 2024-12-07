@@ -203,7 +203,7 @@ where
         resp.pid = pid;
 
         containers.insert(id.to_string(), container);
-
+        drop(containers);
         self.send_event(TaskCreate {
             container_id: req.id.to_string(),
             bundle: req.bundle.to_string(),
@@ -229,7 +229,7 @@ where
         info!("Start request for {:?}", &req);
         let mut container = self.container_mut(req.id()).await?;
         let pid = container.start(req.exec_id.as_str().as_option()).await?;
-
+        drop(container);
         let mut resp = StartResponse::new();
         resp.pid = pid as u32;
 
@@ -260,18 +260,14 @@ where
 
     async fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
-        let mut containers = self.containers.write().await;
-        let container = containers.get_mut(req.id()).ok_or_else(|| {
-            ttrpc::Error::RpcStatus(ttrpc::get_status(
-                ttrpc::Code::NOT_FOUND,
-                format!("can not find container by id {}", req.id()),
-            ))
-        })?;
+        let mut container = self.container_mut(req.id()).await?;
         let id = container.id().await;
         let exec_id_opt = req.exec_id().as_option();
         let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
-        self.factory.cleanup(&self.namespace, container).await?;
+        self.factory.cleanup(&self.namespace, &container).await?;
+        drop(container);
         if req.exec_id().is_empty() {
+            let mut containers = self.containers.write().await;
             containers.remove(req.id());
         }
 
@@ -313,6 +309,7 @@ where
         info!("pause request for {:?}", req);
         let mut container = self.container_mut(req.id()).await?;
         container.pause().await?;
+        drop(container);
         self.send_event(TaskPaused {
             container_id: req.id.to_string(),
             ..Default::default()
@@ -326,6 +323,7 @@ where
         info!("resume request for {:?}", req);
         let mut container = self.container_mut(req.id()).await?;
         container.resume().await?;
+        drop(container);
         self.send_event(TaskResumed {
             container_id: req.id.to_string(),
             ..Default::default()
@@ -350,9 +348,10 @@ where
         let exec_id = req.exec_id().to_string();
         let mut container = self.container_mut(req.id()).await?;
         container.exec(req).await?;
-
+        let container_id = container.id().await;
+        drop(container);
         self.send_event(TaskExecAdded {
-            container_id: container.id().await,
+            container_id,
             exec_id,
             ..Default::default()
         })
