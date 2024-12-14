@@ -17,6 +17,7 @@
 use std::{
     env,
     fs::File,
+    future::Future,
     io::IoSliceMut,
     ops::Deref,
     os::{
@@ -25,6 +26,7 @@ use std::{
     },
     path::Path,
     sync::Arc,
+    time::Duration,
 };
 
 use containerd_shim::{
@@ -58,6 +60,8 @@ pub const GROUP_LABELS: [&str; 2] = [
 pub const INIT_PID_FILE: &str = "init.pid";
 pub const LOG_JSON_FILE: &str = "log.json";
 pub const FIFO_SCHEME: &str = "fifo";
+
+const TIMEOUT_DURATION: std::time::Duration = Duration::from_secs(3);
 
 #[derive(Deserialize)]
 pub struct Log {
@@ -247,4 +251,18 @@ pub fn has_shared_pid_namespace(spec: &Spec) -> bool {
 pub(crate) fn xdg_runtime_dir() -> String {
     env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| env::temp_dir().to_str().unwrap_or(".").to_string())
+}
+
+pub async fn handle_file_open<F, Fut>(file_op: F) -> Result<tokio::fs::File, tokio::io::Error>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<tokio::fs::File, tokio::io::Error>> + Send,
+{
+    match tokio::time::timeout(TIMEOUT_DURATION, file_op()).await {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "File operation timed out",
+        )),
+    }
 }
