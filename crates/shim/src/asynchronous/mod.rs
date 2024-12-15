@@ -54,7 +54,7 @@ use crate::{
     asynchronous::{monitor::monitor_notify_by_pid, publisher::RemotePublisher},
     error::{Error, Result},
     logger, parse_sockaddr, reap, socket_address,
-    util::{asyncify, read_file_to_str, write_str_to_file},
+    util::{asyncify, read_file_to_str},
     Config, Flags, StartOpts, SOCKET_FD, TTRPC_ADDRESS,
 };
 
@@ -260,8 +260,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
                     return Err(e);
                 };
             }
-            if let Ok(()) = wait_socket_working(&address, 5, 200).await {
-                write_str_to_file("address", &address).await?;
+            if wait_socket_working(&address, 5, 200).await.is_ok() {
                 return Ok(address);
             }
             remove_socket(&address).await?;
