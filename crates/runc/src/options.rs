@@ -485,7 +485,7 @@ mod tests {
     fn create_opts_test() {
         assert_eq!(
             CreateOpts::new().args().expect(ARGS_FAIL_MSG),
-            vec![String::new(); 0]
+            Vec::<String>::new()
         );
 
         assert_eq!(
@@ -536,7 +536,7 @@ mod tests {
     fn exec_opts_test() {
         assert_eq!(
             ExecOpts::new().args().expect(ARGS_FAIL_MSG),
-            vec![String::new(); 0]
+            Vec::<String>::new()
         );
 
         assert_eq!(
@@ -576,10 +576,7 @@ mod tests {
 
     #[test]
     fn delete_opts_test() {
-        assert_eq!(
-            DeleteOpts::new().force(false).args(),
-            vec![String::new(); 0]
-        );
+        assert_eq!(DeleteOpts::new().force(false).args(), Vec::<String>::new());
 
         assert_eq!(
             DeleteOpts::new().force(true).args(),
@@ -589,7 +586,7 @@ mod tests {
 
     #[test]
     fn kill_opts_test() {
-        assert_eq!(KillOpts::new().all(false).args(), vec![String::new(); 0]);
+        assert_eq!(KillOpts::new().all(false).args(), Vec::<String>::new());
 
         assert_eq!(KillOpts::new().all(true).args(), vec!["--all".to_string()],);
     }
