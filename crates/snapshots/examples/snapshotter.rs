@@ -179,6 +179,7 @@ mod unix {
         }
     }
 
+    #[allow(dead_code)]
     #[derive(Clone, Debug)]
     pub struct UdsConnectInfo {
         pub peer_addr: Option<Arc<tokio::net::unix::SocketAddr>>,
