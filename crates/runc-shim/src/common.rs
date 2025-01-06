@@ -16,7 +16,6 @@
 
 use std::{
     env,
-    fs::File,
     future::Future,
     io::IoSliceMut,
     ops::Deref,
@@ -74,8 +73,10 @@ pub struct ProcessIO {
     pub uri: Option<String>,
     pub io: Option<Arc<dyn Io>>,
     pub copy: bool,
-    pub stdout_r: Option<File>,
-    pub stderr_r: Option<File>,
+    #[cfg(not(target_os = "macos"))]
+    pub stdout_r: Option<std::fs::File>,
+    #[cfg(not(target_os = "macos"))]
+    pub stderr_r: Option<std::fs::File>,
 }
 
 pub fn create_io(

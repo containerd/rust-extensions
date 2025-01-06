@@ -39,6 +39,7 @@ use tokio::{
 
 use crate::io::Stdio;
 
+#[allow(dead_code)]
 #[async_trait]
 pub trait Process {
     async fn start(&mut self) -> Result<()>;
