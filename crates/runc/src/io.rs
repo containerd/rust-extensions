@@ -168,7 +168,6 @@ impl Io for FIFO {
         if let Some(path) = self.stdin.as_ref() {
             let stdin = OpenOptions::new()
                 .read(true)
-                .custom_flags(libc::O_NONBLOCK)
                 .open(path)?;
             cmd.stdin(stdin);
         }
