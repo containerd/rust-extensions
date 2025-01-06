@@ -116,8 +116,8 @@ impl RemotePublisher {
                     });
                 }
             }
+            debug!("publisher 'process_queue' quit complete");
         });
-        debug!("publisher 'process_queue' quit complete");
     }
 
     async fn connect(address: impl AsRef<str>) -> Result<Client> {
