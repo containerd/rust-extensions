@@ -61,11 +61,12 @@ pub mod asynchronous;
 pub mod container;
 pub mod error;
 pub mod events;
-pub mod io;
+#[cfg(not(feature = "async"))]
+pub mod synchronous;
+
 #[cfg(feature = "async")]
 pub mod monitor;
 pub mod options;
-pub mod synchronous;
 pub mod utils;
 
 pub type Result<T> = std::result::Result<T, crate::error::Error>;
@@ -434,9 +435,9 @@ impl Runc {
         let mut cmd = self.command(&args)?;
         match opts {
             Some(CreateOpts { io: Some(io), .. }) => {
-                io.set(&mut cmd).map_err(Error::UnavailableIO)?;
+                io.set(&mut cmd).await.map_err(Error::UnavailableIO)?;
                 let res = self.launch(cmd, true).await?;
-                io.close_after_start();
+                io.close_after_start().await;
                 Ok(res)
             }
             _ => self.launch(cmd, true).await,
@@ -471,11 +472,13 @@ impl Runc {
         match opts {
             Some(ExecOpts { io: Some(io), .. }) => {
                 tc!(
-                    io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string())),
+                    io.set(&mut cmd)
+                        .await
+                        .map_err(|e| Error::IoSet(e.to_string())),
                     &f
                 );
                 tc!(self.launch(cmd, true).await, &f);
-                io.close_after_start();
+                io.close_after_start().await;
             }
             _ => {
                 tc!(self.launch(cmd, true).await, &f);
@@ -567,7 +570,9 @@ impl Runc {
         args.push(id.to_string());
         let mut cmd = self.command(&args)?;
         if let Some(CreateOpts { io: Some(io), .. }) = opts {
-            io.set(&mut cmd).map_err(|e| Error::IoSet(e.to_string()))?;
+            io.set(&mut cmd)
+                .await
+                .map_err(|e| Error::IoSet(e.to_string()))?;
         };
         let _ = self.launch(cmd, true).await?;
         Ok(())
@@ -655,7 +660,7 @@ impl Spawner for DefaultExecutor {
 mod tests {
     use std::sync::Arc;
 
-    use super::{
+    use crate::{
         io::{InheritedStdIo, PipedStdIo},
         *,
     };
