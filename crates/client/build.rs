@@ -62,6 +62,7 @@ const FIXUP_MODULES: &[&str] = &[
     "containerd.services.tasks.v1",
     "containerd.services.containers.v1",
     "containerd.services.content.v1",
+    "containerd.services.events.v1",
 ];
 
 fn main() {
@@ -95,6 +96,7 @@ fn fixup_imports(path: &str) -> Result<(), io::Error> {
 
     let contents = fs::read_to_string(&path)?
         .replace("super::super::super::v1::types", "crate::types::v1") // for tasks service
+        .replace("super::super::super::super::types", "crate::types")
         .replace("super::super::super::types", "crate::types")
         .replace("super::super::super::super::google", "crate::google")
         .replace(
