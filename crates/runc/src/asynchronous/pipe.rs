@@ -31,8 +31,80 @@ pub struct Pipe {
 impl Pipe {
     pub fn new() -> std::io::Result<Self> {
         let (tx, rx) = pipe::pipe()?;
-        let rd = tx.into_blocking_fd()?;
-        let wr = rx.into_blocking_fd()?;
+        let rd = rx.into_blocking_fd()?;
+        let wr = tx.into_blocking_fd()?;
         Ok(Self { rd, wr })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::fd::IntoRawFd;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pipe_creation() {
+        let pipe = Pipe::new().expect("Failed to create pipe");
+        assert!(
+            pipe.rd.into_raw_fd() >= 0,
+            "Read file descriptor is invalid"
+        );
+        assert!(
+            pipe.wr.into_raw_fd() >= 0,
+            "Write file descriptor is invalid"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pipe_write_read() {
+        let pipe = Pipe::new().expect("Failed to create pipe");
+        let mut read_end = pipe::Receiver::from_owned_fd(pipe.rd).unwrap();
+        let mut write_end = pipe::Sender::from_owned_fd(pipe.wr).unwrap();
+        let write_data = b"hello";
+
+        write_end
+            .write_all(write_data)
+            .await
+            .expect("Failed to write to pipe");
+
+        let mut read_data = vec![0; write_data.len()];
+        read_end
+            .read_exact(&mut read_data)
+            .await
+            .expect("Failed to read from pipe");
+
+        assert_eq!(
+            read_data, write_data,
+            "Data read from pipe does not match data written"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pipe_async_write_read() {
+        let pipe = Pipe::new().expect("Failed to create pipe");
+        let mut read_end = pipe::Receiver::from_owned_fd(pipe.rd).unwrap();
+        let mut write_end = pipe::Sender::from_owned_fd(pipe.wr).unwrap();
+
+        let write_data = b"hello";
+        tokio::spawn(async move {
+            write_end
+                .write_all(write_data)
+                .await
+                .expect("Failed to write to pipe");
+        });
+
+        let mut read_data = vec![0; write_data.len()];
+        read_end
+            .read_exact(&mut read_data)
+            .await
+            .expect("Failed to read from pipe");
+
+        assert_eq!(
+            &read_data, write_data,
+            "Data read from pipe does not match data written"
+        );
     }
 }

@@ -25,7 +25,7 @@ use std::{
 
 use nix::unistd::{Gid, Uid};
 
-pub use crate::Io;
+use super::Io;
 use crate::{Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
@@ -48,22 +48,25 @@ impl Default for IOOption {
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
         Ok(Self {
-            stdin: Self::create_pipe(uid, gid, opts.open_stdin, true)?,
-            stdout: Self::create_pipe(uid, gid, opts.open_stdout, false)?,
-            stderr: Self::create_pipe(uid, gid, opts.open_stderr, false)?,
+            stdin: if opts.open_stdin {
+                Self::create_pipe(uid, gid, true)?
+            } else {
+                None
+            },
+            stdout: if opts.open_stdout {
+                Self::create_pipe(uid, gid, true)?
+            } else {
+                None
+            },
+            stderr: if opts.open_stderr {
+                Self::create_pipe(uid, gid, true)?
+            } else {
+                None
+            },
         })
     }
 
-    fn create_pipe(
-        uid: u32,
-        gid: u32,
-        enabled: bool,
-        stdin: bool,
-    ) -> std::io::Result<Option<Pipe>> {
-        if !enabled {
-            return Ok(None);
-        }
-
+    fn create_pipe(uid: u32, gid: u32, stdin: bool) -> std::io::Result<Option<Pipe>> {
         let pipe = Pipe::new()?;
         let uid = Some(Uid::from_raw(uid));
         let gid = Some(Gid::from_raw(gid));
@@ -209,7 +212,6 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    #[cfg(not(feature = "async"))]
     #[test]
     fn test_create_piped_io() {
         use std::io::{Read, Write};

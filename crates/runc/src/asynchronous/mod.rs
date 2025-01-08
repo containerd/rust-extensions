@@ -13,41 +13,36 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
+pub mod io;
 mod pipe;
 use std::{fmt::Debug, io::Result, os::fd::AsRawFd};
 
+use async_trait::async_trait;
 use log::debug;
 pub use pipe::Pipe;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::Command;
-
+#[async_trait]
 pub trait Io: Debug + Send + Sync {
-    /// Return write side of stdin
-    #[cfg(feature = "async")]
     fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
         None
     }
 
-    /// Return read side of stdout
-    #[cfg(feature = "async")]
     fn stdout(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
         None
     }
 
-    /// Return read side of stderr
-    #[cfg(feature = "async")]
     fn stderr(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
         None
     }
 
     /// Set IO for passed command.
     /// Read side of stdin, write side of stdout and write side of stderr should be provided to command.
-    fn set(&self, cmd: &mut Command) -> Result<()>;
+    async fn set(&self, cmd: &mut Command) -> Result<()>;
 
     /// Only close write side (should be stdout/err "from" runc process)
-    fn close_after_start(&self);
+    async fn close_after_start(&self);
 }
 
 #[derive(Debug)]
@@ -56,7 +51,7 @@ pub struct PipedIo {
     pub stdout: Option<Pipe>,
     pub stderr: Option<Pipe>,
 }
-
+#[async_trait]
 impl Io for PipedIo {
     fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
         self.stdin.as_ref().and_then(|pipe| {
@@ -87,7 +82,7 @@ impl Io for PipedIo {
 
     // Note that this internally use [`std::fs::File`]'s `try_clone()`.
     // Thus, the files passed to commands will be not closed after command exit.
-    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+    async fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
         if let Some(p) = self.stdin.as_ref() {
             let pr = p.rd.try_clone()?;
             cmd.stdin(pr);
@@ -106,7 +101,7 @@ impl Io for PipedIo {
         Ok(())
     }
 
-    fn close_after_start(&self) {
+    async fn close_after_start(&self) {
         if let Some(p) = self.stdout.as_ref() {
             nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
         }
