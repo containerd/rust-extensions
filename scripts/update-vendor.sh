@@ -8,12 +8,18 @@
 # For each crate, the script expects a text file named `rsync.txt` in the crate's directory.
 # The file should contain a list of proto files that should be synchronized from containerd.
 
-VERSION="v1.7.13"
+VERSION="v2.0.1"
 
 set -x
 
 # Download containerd source code.
 wget https://github.com/containerd/containerd/archive/refs/tags/$VERSION.tar.gz -O containerd.tar.gz
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to download containerd source code."
+    exit 1
+fi
+
+# Ensure the file is removed on exit
 trap 'rm containerd.tar.gz' EXIT
 
 # Extract zip archive to a temporary directory.
