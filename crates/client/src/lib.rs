@@ -28,6 +28,9 @@ pub mod types {
     pub mod v1 {
         tonic::include_proto!("containerd.v1.types");
     }
+    pub mod transfer {
+        tonic::include_proto!("containerd.types.transfer");
+    }
 }
 
 /// Generated `google.rpc` types, containerd services typically use some of these types.
