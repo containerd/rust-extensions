@@ -119,6 +119,19 @@ pub async fn connect(
     Ok(channel)
 }
 
+use prost::{Message, Name};
+use prost_types::Any;
+
+// to_any provides a helper to match the current use of the protobuf "fullname" trait
+// in the Go code on the gRPC server side in containerd when handling matching of Any
+// types to registered types on the server. Further discussion on future direction
+// of typeurl in this issue: https://github.com/containerd/rust-extensions/issues/362
+pub fn to_any<T: Message + Name>(m: &T) -> Any {
+    let mut anyt = Any::from_msg(m).unwrap();
+    anyt.type_url = T::full_name();
+    anyt
+}
+
 /// Help to inject namespace into request.
 ///
 /// To use this macro, the `tonic::Request` is needed.
