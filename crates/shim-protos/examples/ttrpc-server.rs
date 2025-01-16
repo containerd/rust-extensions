@@ -57,7 +57,7 @@ impl Task for FakeServer {
 fn main() {
     simple_logger::SimpleLogger::new().init().unwrap();
 
-    let tservice = create_task(Arc::new(FakeServer::new()));
+    let tservice = create_task(Arc::new(Box::new(FakeServer::new())));
 
     let mut server = Server::new()
         .bind("unix:///tmp/shim-proto-ttrpc-001")

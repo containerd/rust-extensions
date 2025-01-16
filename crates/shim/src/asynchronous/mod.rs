@@ -178,7 +178,7 @@ where
 
             let publisher = RemotePublisher::new(&ttrpc_address).await?;
             let task = shim.create_task_service(publisher).await;
-            let task_service = create_task(Arc::new(task));
+            let task_service = create_task(Arc::new(Box::new(task)));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;
             server = server.set_domain_unix();
