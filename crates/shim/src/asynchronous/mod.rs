@@ -177,8 +177,9 @@ where
             }
 
             let publisher = RemotePublisher::new(&ttrpc_address).await?;
-            let task = shim.create_task_service(publisher).await;
-            let task_service = create_task(Arc::new(Box::new(task)));
+            let task = Box::new(shim.create_task_service(publisher).await)
+                as Box<dyn containerd_shim_protos::shim_async::Task + Send + Sync>;
+            let task_service = create_task(Arc::from(task));
             let mut server = Server::new().register_service(task_service);
             server = server.add_listener(SOCKET_FD)?;
             server = server.set_domain_unix();

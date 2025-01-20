@@ -265,8 +265,9 @@ where
             }
 
             let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
-            let task = shim.create_task_service(publisher);
-            let task_service = create_task(Arc::new(Box::new(task)));
+            let task = Box::new(shim.create_task_service(publisher))
+                as Box<dyn containerd_shim_protos::Task + Send + Sync + 'static>;
+            let task_service = create_task(Arc::from(task));
             let mut server = create_server(flags)?;
             server = server.register_service(task_service);
             server.start()?;
