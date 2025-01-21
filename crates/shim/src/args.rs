@@ -41,6 +41,8 @@ pub struct Flags {
     pub action: String,
     /// Version of the shim.
     pub version: bool,
+    /// get the option protobuf from stdin, print the shim info protobuf to stdout, and exit
+    pub info: bool,
 }
 
 /// Parses command line arguments passed to the shim.
@@ -57,6 +59,7 @@ pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
         f.add_flag("bundle", &mut flags.bundle);
         f.add_flag("address", &mut flags.address);
         f.add_flag("publish-binary", &mut flags.publish_binary);
+        f.add_flag("info", &mut flags.info);
     })
     .map_err(|e| Error::InvalidArgument(e.to_string()))?;
 

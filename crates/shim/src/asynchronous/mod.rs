@@ -17,10 +17,10 @@
 use std::{
     convert::TryFrom,
     env,
+    io::Read,
     os::unix::{fs::FileTypeExt, net::UnixListener},
     path::Path,
-    process,
-    process::{Command, Stdio},
+    process::{self, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -31,9 +31,11 @@ use async_trait::async_trait;
 use command_fds::{CommandFdExt, FdMapping};
 use containerd_shim_protos::{
     api::DeleteResponse,
-    protobuf::Message,
+    protobuf::{well_known_types::any::Any, Message, MessageField},
+    shim::oci::Options,
     shim_async::{create_task, Client, Task},
     ttrpc::r#async::Server,
+    types::introspection::{self, RuntimeInfo},
 };
 use futures::StreamExt;
 use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
@@ -46,8 +48,12 @@ use nix::{
     },
     unistd::Pid,
 };
+use oci_spec::runtime::Features;
 use signal_hook_tokio::Signals;
 use tokio::{io::AsyncWriteExt, sync::Notify};
+use which::which;
+
+const DEFAULT_BINARY_NAME: &str = "runc";
 
 use crate::{
     args,
@@ -108,6 +114,48 @@ where
         eprintln!("{}: {:?}", runtime_id, err);
         process::exit(1);
     }
+}
+/// get runtime info
+pub fn run_info() -> Result<RuntimeInfo> {
+    let mut info = introspection::RuntimeInfo {
+        name: "containerd-shim-runc-v2-rs".to_string(),
+        version: MessageField::some(introspection::RuntimeVersion {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            revision: String::default(),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let mut binary_name = DEFAULT_BINARY_NAME.to_string();
+    let mut data: Vec<u8> = Vec::new();
+    std::io::stdin()
+        .read_to_end(&mut data)
+        .map_err(io_error!(e, "read stdin"))?;
+    // get BinaryName from stdin
+    if !data.is_empty() {
+        let opts =
+            Any::parse_from_bytes(&data).and_then(|any| Options::parse_from_bytes(&any.value))?;
+        if !opts.binary_name().is_empty() {
+            binary_name = opts.binary_name().to_string();
+        }
+    }
+    let binary_path = which(binary_name).unwrap();
+
+    // get features
+    let output = Command::new(binary_path).arg("features").output().unwrap();
+
+    let features: Features = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))?;
+
+    // set features
+    let features_any = Any {
+        type_url: "types.containerd.io/opencontainers/runtime-spec/1/features/Features".to_string(),
+        // features to json
+        value: serde_json::to_vec(&features)?,
+        ..Default::default()
+    };
+    info.features = MessageField::some(features_any);
+
+    Ok(info)
 }
 
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]

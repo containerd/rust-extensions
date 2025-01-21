@@ -32,6 +32,7 @@ fn main() {
             "vendor/github.com/containerd/containerd/protobuf/plugin/fieldpath.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
+            "vendor/github.com/containerd/containerd/api/types/introspection.proto",
             #[cfg(feature = "sandbox")]
             "vendor/github.com/containerd/containerd/api/types/platform.proto",
         ],
