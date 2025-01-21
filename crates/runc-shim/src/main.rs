@@ -14,9 +14,14 @@
    limitations under the License.
 */
 
-use std::env;
+use std::{env, io::Write};
 
-use containerd_shim::{asynchronous::run, parse};
+use containerd_shim::{
+    asynchronous::run,
+    parse,
+    protos::protobuf::{well_known_types::any::Any, Message},
+    run_info,
+};
 
 mod cgroup_memory;
 mod common;
@@ -45,6 +50,30 @@ fn parse_version() {
         println!("  Revision: {}", env!("CARGO_GIT_HASH"));
         println!();
 
+        std::process::exit(0);
+    }
+    if flags.info {
+        let r = run_info();
+        match r {
+            Ok(rinfo) => {
+                let mut info = Any::new();
+                info.type_url = "io.containerd.runc.v2.Info".to_string();
+                info.value = match rinfo.write_to_bytes() {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        eprintln!("Failed to write runtime info to bytes: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+                std::io::stdout()
+                    .write_all(info.write_to_bytes().unwrap().as_slice())
+                    .expect("Failed to write to stdout");
+            }
+            Err(_) => {
+                eprintln!("Failed to get runtime info");
+                std::process::exit(1);
+            }
+        }
         std::process::exit(0);
     }
 }

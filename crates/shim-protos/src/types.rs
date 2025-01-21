@@ -34,6 +34,9 @@ pub mod fieldpath {
     include!(concat!(env!("OUT_DIR"), "/types/fieldpath.rs"));
 }
 
+pub mod introspection {
+    include!(concat!(env!("OUT_DIR"), "/types/introspection.rs"));
+}
 #[cfg(feature = "sandbox")]
 pub mod platform {
     include!(concat!(env!("OUT_DIR"), "/types/platform.rs"));
