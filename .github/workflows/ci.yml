@@ -23,7 +23,7 @@ jobs:
         shell: bash
 
       - run: rustup toolchain install nightly --component rustfmt
-      - run: cargo +nightly fmt --all -- --check --files-with-diff
+      - run: cargo +nightly fmt --all -- --check
 
       # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
       - run: cargo check -p runc --all-targets
@@ -40,7 +40,7 @@ jobs:
       - run: cargo doc --no-deps --features docs
         env:
           RUSTDOCFLAGS: -Dwarnings
-      
+
       # See https://github.com/containerd/rust-extensions/issues/348
       # - name: check unused dependencies
       #   uses: bnjbvr/cargo-machete@v0.7.0
@@ -58,7 +58,7 @@ jobs:
       - run: cargo check --examples --tests -p containerd-shim -p containerd-shim-protos -p containerd-client
 
       - run: rustup toolchain install nightly --component rustfmt
-      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -p containerd-client -- --check --files-with-diff
+      - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -p containerd-client -- --check
 
       - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
       - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos -p containerd-client
