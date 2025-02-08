@@ -67,6 +67,7 @@ const FIXUP_MODULES: &[&str] = &[
 
 fn main() {
     let mut config = prost_build::Config::new();
+    config.protoc_arg("--experimental_allow_proto3_optional");
     config.enable_type_names();
 
     tonic_build::configure()
