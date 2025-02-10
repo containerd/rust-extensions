@@ -163,8 +163,10 @@ impl RuncFactory {
             (Some(s), None)
         } else {
             let pio = create_io(&id, opts.io_uid, opts.io_gid, stdio)?;
-            create_opts.io = pio.io.as_ref().cloned();
-            (None, Some(pio))
+            let ref_pio = Arc::new(pio);
+            create_opts.io = ref_pio.io.clone();
+            init.io = Some(ref_pio.clone());
+            (None, Some(ref_pio))
         };
 
         let resp = init
@@ -177,6 +179,22 @@ impl RuncFactory {
                 s.clean().await;
             }
             return Err(runtime_error(bundle, e, "OCI runtime create failed").await);
+        }
+        if !init.stdio.stdin.is_empty() {
+            let stdin_clone = init.stdio.stdin.clone();
+            let stdin_w = init.stdin.clone();
+            // Open the write side in advance to make sure read side will not block,
+            // open it in another thread otherwise it will block too.
+            tokio::spawn(async move {
+                if let Ok(stdin_w_file) = OpenOptions::new()
+                    .write(true)
+                    .open(stdin_clone.as_str())
+                    .await
+                {
+                    let mut lock_guard = stdin_w.lock().unwrap();
+                    *lock_guard = Some(stdin_w_file);
+                }
+            });
         }
         copy_io_or_console(init, socket, pio, init.lifecycle.exit_signal.clone()).await?;
         let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
@@ -232,6 +250,7 @@ impl ProcessFactory<ExecProcess> for RuncExecFactory {
                 stderr: req.stderr.to_string(),
                 terminal: req.terminal,
             },
+            io: None,
             pid: 0,
             exit_code: 0,
             exited_at: None,
@@ -299,6 +318,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 );
             }
         }
+
         self.exit_signal.signal();
         Ok(())
     }
@@ -434,8 +454,10 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             (Some(s), None)
         } else {
             let pio = create_io(&p.id, self.io_uid, self.io_gid, &p.stdio)?;
-            exec_opts.io = pio.io.as_ref().cloned();
-            (None, Some(pio))
+            let ref_pio = Arc::new(pio);
+            exec_opts.io = ref_pio.io.clone();
+            p.io = Some(ref_pio.clone());
+            (None, Some(ref_pio))
         };
         //TODO  checkpoint support
         let exec_result = self
@@ -698,7 +720,7 @@ where
 async fn copy_io_or_console<P>(
     p: &mut ProcessTemplate<P>,
     socket: Option<ConsoleSocket>,
-    pio: Option<ProcessIO>,
+    pio: Option<Arc<ProcessIO>>,
     exit_signal: Arc<ExitSignal>,
 ) -> Result<()> {
     if p.stdio.terminal {
@@ -736,6 +758,7 @@ impl Spawner for ShimExecutor {
             }
         };
         let pid = child.id().unwrap();
+
         let (stdout, stderr, exit_code) = tokio::join!(
             read_std(child.stdout),
             read_std(child.stderr),
