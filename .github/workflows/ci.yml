@@ -18,12 +18,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      # Use the rust-toolchain-file 
+      - uses: dsherret/rust-toolchain-file@v1
       - run: ./scripts/install-protobuf.sh
         shell: bash
 
-      - run: rustup toolchain install nightly --component rustfmt
-      - run: cargo +nightly fmt --all -- --check
+      - run: cargo fmt --all -- --check
 
       # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
       - run: cargo check -p runc --all-targets
