@@ -24,7 +24,7 @@ use containerd_shim_protos::{
     ttrpc,
     ttrpc::context::Context,
 };
-use log::debug;
+use log::{debug, error, warn};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -93,15 +93,20 @@ impl RemotePublisher {
                     count: item.count + 1,
                 };
                 if let Err(e) = client.forward(new_item.ctx.clone(), &req).await {
-                    debug!("publish error {:?}", e);
-                    // This is a bug from ttrpc, ttrpc should return RemoteClosed|ClientClosed error. change it in future
-                    // if e == (ttrpc::error::Error::RemoteClosed || ttrpc::error::Error::ClientClosed)
-                    // reconnect client
-                    let new_client = Self::connect(address.as_str()).await.map_err(|e| {
-                        debug!("reconnect the ttrpc client {:?} fail", e);
-                    });
-                    if let Ok(c) = new_client {
-                        client = EventsClient::new(c);
+                    match e {
+                        ttrpc::error::Error::RemoteClosed | ttrpc::error::Error::LocalClosed => {
+                            warn!("publish fail because the server or client close {:?}", e);
+                            // reconnect client
+                            if let Ok(c) = Self::connect(address.as_str()).await.map_err(|e| {
+                                debug!("reconnect the ttrpc client {:?} fail", e);
+                            }) {
+                                client = EventsClient::new(c);
+                            }
+                        }
+                        _ => {
+                            // TODO! if it is other error , May we should deal with socket file
+                            error!("the client forward err is {:?}", e);
+                        }
                     }
                     let sender_ref = sender.clone();
                     // Take a another task requeue , for no blocking the recv task
