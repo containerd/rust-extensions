@@ -344,10 +344,20 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
         command.arg("-debug");
     }
     command.envs(vars);
+    let result = command.spawn().map_err(io_error!(e, "spawn shim"));
+    let _child = match result {
+        Ok(child) => child,
+        Err(e) => {
+            remove_socket(&address).await?;
+            return Err(e);
+        }
+    };
 
-    let _child = command.spawn().map_err(io_error!(e, "spawn shim"))?;
     #[cfg(target_os = "linux")]
-    crate::cgroup::set_cgroup_and_oom_score(_child.id())?;
+    if let Err(e) = crate::cgroup::set_cgroup_and_oom_score(_child.id()) {
+        remove_socket(&address).await?;
+        return Err(e);
+    }
     Ok(address)
 }
 
