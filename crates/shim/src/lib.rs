@@ -77,7 +77,7 @@ pub mod api {
 macro_rules! cfg_not_async {
     ($($item:item)*) => {
         $(
-            #[cfg(not(feature = "async"))]
+            #[cfg(not(all(feature = "async", target_family="unix")))]
             #[cfg_attr(docsrs, doc(cfg(not(feature = "async"))))]
             $item
         )*
@@ -87,7 +87,7 @@ macro_rules! cfg_not_async {
 macro_rules! cfg_async {
     ($($item:item)*) => {
         $(
-            #[cfg(feature = "async")]
+            #[cfg(all(feature = "async", target_family="unix"))]
             #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
             $item
         )*
