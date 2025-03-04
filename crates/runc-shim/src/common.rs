@@ -30,9 +30,7 @@ use std::{
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
-    io_error, other, other_error,
-    util::IntoOption,
-    Error,
+    io_error, other, other_error, Error,
 };
 use log::{debug, warn};
 use nix::{
@@ -44,7 +42,8 @@ use nix::{
 };
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 use runc::{
-    io::{Io, NullIo, FIFO},
+    io::{IOOption, Io, NullIo},
+    PipedIo,
     options::GlobalOpts,
     Runc, Spawner,
 };
@@ -77,8 +76,8 @@ pub struct ProcessIO {
 
 pub fn create_io(
     id: &str,
-    _io_uid: u32,
-    _io_gid: u32,
+    io_uid: u32,
+    io_gid: u32,
     stdio: &Stdio,
 ) -> containerd_shim::Result<ProcessIO> {
     let mut pio = ProcessIO::default();
@@ -101,19 +100,25 @@ pub fn create_io(
 
     if scheme == FIFO_SCHEME {
         debug!(
-            "create named pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
+            "create pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
             id,
             stdio.stdin.as_str(),
             stdio.stdout.as_str(),
             stdio.stderr.as_str()
         );
-        let io = FIFO {
-            stdin: stdio.stdin.to_string().none_if(|x| x.is_empty()),
-            stdout: stdio.stdout.to_string().none_if(|x| x.is_empty()),
-            stderr: stdio.stderr.to_string().none_if(|x| x.is_empty()),
+
+        if stdio.stdin.is_empty() {
+            debug!("stdin is empty");
+        }
+        let opts = IOOption {
+            open_stdin: !stdio.stdin.is_empty(),
+            open_stdout: !stdio.stdout.is_empty(),
+            open_stderr: !stdio.stderr.is_empty(),
         };
+        let io = PipedIo::new(io_uid, io_gid, &opts).unwrap();
+        pio.copy = true;
+
         pio.io = Some(Arc::new(io));
-        pio.copy = false;
     }
     Ok(pio)
 }
