@@ -60,20 +60,20 @@ impl FifoLogger {
     }
 }
 
-pub(crate) struct SimpleWriteVistor {
+pub(crate) struct SimpleWriteVisitor {
     key_values: String,
 }
 
-impl<'kvs> Visitor<'kvs> for SimpleWriteVistor {
+impl<'kvs> Visitor<'kvs> for SimpleWriteVisitor {
     fn visit_pair(&mut self, k: kv::Key<'kvs>, v: kv::Value<'kvs>) -> Result<(), kv::Error> {
         write!(&mut self.key_values, " {}=\"{}\"", k, v)?;
         Ok(())
     }
 }
 
-impl SimpleWriteVistor {
-    pub(crate) fn new() -> SimpleWriteVistor {
-        SimpleWriteVistor {
+impl SimpleWriteVisitor {
+    pub(crate) fn new() -> SimpleWriteVisitor {
+        SimpleWriteVisitor {
             key_values: String::new(),
         }
     }
@@ -93,7 +93,7 @@ impl log::Log for FifoLogger {
             let mut guard = self.file.lock().unwrap();
 
             // collect key_values but don't fail if error parsing
-            let mut writer = SimpleWriteVistor::new();
+            let mut writer = SimpleWriteVisitor::new();
             let _ = record.key_values().visit(&mut writer);
 
             // The logger server may have temporarily shutdown, ignore the error instead of panic.
@@ -106,7 +106,7 @@ impl log::Log for FifoLogger {
             let _ = writeln!(
                 guard.borrow_mut(),
                 "time=\"{}\" level={}{} msg=\"{}\"\n",
-                rfc3339_formated(),
+                rfc3339_formatted(),
                 record.level().as_str().to_lowercase(),
                 writer.as_str(),
                 record.args()
@@ -155,7 +155,7 @@ fn configure_logging_level(debug: bool, default_log_level: &str) {
     log::set_max_level(level);
 }
 
-pub(crate) fn rfc3339_formated() -> String {
+pub(crate) fn rfc3339_formatted() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or(OffsetDateTime::now_utc().to_string())

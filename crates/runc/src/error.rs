@@ -54,7 +54,7 @@ pub enum Error {
     #[error(transparent)]
     ProcessSpawnFailed(io::Error),
 
-    #[error("Error occured in runc: {0}")]
+    #[error("Error occurred in runc: {0}")]
     InvalidCommand(io::Error),
 
     #[error("Runc command failed: status={status}, stdout=\"{stdout}\", stderr=\"{stderr}\"")]
@@ -113,7 +113,7 @@ pub enum Error {
     #[error("Sorry, this part of api is not implemented: {0}")]
     Unimplemented(String),
 
-    #[error("Error occured in runc client: {0}")]
+    #[error("Error occurred in runc client: {0}")]
     Other(Box<dyn std::error::Error + Send>),
 
     #[error("Failed to set cmd io: {0}")]

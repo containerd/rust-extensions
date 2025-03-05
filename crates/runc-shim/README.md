@@ -34,7 +34,7 @@ Three different kinds of shim binaries are used to compare memory overhead, firs
 compiled by golang, next is our sync `containerd-shim-runc-v2-rs` and the last one is our async `containerd-shim-runc-v2-rs`
 but limited to 2 work threads.
 
-We run a *busybox* container inside a pod on a *16U32G Ubuntu20.04* mechine with *containerd v1.6.8* and *runc v1.1.4*.
+We run a *busybox* container inside a pod on a *16U32G Ubuntu20.04* machine with *containerd v1.6.8* and *runc v1.1.4*.
 To measure the memory size of shim process we parse the output of *smaps* file and add up all RSS segments.
 In addition, we also run 100 pods and collect the total memory overhead.
 

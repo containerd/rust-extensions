@@ -111,7 +111,7 @@ impl RemotePublisher {
                     let sender_ref = sender.clone();
                     // Take a another task requeue , for no blocking the recv task
                     tokio::spawn(async move {
-                        // wait for few time and send for imporving the success ratio
+                        // wait for few time and send for improving the success ratio
                         tokio::time::sleep(tokio::time::Duration::from_secs(new_item.count as u64))
                             .await;
                         // if channel is full and send fail ,release it after 3 seconds

@@ -524,8 +524,8 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
     #[cfg(windows)]
     {
         // Activation pattern for Windows comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
-        // another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
-        // the logic in Rust's 'command' for process creation.  There is an  issue in Rust to make it simplier to specify handle inheritence and this could
+        // another way to do it would to create named pipe and pass it to the child process through handle inheritance but that would require duplicating
+        // the logic in Rust's 'command' for process creation.  There is an  issue in Rust to make it simpler to specify handle inheritance and this could
         // be revisited once https://github.com/rust-lang/rust/issues/54760 is implemented.
         let (mut reader, writer) = os_pipe::pipe().map_err(io_error!(e, "create pipe"))?;
         let stdio_writer = writer.try_clone().unwrap();

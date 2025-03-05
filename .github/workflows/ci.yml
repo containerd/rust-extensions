@@ -255,3 +255,11 @@ jobs:
     steps:
       - run: exit 1
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+
+  spelling:
+    name: spell check with typos
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Spell Check Repo
+      uses: crate-ci/typos@master

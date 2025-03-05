@@ -978,7 +978,7 @@ mod tests {
             }
         })
         .await
-        .expect("tokio spawn falied.");
+        .expect("tokio spawn failed.");
     }
 
     #[tokio::test]
@@ -1013,7 +1013,7 @@ mod tests {
             }
         })
         .await
-        .expect("tokio spawn falied.");
+        .expect("tokio spawn failed.");
     }
 
     #[tokio::test]

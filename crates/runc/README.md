@@ -42,5 +42,5 @@ async fn main() {
     - kill
     - delete
 - Exec is **not** available in `RuncAsyncClient` now.
-- Console utilites are **not** available
+- Console utilities are **not** available
     - see [Go version](https://github.com/containerd/go-runc/blob/main/console.go)
