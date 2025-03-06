@@ -85,12 +85,12 @@ impl log::Log for NamedPipeLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             // collect key_values but don't fail if error parsing
-            let mut writer = logger::SimpleWriteVistor::new();
+            let mut writer = logger::SimpleWriteVisitor::new();
             let _ = record.key_values().visit(&mut writer);
 
             let message = format!(
                 "time=\"{}\" level={}{} msg=\"{}\"\n",
-                logger::rfc3339_formated(),
+                logger::rfc3339_formatted(),
                 record.level().as_str().to_lowercase(),
                 writer.as_str(),
                 record.args()

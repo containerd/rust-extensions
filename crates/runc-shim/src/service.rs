@@ -226,7 +226,7 @@ async fn forward(
         while let Some((topic, e)) = rx.recv().await {
             // While ttrpc push the event,give it a 5 seconds timeout.
             // Prevent event reporting from taking too long time.
-            // Learnd from goshim's containerd/runtime/v2/shim/publisher.go
+            // Learned from goshim's containerd/runtime/v2/shim/publisher.go
             publisher
                 .publish(with_timeout(5000000000), &topic, &ns, e)
                 .await

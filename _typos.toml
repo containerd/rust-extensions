@@ -1,0 +1,10 @@
+[default]
+extend-ignore-re = [
+   # Match 'typ()' when used as a method call
+   "\\w+\\.typ\\(\\)",
+]
+
+[type.proto]
+extend-glob = ["*.proto"]
+check-file = false
+

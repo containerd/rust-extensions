@@ -491,7 +491,7 @@ pub fn mount_rootfs(
                 )
                 .unwrap_or_else(|err| {
                     error!(
-                        "Change {} mount propagation faied: {}",
+                        "Change {} mount propagation failed: {}",
                         target.as_ref().display(),
                         err
                     );

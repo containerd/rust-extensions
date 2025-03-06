@@ -125,10 +125,10 @@ pub struct Throttling {
     pub periods: Option<u64>,
     #[serde(rename = "throttledPeriods")]
     /// Number of periods when the container hit its throttling limit
-    pub throtted_periods: Option<u64>,
+    pub throttled_periods: Option<u64>,
     /// Aggregate time the container was throttled for in nanoseconds
     #[serde(rename = "throttledTime")]
-    pub throtted_time: Option<u64>,
+    pub throttled_time: Option<u64>,
 }
 
 /// Each members represents time in nanoseconds

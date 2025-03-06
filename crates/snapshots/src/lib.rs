@@ -119,7 +119,7 @@ impl AddAssign for Usage {
 pub trait Snapshotter: Send + Sync + 'static {
     /// Error type returned from the underlying snapshotter implementation.
     ///
-    /// This type must be convertable to GRPC status.
+    /// This type must be convertible to GRPC status.
     type Error: Debug + Into<tonic::Status> + Send;
 
     /// Returns the info for an active or committed snapshot by name or key.

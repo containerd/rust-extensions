@@ -807,16 +807,16 @@ mod tests {
             .await
             .expect("write log json should not be error");
 
-        let expectd_msg = "panic";
+        let expected_msg = "panic";
         let actual_err = runtime_error(test_dir, empty_err, "").await;
         remove_dir_all(test_dir)
             .await
             .expect("remove test dir should not be error");
         assert!(
-            actual_err.to_string().contains(expectd_msg),
+            actual_err.to_string().contains(expected_msg),
             "actual error \"{}\" should contains \"{}\"",
             actual_err,
-            expectd_msg
+            expected_msg
         );
     }
 }

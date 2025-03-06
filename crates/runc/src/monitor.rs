@@ -43,7 +43,7 @@ pub trait ProcessMonitor {
     /// respectively, when creating the [Command](https://docs.rs/tokio/1.16.1/tokio/process/struct.Command.html#).
     async fn start(&self, mut cmd: Command, tx: Sender<Exit>) -> std::io::Result<Output> {
         let chi = cmd.spawn()?;
-        // Safe to expect() because wait() hasn't been called yet, dependence on tokio interanl
+        // Safe to expect() because wait() hasn't been called yet, dependence on tokio internal
         // implementation details.
         let pid = chi
             .id()
