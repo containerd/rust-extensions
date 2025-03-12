@@ -62,7 +62,6 @@ pub mod mount;
 mod reap;
 #[cfg(not(feature = "async"))]
 pub mod synchronous;
-mod sys;
 pub mod util;
 
 /// Generated request/response structures.
