@@ -31,8 +31,6 @@ use log::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::error::Error;
-#[cfg(windows)]
-use crate::sys::windows::NamedPipeLogger;
 
 pub const LOG_ENV: &str = "RUST_LOG";
 
@@ -41,22 +39,92 @@ pub struct FifoLogger {
 }
 
 impl FifoLogger {
-    #[allow(dead_code)]
-    pub fn new() -> Result<FifoLogger, io::Error> {
-        Self::with_path("log")
+    pub fn new(_namespace: &str, _id: &str) -> io::Result<FifoLogger> {
+        #[cfg(unix)]
+        let logger = Self::with_path("log")?;
+
+        #[cfg(windows)]
+        let logger = {
+            let pipe_name = format!(r"\\.\pipe\containerd-shim-{_namespace}-{_id}-log");
+            Self::with_named_pipe(&pipe_name)?
+        };
+
+        Ok(logger)
     }
 
     #[allow(dead_code)]
-    pub fn with_path<P: AsRef<Path>>(path: P) -> Result<FifoLogger, io::Error> {
+    pub fn with_path(path: impl AsRef<Path>) -> io::Result<FifoLogger> {
         let f = OpenOptions::new()
             .write(true)
             .read(false)
             .create(false)
             .open(path)?;
 
-        Ok(FifoLogger {
-            file: Mutex::new(f),
-        })
+        Ok(FifoLogger::with_file(f))
+    }
+
+    pub fn with_file(file: File) -> FifoLogger {
+        let file = Mutex::new(file);
+        FifoLogger { file }
+    }
+
+    #[cfg(windows)]
+    pub fn with_named_pipe(name: &str) -> io::Result<FifoLogger> {
+        // Containerd on windows expects the log to be a named pipe in the format of \\.\pipe\containerd-<namespace>-<id>-log
+        // There is an assumption that there is always only one client connected which is containerd.
+        // If there is a restart of containerd then logs during that time period will be lost.
+        //
+        // https://github.com/containerd/containerd/blob/v1.7.0/runtime/v2/shim_windows.go#L77
+        // https://github.com/microsoft/hcsshim/blob/5871d0c4436f131c377655a3eb09fc9b5065f11d/cmd/containerd-shim-runhcs-v1/serve.go#L132-L137
+
+        use std::os::windows::io::{AsRawHandle, BorrowedHandle};
+
+        use mio::{windows::NamedPipe, Events, Interest, Poll, Token};
+
+        let mut pipe_server = NamedPipe::new(name)?;
+
+        let file = unsafe { BorrowedHandle::borrow_raw(pipe_server.as_raw_handle()) }
+            .try_clone_to_owned()?;
+        let file = File::from(file);
+
+        let poll = Poll::new()?;
+        poll.registry().register(
+            &mut pipe_server,
+            Token(0),
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+
+        std::thread::spawn(move || {
+            let pipe_server = pipe_server;
+            let mut poll = poll;
+            let mut events = Events::with_capacity(128);
+            let _ = pipe_server.connect();
+            loop {
+                poll.poll(&mut events, None).unwrap();
+
+                for event in events.iter() {
+                    if event.is_writable() {
+                        match pipe_server.connect() {
+                            Ok(()) => {}
+                            Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                                // this would block just keep processing
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                // this would block just keep processing
+                            }
+                            Err(e) => {
+                                panic!("Error connecting to client: {}", e);
+                            }
+                        };
+                    }
+                    if event.is_readable() {
+                        pipe_server.disconnect().unwrap();
+                    }
+                }
+            }
+        });
+
+        Ok(FifoLogger::with_file(file))
     }
 }
 
@@ -116,29 +184,12 @@ impl log::Log for FifoLogger {
 
     fn flush(&self) {
         // The logger server may have temporarily shutdown, ignore the error instead of panic.
-        let _ = self.file.lock().unwrap().sync_all();
+        let _ = self.file.lock().unwrap().flush();
     }
 }
 
-pub fn init(
-    debug: bool,
-    default_log_level: &str,
-    _namespace: &str,
-    _id: &str,
-) -> Result<(), Error> {
-    #[cfg(unix)]
-    let logger = FifoLogger::new().map_err(io_error!(e, "failed to init logger"))?;
-
-    // Containerd on windows expects the log to be a named pipe in the format of \\.\pipe\containerd-<namespace>-<id>-log
-    // There is an assumption that there is always only one client connected which is containerd.
-    // If there is a restart of containerd then logs during that time period will be lost.
-    //
-    // https://github.com/containerd/containerd/blob/v1.7.0/runtime/v2/shim_windows.go#L77
-    // https://github.com/microsoft/hcsshim/blob/5871d0c4436f131c377655a3eb09fc9b5065f11d/cmd/containerd-shim-runhcs-v1/serve.go#L132-L137
-    #[cfg(windows)]
-    let logger =
-        NamedPipeLogger::new(_namespace, _id).map_err(io_error!(e, "failed to init logger"))?;
-
+pub fn init(debug: bool, default_log_level: &str, namespace: &str, id: &str) -> Result<(), Error> {
+    let logger = FifoLogger::new(namespace, id).map_err(io_error!(e, "failed to init logger"))?;
     configure_logging_level(debug, default_log_level);
     log::set_boxed_logger(Box::new(logger))?;
     Ok(())
@@ -289,5 +340,132 @@ mod tests {
 
         let contents = fs::read_to_string(path).unwrap();
         assert!(contents.contains("level=error key=\"1\" b=\"2\" msg=\"structured!\""));
+    }
+}
+
+#[cfg(all(windows, test))]
+mod windows_tests {
+    use std::{
+        fs::OpenOptions,
+        io::Read,
+        os::windows::{
+            fs::OpenOptionsExt,
+            io::{FromRawHandle, IntoRawHandle},
+            prelude::AsRawHandle,
+        },
+        time::Duration,
+    };
+
+    use log::{Log, Record};
+    use mio::{windows::NamedPipe, Events, Interest, Poll, Token};
+    use windows_sys::Win32::{
+        Foundation::ERROR_PIPE_NOT_CONNECTED, Storage::FileSystem::FILE_FLAG_OVERLAPPED,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_namedpipe_log_can_write_before_client_connected() {
+        let ns = "test".to_string();
+        let id = "notconnected".to_string();
+        let logger = FifoLogger::new(&ns, &id).unwrap();
+
+        // test can write before a reader is connected (should succeed but the messages will be dropped)
+        log::set_max_level(log::LevelFilter::Info);
+        let record = Record::builder()
+            .level(log::Level::Info)
+            .line(Some(1))
+            .file(Some("sample file"))
+            .args(format_args!("hello"))
+            .build();
+        logger.log(&record);
+        logger.flush();
+    }
+
+    #[test]
+    fn test_namedpipe_log() {
+        use std::fs::File;
+
+        let ns = "test".to_string();
+        let id = "clients".to_string();
+        let pipe_name = format!("\\\\.\\pipe\\containerd-shim-{}-{}-log", ns, id);
+
+        let logger = FifoLogger::new(&ns, &id).unwrap();
+        let mut client = create_client(pipe_name.as_str());
+
+        log::set_max_level(log::LevelFilter::Info);
+        let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
+        let record = Record::builder()
+            .level(log::Level::Info)
+            .line(Some(1))
+            .key_values(&kvs)
+            .args(format_args!("hello"))
+            .build();
+        logger.log(&record);
+        logger.flush();
+
+        let buf = read_message(&mut client, 73);
+        let message = std::str::from_utf8(&buf).unwrap();
+        assert!(message.starts_with("time=\""), "message was: {:?}", message);
+        assert!(
+            message.contains("level=info key=\"1\" b=\"2\" msg=\"hello\"\n"),
+            "message was: {:?}",
+            message
+        );
+
+        // test that we can reconnect after a reader disconnects
+        // we need to get the raw handle and drop that as well to force full disconnect
+        // and give a few milliseconds for the disconnect to happen
+        println!("dropping client");
+        let handle = client.as_raw_handle();
+        drop(client);
+        let f = unsafe { File::from_raw_handle(handle) };
+        drop(f);
+        std::thread::sleep(Duration::from_millis(100));
+
+        let mut client2 = create_client(pipe_name.as_str());
+        logger.log(&record);
+        logger.flush();
+
+        read_message(&mut client2, 51);
+    }
+
+    fn read_message(client: &mut NamedPipe, length: usize) -> Vec<u8> {
+        let mut poll = Poll::new().unwrap();
+        poll.registry()
+            .register(client, Token(1), Interest::READABLE)
+            .unwrap();
+        let mut events = Events::with_capacity(128);
+        let mut buf = vec![0; length];
+        loop {
+            poll.poll(&mut events, Some(Duration::from_millis(10)))
+                .unwrap();
+            match client.read(&mut buf) {
+                Ok(0) => {
+                    panic!("Read no bytes from pipe")
+                }
+                Ok(_) => {
+                    break;
+                }
+                Err(e) if e.raw_os_error() == Some(ERROR_PIPE_NOT_CONNECTED as i32) => {
+                    panic!("not connected to the pipe");
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => panic!("Error reading from pipe: {}", e),
+            }
+        }
+        buf.to_vec()
+    }
+
+    fn create_client(pipe_name: &str) -> mio::windows::NamedPipe {
+        let mut opts = OpenOptions::new();
+        opts.read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED);
+        let file = opts.open(pipe_name).unwrap();
+
+        unsafe { NamedPipe::from_raw_handle(file.into_raw_handle()) }
     }
 }
