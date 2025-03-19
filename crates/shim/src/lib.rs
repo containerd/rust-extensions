@@ -18,10 +18,7 @@
 
 use std::{fs::File, path::PathBuf};
 #[cfg(unix)]
-use std::{
-    os::unix::{io::RawFd, net::UnixListener},
-    path::Path,
-};
+use std::{os::unix::net::UnixListener, path::Path};
 
 pub use containerd_shim_protos as protos;
 #[cfg(unix)]
@@ -149,12 +146,6 @@ pub struct StartOpts {
 
     pub debug: bool,
 }
-
-/// The shim process communicates with the containerd server through a communication channel
-/// created by containerd. One endpoint of the communication channel is passed to shim process
-/// through a file descriptor during forking, which is the fourth(3) file descriptor.
-#[cfg(unix)]
-const SOCKET_FD: RawFd = 3;
 
 #[cfg(target_os = "linux")]
 pub const SOCKET_ROOT: &str = "/run/containerd";

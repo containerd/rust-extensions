@@ -77,7 +77,6 @@ command-fds = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
 mio = { version = "1.0", features = ["os-ext", "os-poll"] }
-os_pipe.workspace = true
 windows-sys = { version = "0.52.0", features = [
   "Win32_Foundation",
   "Win32_System_WindowsProgramming",
