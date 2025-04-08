@@ -19,7 +19,6 @@ async = [
   "async-trait",
   "containerd-shim-protos/async",
   "futures",
-  "signal-hook-tokio",
   "tokio",
 ]
 tracing = ["dep:tracing"]
@@ -64,9 +63,6 @@ tracing = { version = "0.1", optional = true }
 # Async dependencies
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
-signal-hook-tokio = { version = "0.3.1", optional = true, features = [
-  "futures-v0_3",
-] }
 tokio = { workspace = true, features = ["full"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

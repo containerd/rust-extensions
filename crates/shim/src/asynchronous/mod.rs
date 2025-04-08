@@ -15,7 +15,6 @@
 */
 
 use std::{
-    convert::TryFrom,
     env,
     io::Read,
     os::unix::{fs::FileTypeExt, net::UnixListener},
@@ -25,6 +24,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    task::{ready, Poll},
 };
 
 use async_trait::async_trait;
@@ -36,7 +36,7 @@ use containerd_shim_protos::{
     ttrpc::r#async::Server,
     types::introspection::{self, RuntimeInfo},
 };
-use futures::StreamExt;
+use futures::stream::{poll_fn, BoxStream, SelectAll, StreamExt};
 use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
 use log::{debug, error, info, warn};
 use nix::{
@@ -48,7 +48,6 @@ use nix::{
     unistd::Pid,
 };
 use oci_spec::runtime::Features;
-use signal_hook_tokio::Signals;
 use tokio::{io::AsyncWriteExt, process::Command, sync::Notify};
 use which::which;
 
@@ -388,13 +387,76 @@ fn signal_server_started() {
     }
 }
 
+#[cfg(unix)]
+fn signal_stream(kind: i32) -> std::io::Result<BoxStream<'static, i32>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let kind = SignalKind::from_raw(kind);
+    signal(kind).map(|mut sig| {
+        // The object returned by `signal` is not a `Stream`.
+        // The `poll_fn` function constructs a `Stream` based on a polling function.
+        // We need to create a `Stream` so that we can use the `SelectAll` stream "merge"
+        // all the signal streams.
+        poll_fn(move |cx| {
+            ready!(sig.poll_recv(cx));
+            Poll::Ready(Some(kind.as_raw_value()))
+        })
+        .boxed()
+    })
+}
+
+#[cfg(windows)]
+fn signal_stream(kind: i32) -> std::io::Result<BoxStream<'static, i32>> {
+    use tokio::signal::windows::ctrl_c;
+
+    // Windows doesn't have similar signal like SIGCHLD
+    // We could implement something if required but for now
+    // just implement support for SIGINT
+    if kind != SIGINT {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Invalid signal {kind}"),
+        ));
+    }
+
+    ctrl_c().map(|mut sig| {
+        // The object returned by `signal` is not a `Stream`.
+        // The `poll_fn` function constructs a `Stream` based on a polling function.
+        // We need to create a `Stream` so that we can use the `SelectAll` stream "merge"
+        // all the signal streams.
+        poll_fn(move |cx| {
+            ready!(sig.poll_recv(cx));
+            Poll::Ready(Some(kind))
+        })
+        .boxed()
+    })
+}
+
+type Signals = SelectAll<BoxStream<'static, i32>>;
+
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
 fn setup_signals_tokio(config: &Config) -> Signals {
-    if config.no_reaper {
-        Signals::new([SIGTERM, SIGINT, SIGPIPE]).expect("new signal failed")
+    #[cfg(unix)]
+    let signals: &[i32] = if config.no_reaper {
+        &[SIGTERM, SIGINT, SIGPIPE]
     } else {
-        Signals::new([SIGTERM, SIGINT, SIGPIPE, SIGCHLD]).expect("new signal failed")
-    }
+        &[SIGTERM, SIGINT, SIGPIPE, SIGCHLD]
+    };
+
+    // Windows doesn't have similar signal like SIGCHLD
+    // We could implement something if required but for now
+    // just listen for SIGINT
+    // Note: see comment at the counterpart in synchronous/mod.rs for details.
+    #[cfg(windows)]
+    let signals: &[i32] = &[SIGINT];
+
+    let signals: Vec<_> = signals
+        .iter()
+        .copied()
+        .map(signal_stream)
+        .collect::<std::io::Result<_>>()
+        .expect("signal setup failed");
+
+    SelectAll::from_iter(signals)
 }
 
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
@@ -408,14 +470,7 @@ async fn handle_signals(signals: Signals) {
             }
             SIGCHLD => loop {
                 // Note: see comment at the counterpart in synchronous/mod.rs for details.
-                match asyncify(move || {
-                    Ok(wait::waitpid(
-                        Some(Pid::from_raw(-1)),
-                        Some(WaitPidFlag::WNOHANG),
-                    )?)
-                })
-                .await
-                {
+                match wait::waitpid(Some(Pid::from_raw(-1)), Some(WaitPidFlag::WNOHANG)) {
                     Ok(WaitStatus::Exited(pid, status)) => {
                         monitor_notify_by_pid(pid.as_raw(), status)
                             .await
@@ -431,7 +486,7 @@ async fn handle_signals(signals: Signals) {
                     Ok(WaitStatus::StillAlive) => {
                         break;
                     }
-                    Err(Error::Nix(Errno::ECHILD)) => {
+                    Err(Errno::ECHILD) => {
                         break;
                     }
                     Err(e) => {
