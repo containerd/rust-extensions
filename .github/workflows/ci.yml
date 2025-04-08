@@ -41,9 +41,10 @@ jobs:
         env:
           RUSTDOCFLAGS: -Dwarnings
 
-      # See https://github.com/containerd/rust-extensions/issues/348
-      # - name: check unused dependencies
-      #   uses: bnjbvr/cargo-machete@v0.7.0
+      - name: check unused dependencies
+        uses: bnjbvr/cargo-machete@v0.7.0
+        env:
+          RUSTUP_TOOLCHAIN: "stable"
 
   # TODO: Merge this with the checks job above
   windows-checks:

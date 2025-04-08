@@ -36,7 +36,6 @@ serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
 uuid.workspace = true
-tempfile.workspace = true
 # Async dependencies
 async-trait.workspace = true
 tokio = { workspace = true, features = ["full"] }
