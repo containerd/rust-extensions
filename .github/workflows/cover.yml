@@ -22,7 +22,7 @@ jobs:
 
       - name: Install grcov
         run: |
-          cargo install --locked grcov
+          cargo install --locked grcov@0.8.24
           grcov --version
 
       - name: Tests
