@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use std::{env::current_dir, sync::Arc};
+use std::{env::current_dir, sync::Arc, time::Duration};
 
 use ::runc::options::DeleteOpts;
 use async_trait::async_trait;
@@ -27,7 +27,7 @@ use containerd_shim::{
     event::Event,
     io_error,
     monitor::{Subject, Topic},
-    protos::{events::task::TaskExit, protobuf::MessageDyn, ttrpc::context::with_timeout},
+    protos::{events::task::TaskExit, protobuf::MessageDyn, ttrpc::context::with_duration},
     util::{
         convert_to_timestamp, read_options, read_pid_from_file, read_runtime, read_spec, timestamp,
         write_str_to_file,
@@ -228,7 +228,7 @@ async fn forward(
             // Prevent event reporting from taking too long time.
             // Learnd from goshim's containerd/runtime/v2/shim/publisher.go
             publisher
-                .publish(with_timeout(5000000000), &topic, &ns, e)
+                .publish(with_duration(Duration::from_secs(5)), &topic, &ns, e)
                 .await
                 .unwrap_or_else(|e| warn!("publish {} to containerd: {}", topic, e));
         }
