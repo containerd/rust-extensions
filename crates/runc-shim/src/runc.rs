@@ -65,6 +65,19 @@ use crate::{
     io::Stdio,
 };
 
+/// check the process is zombie
+#[cfg(target_os = "linux")]
+fn is_zombie_process(pid: i32) -> bool {
+    if let Ok(status) = std::fs::read_to_string(format!("/proc/{}/status", pid)) {
+        for line in status.lines() {
+            if line.starts_with("State:") && line.contains('Z') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
 pub type InitProcess = ProcessTemplate<RuncInitLifecycle>;
 
@@ -311,6 +324,15 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 p.pid
             ));
         }
+
+        // check the process is zombie
+        if is_zombie_process(p.pid) {
+            return Err(other!(
+                "failed to update resources because process {} is a zombie",
+                p.pid
+            ));
+        }
+
         containerd_shim::cgroup::update_resources(p.pid as u32, resources)
     }
 
@@ -327,6 +349,15 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 p.pid
             ));
         }
+
+        // check the process is zombie
+        if is_zombie_process(p.pid) {
+            return Err(other!(
+                "failed to collect metrics because process {} is a zombie",
+                p.pid
+            ));
+        }
+
         containerd_shim::cgroup::collect_metrics(p.pid as u32)
     }
 
