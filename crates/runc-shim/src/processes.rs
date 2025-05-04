@@ -37,7 +37,7 @@ use tokio::{
     sync::oneshot::{channel, Receiver, Sender},
 };
 
-use crate::io::Stdio;
+use crate::{common::ProcessIO, io::Stdio};
 
 #[allow(dead_code)]
 #[async_trait]
@@ -77,6 +77,7 @@ pub struct ProcessTemplate<S> {
     pub state: Status,
     pub id: String,
     pub stdio: Stdio,
+    pub io: Option<Arc<ProcessIO>>,
     pub pid: i32,
     pub exit_code: i32,
     pub exited_at: Option<OffsetDateTime>,
@@ -92,6 +93,7 @@ impl<S> ProcessTemplate<S> {
             state: Status::CREATED,
             id: id.to_string(),
             stdio,
+            io: None,
             pid: 0,
             exit_code: 0,
             exited_at: None,
