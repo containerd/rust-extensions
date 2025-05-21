@@ -15,6 +15,7 @@
 */
 pub mod io;
 mod pipe;
+mod runc;
 use std::{
     fmt::Debug,
     io::{Read, Result, Write},
@@ -23,6 +24,7 @@ use std::{
 
 use log::debug;
 pub use pipe::Pipe;
+pub use runc::{DefaultExecutor, Spawner};
 
 use crate::Command;
 
