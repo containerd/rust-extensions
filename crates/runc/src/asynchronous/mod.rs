@@ -15,11 +15,13 @@
 */
 pub mod io;
 mod pipe;
+mod runc;
 use std::{fmt::Debug, io::Result, os::fd::AsRawFd};
 
 use async_trait::async_trait;
 use log::debug;
 pub use pipe::Pipe;
+pub use runc::{DefaultExecutor, Spawner};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::Command;
