@@ -223,7 +223,7 @@ mod tests {
         let barrier2 = barrier.clone();
         let server_thread = tokio::spawn(async move {
             let listener = UnixListener::bind(&path1).unwrap();
-            let service = create_events(Arc::new(Box::new(server)));
+            let service = create_events(Arc::new(server));
             let mut server = Server::new()
                 .set_domain_unix()
                 .add_listener(listener.as_raw_fd())
