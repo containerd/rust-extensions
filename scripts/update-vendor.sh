@@ -8,7 +8,7 @@
 # For each crate, the script expects a text file named `rsync.txt` in the crate's directory.
 # The file should contain a list of proto files that should be synchronized from containerd.
 
-VERSION="v2.0.1"
+VERSION="v2.1.1"
 
 set -x
 
