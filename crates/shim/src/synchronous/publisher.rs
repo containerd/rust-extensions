@@ -200,7 +200,7 @@ mod tests {
 
         #[cfg(windows)]
         {
-            let service = client::create_events(Arc::new(Box::new(FakeServer {})));
+            let service = client::create_events(Arc::new(FakeServer {}));
 
             Server::new()
                 .bind(server_address)
