@@ -128,8 +128,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04]
-        containerd: [v1.6.38, v1.7.27, v2.0.5]
+        os: [ubuntu-latest]
+        containerd: [v1.6.38, v1.7.27, v2.1.1]
 
     steps:
       - name: Checkout extensions
