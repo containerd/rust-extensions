@@ -26,13 +26,13 @@ prost-types.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tonic.workspace = true
-tokio = { workspace = true, features = ["sync"] }
 tokio-stream = "0.1.8"
 
 [dev-dependencies]
 futures.workspace = true
 log.workspace = true
 simple_logger.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [build-dependencies]
 tonic-build.workspace = true
