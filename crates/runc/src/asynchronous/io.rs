@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use std::{fmt::Debug, io::Result, os::unix::io::AsRawFd, process::Stdio};
+use std::{fmt::Debug, io::Result, process::Stdio};
 
 use async_trait::async_trait;
 use nix::unistd::{Gid, Uid};
@@ -67,10 +67,10 @@ impl PipedIo {
         let gid = Some(Gid::from_raw(gid));
         if stdin {
             let rd = pipe.rd.try_clone()?;
-            nix::unistd::fchown(rd.as_raw_fd(), uid, gid)?;
+            nix::unistd::fchown(rd, uid, gid)?;
         } else {
             let wr = pipe.wr.try_clone()?;
-            nix::unistd::fchown(wr.as_raw_fd(), uid, gid)?;
+            nix::unistd::fchown(wr, uid, gid)?;
         }
         Ok(Some(pipe))
     }
