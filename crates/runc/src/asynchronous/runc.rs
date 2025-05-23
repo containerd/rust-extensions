@@ -320,6 +320,7 @@ impl Spawner for DefaultExecutor {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "linux")]
 mod tests {
     use std::sync::Arc;
 
