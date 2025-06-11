@@ -70,7 +70,7 @@ cgroups-rs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 mio = { version = "1.0", features = ["os-ext", "os-poll"] }
-windows-sys = { version = "0.52.0", features = [
+windows-sys = { version = "0.60.1", features = [
   "Win32_Foundation",
   "Win32_System_WindowsProgramming",
   "Win32_System_Console",
