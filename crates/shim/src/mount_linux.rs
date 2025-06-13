@@ -1,4 +1,3 @@
-#![cfg(not(windows))]
 /*
    Copyright The containerd Authors.
 
@@ -25,18 +24,16 @@ use std::{
 
 use lazy_static::lazy_static;
 use log::error;
-#[cfg(target_os = "linux")]
-use nix::mount::{mount, MsFlags};
-#[cfg(target_os = "linux")]
-use nix::sched::{unshare, CloneFlags};
-#[cfg(target_os = "linux")]
-use nix::unistd::{fork, ForkResult};
+use nix::{
+    mount::{mount, MsFlags},
+    sched::{unshare, CloneFlags},
+    unistd::{fork, ForkResult},
+};
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
 use crate::monitor::{monitor_subscribe, wait_pid, Topic};
 
-#[cfg(target_os = "linux")]
 struct Flag {
     clear: bool,
     flags: MsFlags,
@@ -44,11 +41,10 @@ struct Flag {
 
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
 
-#[cfg(target_os = "linux")]
 lazy_static! {
     static ref MOUNT_FLAGS: HashMap<&'static str, Flag> = {
         let mut mf = HashMap::new();
-        let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+        let zero: MsFlags = MsFlags::empty();
         mf.insert(
             "async",
             Flag {
@@ -267,12 +263,10 @@ fn longest_common_prefix(dirs: &[String]) -> &str {
 // NOTE: the snapshot id is based on digits.
 // in order to avoid to get snapshots/x, should be back to parent dir.
 // however, there is assumption that the common dir is ${root}/io.containerd.v1.overlayfs/snapshots.
-#[cfg(target_os = "linux")]
 fn trim_flawed_dir(s: &str) -> String {
     s[0..s.rfind('/').unwrap_or(0) + 1].to_owned()
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Default)]
 struct LowerdirCompactor {
     options: Vec<String>,
@@ -280,7 +274,6 @@ struct LowerdirCompactor {
     lowerdir_prefix: Option<String>,
 }
 
-#[cfg(target_os = "linux")]
 impl LowerdirCompactor {
     fn new(options: &[String]) -> Self {
         Self {
@@ -409,7 +402,6 @@ impl From<MountExitCode> for Result<()> {
 }
 
 #[cfg(not(feature = "async"))]
-#[cfg(target_os = "linux")]
 pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
@@ -428,7 +420,7 @@ pub fn mount_rootfs(
             (None, options.to_vec())
         };
 
-    let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
+    let mut flags: MsFlags = MsFlags::empty();
     let mut data = Vec::new();
     options.iter().for_each(|x| {
         if let Some(f) = MOUNT_FLAGS.get(x.as_str()) {
@@ -467,7 +459,7 @@ pub fn mount_rootfs(
             }
             // mount with non-propagation first, or remount with changed data
             let oflags = flags.bitand(PROPAGATION_TYPES.not());
-            let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+            let zero: MsFlags = MsFlags::empty();
             if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
                 mount(source, target.as_ref(), fs_type, oflags, data).unwrap_or_else(|err| {
                     error!(
@@ -524,7 +516,6 @@ pub fn mount_rootfs(
 }
 
 #[cfg(feature = "async")]
-#[cfg(target_os = "linux")]
 pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
@@ -541,7 +532,7 @@ pub fn mount_rootfs(
             (None, options.to_vec())
         };
 
-    let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
+    let mut flags: MsFlags = MsFlags::empty();
     let mut data = Vec::new();
     options.iter().for_each(|x| {
         if let Some(f) = MOUNT_FLAGS.get(x.as_str()) {
@@ -562,15 +553,15 @@ pub fn mount_rootfs(
         None
     };
 
-    unshare(CloneFlags::CLONE_FS).unwrap();
     if let Some(workdir) = chdir {
+        unshare(CloneFlags::CLONE_FS)?;
         env::set_current_dir(Path::new(&workdir)).unwrap_or_else(|_| {
             unsafe { libc::_exit(i32::from(MountExitCode::ChdirErr)) };
         });
     }
     // mount with non-propagation first, or remount with changed data
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
-    let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+    let zero: MsFlags = MsFlags::empty();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
         mount(source, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
             e,
@@ -605,18 +596,7 @@ pub fn mount_rootfs(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn mount_rootfs(
-    fs_type: Option<&str>,
-    source: Option<&str>,
-    options: &[String],
-    target: impl AsRef<Path>,
-) -> Result<()> {
-    Err(Error::Unimplemented("start".to_string()))
-}
-
 #[cfg(test)]
-#[cfg(target_os = "linux")]
 mod tests {
     use super::*;
 
