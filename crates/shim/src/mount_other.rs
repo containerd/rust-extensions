@@ -29,3 +29,7 @@ pub fn mount_rootfs(
     // instead of exiting with an error.
     Ok(())
 }
+
+pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
+    Ok(())
+}

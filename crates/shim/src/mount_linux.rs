@@ -18,6 +18,7 @@
 use std::{
     collections::HashMap,
     env,
+    io::BufRead,
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
     path::Path,
 };
@@ -25,7 +26,7 @@ use std::{
 use lazy_static::lazy_static;
 use log::error;
 use nix::{
-    mount::{mount, MsFlags},
+    mount::{mount, MntFlags, MsFlags},
     sched::{unshare, CloneFlags},
     unistd::{fork, ForkResult},
 };
@@ -40,6 +41,39 @@ struct Flag {
 }
 
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
+
+#[derive(Debug, Default, Clone)]
+struct MountInfo {
+    /// id is a unique identifier of the mount (may be reused after umount).
+    pub id: u32,
+    /// parent is the ID of the parent mount (or of self for the root
+    /// of this mount namespace's mount tree).
+    pub parent: u32,
+    /// major and minor are the major and the minor components of the Dev
+    /// field of unix.Stat_t structure returned by unix.*Stat calls for
+    /// files on this filesystem.
+    pub major: u32,
+    pub minor: u32,
+    /// root is the pathname of the directory in the filesystem which forms
+    /// the root of this mount.
+    pub root: String,
+    /// mountpoint is the pathname of the mount point relative to the
+    /// process's root directory.
+    pub mountpoint: String,
+    /// options is a comma-separated list of mount options.
+    pub options: String,
+    /// optional are zero or more fields of the form "tag[:value]",
+    /// separated by a space.  Currently, the possible optional fields are
+    /// "shared", "master", "propagate_from", and "unbindable". For more
+    /// information, see mount_namespaces(7) Linux man page.
+    pub optional: String,
+    /// fs_type is the filesystem type in the form "type[.subtype]".
+    pub fs_type: String,
+    /// source is filesystem-specific information, or "none".
+    pub source: String,
+    /// vfs_options is a comma-separated list of superblock options.
+    pub vfs_options: String,
+}
 
 lazy_static! {
     static ref MOUNT_FLAGS: HashMap<&'static str, Flag> = {
@@ -594,6 +628,137 @@ pub fn mount_rootfs(
     }
 
     Ok(())
+}
+
+pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
+    if let Some(target) = target {
+        let mut mounts = get_mounts(Some(prefix_filter(target.to_string())))?;
+        mounts.sort_by(|a, b| b.mountpoint.len().cmp(&a.mountpoint.len()));
+        for (index, target) in mounts.iter().enumerate() {
+            umount_all(Some(target.clone().mountpoint), flags)?;
+        }
+    };
+    Ok(())
+}
+
+fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
+    if let Some(target) = target {
+        if let Err(e) = std::fs::metadata(target.clone()) {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(());
+            }
+        }
+        loop {
+            if let Err(e) = nix::mount::umount2(
+                &std::path::PathBuf::from(&target),
+                MntFlags::from_bits(flags).unwrap_or(MntFlags::empty()),
+            ) {
+                if e == nix::errno::Errno::EINVAL {
+                    return Ok(());
+                }
+                return Err(Error::from(e));
+            }
+        }
+    };
+    Ok(())
+}
+
+fn prefix_filter(prefix: String) -> impl Fn(MountInfo) -> bool {
+    move |m: MountInfo| {
+        if let Some(s) = (m.mountpoint.clone() + "/").strip_prefix(&(prefix.clone() + "/")) {
+            return false;
+        }
+        true
+    }
+}
+
+fn get_mounts<F>(f: Option<F>) -> Result<Vec<MountInfo>>
+where
+    F: Fn(MountInfo) -> bool,
+{
+    let mountinfo_path = "/proc/self/mountinfo";
+    let file = std::fs::File::open(mountinfo_path).map_err(io_error!(e, "io_error"))?;
+    let reader = std::io::BufReader::new(file);
+    let lines: Vec<String> = reader.lines().map_while(|line| line.ok()).collect();
+    let mount_points = lines
+        .into_iter()
+        .filter_map(|line| {
+            /*
+            See http://man7.org/linux/man-pages/man5/proc.5.html
+            36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
+            (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
+            (1) mount ID:  unique identifier of the mount (may be reused after umount)
+            (2) parent ID:  ID of parent (or of self for the top of the mount tree)
+            (3) major:minor:  value of st_dev for files on filesystem
+            (4) root:  root of the mount within the filesystem
+            (5) mount point:  mount point relative to the process's root
+            (6) mount options:  per mount options
+            (7) optional fields:  zero or more fields of the form "tag[:value]"
+            (8) separator:  marks the end of the optional fields
+            (9) filesystem type:  name of filesystem of the form "type[.subtype]"
+            (10) mount source:  filesystem specific information or "none"
+            (11) super options:  per super block options
+            In other words, we have:
+             * 6 mandatory fields	(1)..(6)
+             * 0 or more optional fields	(7)
+             * a separator field		(8)
+             * 3 mandatory fields	(9)..(11)
+             */
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 10 {
+                // mountpoint parse error.
+                return None;
+            }
+            // separator field
+            let mut sep_idx = parts.len() - 4;
+            // In Linux <= 3.9 mounting a cifs with spaces in a share
+            // name (like "//srv/My Docs") _may_ end up having a space
+            // in the last field of mountinfo (like "unc=//serv/My Docs").
+            // Since kernel 3.10-rc1, cifs option "unc=" is ignored,
+            // so spaces should not appear.
+            //
+            // Check for a separator, and work around the spaces bug
+            for i in (0..sep_idx).rev() {
+                if parts[i] == "-" {
+                    sep_idx = i;
+                    break;
+                }
+                if sep_idx == 5 {
+                    // mountpoint parse error
+                    return None;
+                }
+            }
+
+            let mut mount_info = MountInfo {
+                id: str::parse::<u32>(parts[0]).ok()?,
+                parent: str::parse::<u32>(parts[1]).ok()?,
+                major: 0,
+                minor: 0,
+                root: parts[3].to_string(),
+                mountpoint: parts[4].to_string(),
+                options: parts[5].to_string(),
+                optional: parts[6..sep_idx].join(" "),
+                fs_type: parts[sep_idx + 1].to_string(),
+                source: parts[sep_idx + 2].to_string(),
+                vfs_options: parts[sep_idx + 3].to_string(),
+            };
+            let major_minor = parts[2].splitn(3, ':').collect::<Vec<&str>>();
+            if major_minor.len() != 2 {
+                // mountpoint parse error.
+                return None;
+            }
+            mount_info.major = str::parse::<u32>(major_minor[0]).ok()?;
+            mount_info.minor = str::parse::<u32>(major_minor[1]).ok()?;
+            if let Some(f) = &f {
+                if f(mount_info.clone()) {
+                    // skip this mountpoint. This mountpoint is not the container's mountpoint
+                    return None;
+                }
+            }
+            Some(mount_info)
+        })
+        .collect::<Vec<MountInfo>>();
+    Ok(mount_points)
 }
 
 #[cfg(test)]
