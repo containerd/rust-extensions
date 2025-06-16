@@ -34,6 +34,7 @@ use containerd_shim::{
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
     io_error,
     monitor::{ExitEvent, Subject, Topic},
+    mount::umount_recursive,
     other, other_error,
     protos::{
         api::ProcessInfo,
@@ -312,6 +313,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 );
             }
         }
+        umount_recursive(Path::new(&self.bundle).join("rootfs").to_str(), 0)?;
         self.exit_signal.signal();
         Ok(())
     }
