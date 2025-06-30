@@ -1,6 +1,6 @@
 [package]
 name = "runc"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Yuna Tomida <ytomida.mmm@gmail.com>", "The containerd Authors"]
 description = "A crate for consuming the runc binary in your Rust applications"
 keywords = ["containerd", "containers", "runc"]
