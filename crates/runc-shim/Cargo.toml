@@ -31,7 +31,7 @@ log.workspace = true
 nix = { workspace = true, features = ["socket", "uio", "term"] }
 oci-spec.workspace = true
 prctl.workspace = true
-runc = { path = "../runc", version = "0.2.0", features = ["async"] }
+runc = { path = "../runc", version = "0.3.0", features = ["async"] }
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
