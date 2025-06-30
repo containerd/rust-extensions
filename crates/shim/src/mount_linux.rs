@@ -1090,4 +1090,66 @@ mod tests {
             assert_eq!(options, expected_options);
         }
     }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn test_mount_rootfs_umount_recursive() {
+        let target = tempfile::tempdir().expect("create target dir error");
+        let lower1 = tempfile::tempdir().expect("create lower1 dir error");
+        let lower2 = tempfile::tempdir().expect("create lower2 dir error");
+        let upperdir = tempfile::tempdir().expect("create upperdir dir error");
+        let workdir = tempfile::tempdir().expect("create workdir dir error");
+        let options = vec![
+            "lowerdir=".to_string()
+                + lower1.path().to_str().expect("lower1 path to str error")
+                + ":"
+                + lower2.path().to_str().expect("lower2 path to str error"),
+            "upperdir=".to_string()
+                + upperdir
+                    .path()
+                    .to_str()
+                    .expect("upperdir path to str error"),
+            "workdir=".to_string() + workdir.path().to_str().expect("workdir path to str error"),
+        ];
+        // mount target.
+        let result = mount_rootfs(Some("overlay"), Some("overlay"), &options, &target);
+        assert!(result.is_ok());
+        let mut mountinfo = get_mounts(Some(prefix_filter(
+            target
+                .path()
+                .to_str()
+                .expect("target path to str error")
+                .to_string(),
+        )))
+        .expect("get_mounts error");
+        // make sure the target has been mounted.
+        assert_ne!(0, mountinfo.len());
+        // umount target.
+        let result = umount_recursive(target.path().to_str(), 0);
+        assert!(result.is_ok());
+        mountinfo = get_mounts(Some(prefix_filter(
+            target
+                .path()
+                .to_str()
+                .expect("target path to str error")
+                .to_string(),
+        )))
+        .expect("get_mounts error");
+        // make sure the target has been unmounted.
+        assert_eq!(0, mountinfo.len());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn test_setup_loop_dev() {
+        let path = tempfile::NamedTempFile::new().expect("cannot create tempfile");
+        let backing_file = path.path().to_str();
+        let params = LoopParams {
+            readonly: false,
+            auto_clear: true,
+            direct: false,
+        };
+        let result = setup_loop(backing_file, params);
+        assert!(result.is_ok());
+    }
 }
