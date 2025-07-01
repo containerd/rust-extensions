@@ -27,6 +27,7 @@ use containerd_shim::{
     event::Event,
     io_error,
     monitor::{Subject, Topic},
+    mount::umount_recursive,
     protos::{events::task::TaskExit, protobuf::MessageDyn, ttrpc::context::with_duration},
     util::{
         convert_to_timestamp, read_options, read_pid_from_file, read_runtime, read_spec, timestamp,
@@ -124,6 +125,8 @@ impl Shim for Service {
         runc.delete(&self.id, Some(&DeleteOpts { force: true }))
             .await
             .unwrap_or_else(|e| warn!("failed to remove runc container: {}", e));
+        umount_recursive(bundle.join("rootfs").to_str(), 0)
+            .unwrap_or_else(|e| warn!("failed to umount recursive rootfs: {}", e));
         let mut resp = DeleteResponse::new();
         // sigkill
         resp.set_exit_status(137);

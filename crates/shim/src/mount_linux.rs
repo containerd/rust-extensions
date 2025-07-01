@@ -1,4 +1,3 @@
-#![cfg(not(windows))]
 /*
    Copyright The containerd Authors.
 
@@ -19,36 +18,118 @@
 use std::{
     collections::HashMap,
     env,
+    fs::File,
+    io::BufRead,
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
+    os::fd::AsRawFd,
     path::Path,
 };
 
 use lazy_static::lazy_static;
 use log::error;
-#[cfg(target_os = "linux")]
-use nix::mount::{mount, MsFlags};
-#[cfg(target_os = "linux")]
-use nix::sched::{unshare, CloneFlags};
-#[cfg(target_os = "linux")]
-use nix::unistd::{fork, ForkResult};
+use nix::{
+    mount::{mount, MntFlags, MsFlags},
+    sched::{unshare, CloneFlags},
+    unistd::{fork, ForkResult},
+};
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
 use crate::monitor::{monitor_subscribe, wait_pid, Topic};
 
-#[cfg(target_os = "linux")]
 struct Flag {
     clear: bool,
     flags: MsFlags,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Default)]
+pub struct LoopParams {
+    readonly: bool,
+    auto_clear: bool,
+    direct: bool,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct LoopInfo {
+    device: u64,
+    inode: u64,
+    rdevice: u64,
+    offset: u64,
+    size_limit: u64,
+    number: u32,
+    encrypt_type: u32,
+    encrypt_key_size: u32,
+    flags: u32,
+    file_name: [u8; 64],
+    crypt_name: [u8; 64],
+    encrypt_key: [u8; 32],
+    init: [u64; 2],
+}
+
+impl Default for LoopInfo {
+    fn default() -> Self {
+        LoopInfo {
+            device: 0,
+            inode: 0,
+            rdevice: 0,
+            offset: 0,
+            size_limit: 0,
+            number: 0,
+            encrypt_type: 0,
+            encrypt_key_size: 0,
+            flags: 0,
+            file_name: [0; 64],
+            crypt_name: [0; 64],
+            encrypt_key: [0; 32],
+            init: [0; 2],
+        }
+    }
+}
+
+const LOOP_CONTROL_PATH: &str = "/dev/loop-control";
+const LOOP_DEV_FORMAT: &str = "/dev/loop";
+const EBUSY_STRING: &str = "device or resource busy";
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
 
-#[cfg(target_os = "linux")]
+#[derive(Debug, Default, Clone)]
+struct MountInfo {
+    /// id is a unique identifier of the mount (may be reused after umount).
+    pub id: u32,
+    /// parent is the ID of the parent mount (or of self for the root
+    /// of this mount namespace's mount tree).
+    pub parent: u32,
+    /// major and minor are the major and the minor components of the Dev
+    /// field of unix.Stat_t structure returned by unix.*Stat calls for
+    /// files on this filesystem.
+    pub major: u32,
+    pub minor: u32,
+    /// root is the pathname of the directory in the filesystem which forms
+    /// the root of this mount.
+    pub root: String,
+    /// mountpoint is the pathname of the mount point relative to the
+    /// process's root directory.
+    pub mountpoint: String,
+    /// options is a comma-separated list of mount options.
+    pub options: String,
+    /// optional are zero or more fields of the form "tag[:value]",
+    /// separated by a space.  Currently, the possible optional fields are
+    /// "shared", "master", "propagate_from", and "unbindable". For more
+    /// information, see mount_namespaces(7) Linux man page.
+    pub optional: String,
+    /// fs_type is the filesystem type in the form "type[.subtype]".
+    pub fs_type: String,
+    /// source is filesystem-specific information, or "none".
+    pub source: String,
+    /// vfs_options is a comma-separated list of superblock options.
+    pub vfs_options: String,
+}
+
 lazy_static! {
     static ref MOUNT_FLAGS: HashMap<&'static str, Flag> = {
         let mut mf = HashMap::new();
-        let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+        let zero: MsFlags = MsFlags::empty();
         mf.insert(
             "async",
             Flag {
@@ -267,12 +348,10 @@ fn longest_common_prefix(dirs: &[String]) -> &str {
 // NOTE: the snapshot id is based on digits.
 // in order to avoid to get snapshots/x, should be back to parent dir.
 // however, there is assumption that the common dir is ${root}/io.containerd.v1.overlayfs/snapshots.
-#[cfg(target_os = "linux")]
 fn trim_flawed_dir(s: &str) -> String {
     s[0..s.rfind('/').unwrap_or(0) + 1].to_owned()
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Default)]
 struct LowerdirCompactor {
     options: Vec<String>,
@@ -280,7 +359,6 @@ struct LowerdirCompactor {
     lowerdir_prefix: Option<String>,
 }
 
-#[cfg(target_os = "linux")]
 impl LowerdirCompactor {
     fn new(options: &[String]) -> Self {
         Self {
@@ -409,7 +487,6 @@ impl From<MountExitCode> for Result<()> {
 }
 
 #[cfg(not(feature = "async"))]
-#[cfg(target_os = "linux")]
 pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
@@ -428,7 +505,7 @@ pub fn mount_rootfs(
             (None, options.to_vec())
         };
 
-    let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
+    let mut flags: MsFlags = MsFlags::empty();
     let mut data = Vec::new();
     options.iter().for_each(|x| {
         if let Some(f) = MOUNT_FLAGS.get(x.as_str()) {
@@ -467,7 +544,7 @@ pub fn mount_rootfs(
             }
             // mount with non-propagation first, or remount with changed data
             let oflags = flags.bitand(PROPAGATION_TYPES.not());
-            let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+            let zero: MsFlags = MsFlags::empty();
             if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
                 mount(source, target.as_ref(), fs_type, oflags, data).unwrap_or_else(|err| {
                     error!(
@@ -524,7 +601,6 @@ pub fn mount_rootfs(
 }
 
 #[cfg(feature = "async")]
-#[cfg(target_os = "linux")]
 pub fn mount_rootfs(
     fs_type: Option<&str>,
     source: Option<&str>,
@@ -541,8 +617,10 @@ pub fn mount_rootfs(
             (None, options.to_vec())
         };
 
-    let mut flags: MsFlags = MsFlags::from_bits(0).unwrap();
+    let mut flags: MsFlags = MsFlags::empty();
     let mut data = Vec::new();
+    let mut lo_setup = false;
+    let mut loop_params = LoopParams::default();
     options.iter().for_each(|x| {
         if let Some(f) = MOUNT_FLAGS.get(x.as_str()) {
             if f.clear {
@@ -550,6 +628,8 @@ pub fn mount_rootfs(
             } else {
                 flags.bitor_assign(f.flags)
             }
+        } else if x.as_str() == "loop" {
+            lo_setup = true;
         } else {
             data.push(x.as_str())
         }
@@ -562,17 +642,31 @@ pub fn mount_rootfs(
         None
     };
 
-    unshare(CloneFlags::CLONE_FS).unwrap();
     if let Some(workdir) = chdir {
+        unshare(CloneFlags::CLONE_FS)?;
         env::set_current_dir(Path::new(&workdir)).unwrap_or_else(|_| {
             unsafe { libc::_exit(i32::from(MountExitCode::ChdirErr)) };
         });
     }
     // mount with non-propagation first, or remount with changed data
     let oflags = flags.bitand(PROPAGATION_TYPES.not());
-    let zero: MsFlags = MsFlags::from_bits(0).unwrap();
+    if lo_setup {
+        loop_params = LoopParams {
+            readonly: oflags.bitand(MsFlags::MS_RDONLY) == MsFlags::MS_RDONLY,
+            auto_clear: true,
+            direct: false,
+        };
+    }
+    let zero: MsFlags = MsFlags::empty();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
-        mount(source, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
+        let mut lo_file = String::new();
+        let s = if lo_setup {
+            lo_file = setup_loop(source, loop_params)?;
+            Some(lo_file.as_str())
+        } else {
+            source
+        };
+        mount(s, target.as_ref(), fs_type, oflags, data).map_err(mount_error!(
             e,
             "Mount {:?} to {}",
             source,
@@ -605,18 +699,291 @@ pub fn mount_rootfs(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn mount_rootfs(
-    fs_type: Option<&str>,
-    source: Option<&str>,
-    options: &[String],
-    target: impl AsRef<Path>,
-) -> Result<()> {
-    Err(Error::Unimplemented("start".to_string()))
+fn setup_loop(source: Option<&str>, params: LoopParams) -> Result<String> {
+    let src = source.ok_or(other!("loop source is None"))?;
+    for _ in 0..100 {
+        let num = get_free_loop_dev()?;
+        let loop_dev = format!("{}{}", LOOP_DEV_FORMAT, num);
+        match setup_loop_dev(src, loop_dev.as_str(), &params) {
+            Ok(_) => return Ok(loop_dev),
+            Err(e) => {
+                if e.to_string().contains(EBUSY_STRING) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Err(Error::Other(
+        "creating new loopback device after 100 times".to_string(),
+    ))
+}
+
+pub fn get_free_loop_dev() -> Result<i32> {
+    const LOOP_CTL_GET_FREE: i32 = 0x4c82;
+    let loop_control = File::options()
+        .read(true)
+        .write(true)
+        .open(LOOP_CONTROL_PATH)
+        .map_err(|e| Error::IoError {
+            context: format!("open {} error: ", LOOP_CONTROL_PATH),
+            err: e,
+        })?;
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_control.as_raw_fd() as libc::c_int,
+            LOOP_CTL_GET_FREE as libc::c_ulong,
+        ) as i32;
+        #[cfg(target_env = "musl")]
+        let ret = libc::ioctl(
+            loop_control.as_raw_fd() as libc::c_int,
+            LOOP_CTL_GET_FREE as libc::c_int,
+        ) as i32;
+        match nix::errno::Errno::result(ret) {
+            Ok(ret) => Ok(ret),
+            Err(e) => Err(Error::Nix(e)),
+        }
+    }
+}
+
+pub fn setup_loop_dev(backing_file: &str, loop_dev: &str, params: &LoopParams) -> Result<File> {
+    const LOOP_SET_FD: u32 = 0x4c00;
+    const LOOP_CLR_FD: u32 = 0x4c01;
+    const LOOP_SET_STATUS64: u32 = 0x4c04;
+    const LOOP_SET_DIRECT_IO: u32 = 0x4c08;
+    const LO_FLAGS_READ_ONLY: u32 = 0x1;
+    const LO_FLAGS_AUTOCLEAR: u32 = 0x4;
+    let mut open_options = File::options();
+    open_options.read(true);
+    if !params.readonly {
+        open_options.write(true);
+    }
+    // 1. open backing file
+    let back = open_options
+        .open(backing_file)
+        .map_err(|e| Error::IoError {
+            context: format!("open {} error: ", backing_file),
+            err: e,
+        })?;
+    let loop_dev = open_options.open(loop_dev).map_err(|e| Error::IoError {
+        context: format!("open {} error: ", loop_dev),
+        err: e,
+    })?;
+    // 2. set FD
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_FD as libc::c_ulong,
+            back.as_raw_fd() as libc::c_int,
+        );
+        #[cfg(target_env = "musl")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_FD as libc::c_int,
+            back.as_raw_fd() as libc::c_int,
+        );
+        if let Err(e) = nix::errno::Errno::result(ret) {
+            return Err(Error::Nix(e));
+        }
+    }
+    // 3. set info
+    let mut info = LoopInfo::default();
+    info.file_name[..backing_file.as_bytes().len()].copy_from_slice(backing_file.as_bytes());
+    if params.readonly {
+        info.flags |= LO_FLAGS_READ_ONLY;
+    }
+
+    if params.auto_clear {
+        info.flags |= LO_FLAGS_AUTOCLEAR;
+    }
+    unsafe {
+        #[cfg(target_env = "gnu")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_STATUS64 as libc::c_ulong,
+            info,
+        );
+        #[cfg(target_env = "musl")]
+        if let Err(e) = nix::errno::Errno::result(ret) {
+            libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_CLR_FD as libc::c_int,
+                0,
+            );
+            return Err(Error::Nix(e));
+        }
+    }
+
+    // 4. Set Direct IO
+    if params.direct {
+        unsafe {
+            #[cfg(target_env = "gnu")]
+            let ret = libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_SET_DIRECT_IO as libc::c_ulong,
+                1,
+            );
+            #[cfg(target_env = "musl")]
+            let ret = libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_SET_DIRECT_IO as libc::c_int,
+                1,
+            );
+            if let Err(e) = nix::errno::Errno::result(ret) {
+                #[cfg(target_env = "gnu")]
+                libc::ioctl(
+                    loop_dev.as_raw_fd() as libc::c_int,
+                    LOOP_CLR_FD as libc::c_ulong,
+                    0,
+                );
+                #[cfg(target_env = "musl")]
+                libc::ioctl(
+                    loop_dev.as_raw_fd() as libc::c_int,
+                    LOOP_CLR_FD as libc::c_int,
+                    0,
+                );
+                return Err(Error::Nix(e));
+            }
+        }
+    }
+    Ok(loop_dev)
+}
+
+pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
+    if let Some(target) = target {
+        let mut mounts = get_mounts(Some(prefix_filter(target.to_string())))?;
+        mounts.sort_by(|a, b| b.mountpoint.len().cmp(&a.mountpoint.len()));
+        for (index, target) in mounts.iter().enumerate() {
+            umount_all(Some(target.clone().mountpoint), flags)?;
+        }
+    };
+    Ok(())
+}
+
+fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
+    if let Some(target) = target {
+        if let Err(e) = std::fs::metadata(target.clone()) {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(());
+            }
+        }
+        loop {
+            if let Err(e) = nix::mount::umount2(
+                &std::path::PathBuf::from(&target),
+                MntFlags::from_bits(flags).unwrap_or(MntFlags::empty()),
+            ) {
+                if e == nix::errno::Errno::EINVAL {
+                    return Ok(());
+                }
+                return Err(Error::from(e));
+            }
+        }
+    };
+    Ok(())
+}
+
+fn prefix_filter(prefix: String) -> impl Fn(MountInfo) -> bool {
+    move |m: MountInfo| {
+        if let Some(s) = (m.mountpoint.clone() + "/").strip_prefix(&(prefix.clone() + "/")) {
+            return false;
+        }
+        true
+    }
+}
+
+fn get_mounts<F>(f: Option<F>) -> Result<Vec<MountInfo>>
+where
+    F: Fn(MountInfo) -> bool,
+{
+    let mountinfo_path = "/proc/self/mountinfo";
+    let file = std::fs::File::open(mountinfo_path).map_err(io_error!(e, "io_error"))?;
+    let reader = std::io::BufReader::new(file);
+    let lines: Vec<String> = reader.lines().map_while(|line| line.ok()).collect();
+    let mount_points = lines
+        .into_iter()
+        .filter_map(|line| {
+            /*
+            See http://man7.org/linux/man-pages/man5/proc.5.html
+            36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
+            (1)(2)(3)   (4)   (5)      (6)      (7)   (8) (9)   (10)         (11)
+            (1) mount ID:  unique identifier of the mount (may be reused after umount)
+            (2) parent ID:  ID of parent (or of self for the top of the mount tree)
+            (3) major:minor:  value of st_dev for files on filesystem
+            (4) root:  root of the mount within the filesystem
+            (5) mount point:  mount point relative to the process's root
+            (6) mount options:  per mount options
+            (7) optional fields:  zero or more fields of the form "tag[:value]"
+            (8) separator:  marks the end of the optional fields
+            (9) filesystem type:  name of filesystem of the form "type[.subtype]"
+            (10) mount source:  filesystem specific information or "none"
+            (11) super options:  per super block options
+            In other words, we have:
+             * 6 mandatory fields	(1)..(6)
+             * 0 or more optional fields	(7)
+             * a separator field		(8)
+             * 3 mandatory fields	(9)..(11)
+             */
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 10 {
+                // mountpoint parse error.
+                return None;
+            }
+            // separator field
+            let mut sep_idx = parts.len() - 4;
+            // In Linux <= 3.9 mounting a cifs with spaces in a share
+            // name (like "//srv/My Docs") _may_ end up having a space
+            // in the last field of mountinfo (like "unc=//serv/My Docs").
+            // Since kernel 3.10-rc1, cifs option "unc=" is ignored,
+            // so spaces should not appear.
+            //
+            // Check for a separator, and work around the spaces bug
+            for i in (0..sep_idx).rev() {
+                if parts[i] == "-" {
+                    sep_idx = i;
+                    break;
+                }
+                if sep_idx == 5 {
+                    // mountpoint parse error
+                    return None;
+                }
+            }
+
+            let mut mount_info = MountInfo {
+                id: str::parse::<u32>(parts[0]).ok()?,
+                parent: str::parse::<u32>(parts[1]).ok()?,
+                major: 0,
+                minor: 0,
+                root: parts[3].to_string(),
+                mountpoint: parts[4].to_string(),
+                options: parts[5].to_string(),
+                optional: parts[6..sep_idx].join(" "),
+                fs_type: parts[sep_idx + 1].to_string(),
+                source: parts[sep_idx + 2].to_string(),
+                vfs_options: parts[sep_idx + 3].to_string(),
+            };
+            let major_minor = parts[2].splitn(3, ':').collect::<Vec<&str>>();
+            if major_minor.len() != 2 {
+                // mountpoint parse error.
+                return None;
+            }
+            mount_info.major = str::parse::<u32>(major_minor[0]).ok()?;
+            mount_info.minor = str::parse::<u32>(major_minor[1]).ok()?;
+            if let Some(f) = &f {
+                if f(mount_info.clone()) {
+                    // skip this mountpoint. This mountpoint is not the container's mountpoint
+                    return None;
+                }
+            }
+            Some(mount_info)
+        })
+        .collect::<Vec<MountInfo>>();
+    Ok(mount_points)
 }
 
 #[cfg(test)]
-#[cfg(target_os = "linux")]
 mod tests {
     use super::*;
 
@@ -722,5 +1089,67 @@ mod tests {
             assert_eq!(chdir, expected_chdir);
             assert_eq!(options, expected_options);
         }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn test_mount_rootfs_umount_recursive() {
+        let target = tempfile::tempdir().expect("create target dir error");
+        let lower1 = tempfile::tempdir().expect("create lower1 dir error");
+        let lower2 = tempfile::tempdir().expect("create lower2 dir error");
+        let upperdir = tempfile::tempdir().expect("create upperdir dir error");
+        let workdir = tempfile::tempdir().expect("create workdir dir error");
+        let options = vec![
+            "lowerdir=".to_string()
+                + lower1.path().to_str().expect("lower1 path to str error")
+                + ":"
+                + lower2.path().to_str().expect("lower2 path to str error"),
+            "upperdir=".to_string()
+                + upperdir
+                    .path()
+                    .to_str()
+                    .expect("upperdir path to str error"),
+            "workdir=".to_string() + workdir.path().to_str().expect("workdir path to str error"),
+        ];
+        // mount target.
+        let result = mount_rootfs(Some("overlay"), Some("overlay"), &options, &target);
+        assert!(result.is_ok());
+        let mut mountinfo = get_mounts(Some(prefix_filter(
+            target
+                .path()
+                .to_str()
+                .expect("target path to str error")
+                .to_string(),
+        )))
+        .expect("get_mounts error");
+        // make sure the target has been mounted.
+        assert_ne!(0, mountinfo.len());
+        // umount target.
+        let result = umount_recursive(target.path().to_str(), 0);
+        assert!(result.is_ok());
+        mountinfo = get_mounts(Some(prefix_filter(
+            target
+                .path()
+                .to_str()
+                .expect("target path to str error")
+                .to_string(),
+        )))
+        .expect("get_mounts error");
+        // make sure the target has been unmounted.
+        assert_eq!(0, mountinfo.len());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn test_setup_loop_dev() {
+        let path = tempfile::NamedTempFile::new().expect("cannot create tempfile");
+        let backing_file = path.path().to_str();
+        let params = LoopParams {
+            readonly: false,
+            auto_clear: true,
+            direct: false,
+        };
+        let result = setup_loop(backing_file, params);
+        assert!(result.is_ok());
     }
 }
