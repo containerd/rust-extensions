@@ -53,9 +53,7 @@ protobuf = "3.7.2"
 ttrpc = "0.8.3"
 
 [build-dependencies]
-# TODO - replace git sha with next version that incudes the changes from the sha below
-# ttrpc-codegen = "0.5.0"
-ttrpc-codegen = { git = "https://github.com/containerd/ttrpc-rust", rev = "4929e9079941e7ead82fae3911340f8cbe810e7e" }
+ttrpc-codegen = "0.6.0"
 
 [dev-dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
