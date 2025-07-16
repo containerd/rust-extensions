@@ -1,9 +1,9 @@
 [package]
 name = "containerd-shim"
-version = "0.8.0"
+version = "0.9.0"
 authors = [
-  "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
-  "The containerd Authors",
+    "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+    "The containerd Authors",
 ]
 description = "containerd shim extension"
 keywords = ["containerd", "shim", "containers"]
@@ -15,12 +15,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-async = [
-  "async-trait",
-  "containerd-shim-protos/async",
-  "futures",
-  "tokio",
-]
+async = ["async-trait", "containerd-shim-protos/async", "futures", "tokio"]
 tracing = ["dep:tracing"]
 docs = []
 
@@ -39,14 +34,14 @@ go-flag = "0.1.0"
 lazy_static = "1.4.0"
 sha2 = "0.10.2"
 libc.workspace = true
-log = { workspace = true, features = ["std", "kv_unstable" ] }
+log = { workspace = true, features = ["std", "kv_unstable"] }
 nix = { workspace = true, features = [
-  "ioctl",
-  "fs",
-  "socket",
-  "signal",
-  "mount",
-  "sched",
+    "ioctl",
+    "fs",
+    "socket",
+    "signal",
+    "mount",
+    "sched",
 ] }
 oci-spec.workspace = true
 page_size = "0.6.0"
@@ -72,13 +67,13 @@ cgroups-rs.workspace = true
 [target.'cfg(windows)'.dependencies]
 mio = { version = "1.0", features = ["os-ext", "os-poll"] }
 windows-sys = { version = "0.52.0", features = [
-  "Win32_Foundation",
-  "Win32_System_WindowsProgramming",
-  "Win32_System_Console",
-  "Win32_System_Pipes",
-  "Win32_Security",
-  "Win32_Storage_FileSystem",
-  "Win32_System_Threading",
+    "Win32_Foundation",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Console",
+    "Win32_System_Pipes",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
 ] }
 
 [dev-dependencies]
