@@ -2,8 +2,8 @@
 name = "containerd-shim-protos"
 version = "0.9.0"
 authors = [
-  "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
-  "The containerd Authors",
+    "Maksym Pavlenko <pavlenko.maksym@gmail.com>",
+    "The containerd Authors",
 ]
 description = "TTRPC bindings for containerd shim interfaces"
 keywords = ["containerd", "shim", "containers", "ttrpc", "client"]
@@ -59,7 +59,7 @@ ttrpc-codegen = "0.6.0"
 ctrlc = { version = "3.0", features = ["termination"] }
 simple_logger = { workspace = true, features = ["stderr"] }
 tokio = { workspace = true, features = ["full"] }
-crossbeam.workspace = true # Used by create_ttrpc_context()
+crossbeam.workspace = true                                  # Used by create_ttrpc_context()
 
 [package.metadata.docs.rs]
 features = ["docs"]
