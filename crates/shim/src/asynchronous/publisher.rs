@@ -16,13 +16,14 @@
 
 use std::os::unix::io::RawFd;
 
+use async_trait::async_trait;
 use containerd_shim_protos::{
-    api::Envelope,
+    api::{Empty, Envelope},
     protobuf::MessageDyn,
     shim::events,
-    shim_async::{Client, EventsClient},
+    shim_async::{Client, Events, EventsClient},
     ttrpc,
-    ttrpc::context::Context,
+    ttrpc::{context::Context, r#async::TtrpcContext},
 };
 use log::{debug, error, warn};
 use tokio::sync::mpsc;
@@ -166,6 +167,29 @@ impl RemotePublisher {
             .map_err(|e| error::Error::Ttrpc(ttrpc::error::Error::Others(e.to_string())))?;
 
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Events for RemotePublisher {
+    async fn forward(
+        &self,
+        _ctx: &TtrpcContext,
+        req: events::ForwardRequest,
+    ) -> ttrpc::Result<Empty> {
+        let item = Item {
+            ev: req.envelope().clone(),
+            ctx: Context::default(),
+            count: 0,
+        };
+
+        //if channel is full and send fail ,release it after 3 seconds
+        self.sender
+            .send_timeout(item, tokio::time::Duration::from_secs(3))
+            .await
+            .map_err(|e| error::Error::Ttrpc(ttrpc::error::Error::Others(e.to_string())))?;
+
+        Ok(Empty::default())
     }
 }
 
