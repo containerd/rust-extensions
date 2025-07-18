@@ -813,6 +813,21 @@ pub fn setup_loop_dev(backing_file: &str, loop_dev: &str, params: &LoopParams) -
             info,
         );
         #[cfg(target_env = "musl")]
+        let ret = libc::ioctl(
+            loop_dev.as_raw_fd() as libc::c_int,
+            LOOP_SET_STATUS64 as libc::c_int,
+            info,
+        );
+        #[cfg(target_env = "gnu")]
+        if let Err(e) = nix::errno::Errno::result(ret) {
+            libc::ioctl(
+                loop_dev.as_raw_fd() as libc::c_int,
+                LOOP_CLR_FD as libc::c_ulong,
+                0,
+            );
+            return Err(Error::Nix(e));
+        }
+        #[cfg(target_env = "musl")]
         if let Err(e) = nix::errno::Errno::result(ret) {
             libc::ioctl(
                 loop_dev.as_raw_fd() as libc::c_int,
