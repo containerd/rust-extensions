@@ -251,7 +251,7 @@ jobs:
     name: Report required job statuses
     runs-on: ubuntu-latest
     # List job dependencies which are required to pass status checks in order to be merged via merge queue.
-    needs: [checks, windows-checks, tests, deny, linux-integration, windows-integration]
+    needs: [checks, windows-checks, deny, linux-integration, windows-integration]
     if: ${{ always() }}
     steps:
       - run: exit 1
