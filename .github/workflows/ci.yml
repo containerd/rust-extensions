@@ -15,6 +15,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        linux-target: [gnu, musl]
+        exclude:
+          - os: macos-latest
+            linux-target: gnu
+          - os: macos-latest
+            linux-target: musl
 
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +28,15 @@ jobs:
       - run: ./scripts/install-protobuf.sh
         shell: bash
 
-      - run: rustup toolchain install nightly --component rustfmt
+      - run: |
+          case ${{ matrix.os }} in 
+            macos-latest)
+              rustup toolchain install nightly --component rustfmt
+              ;;
+            ubuntu-latest)
+              rustup toolchain install nightly --component rustfmt --target x86_64-unknown-linux-${{ matrix.linux-target }}
+              ;;
+          esac
       - run: cargo +nightly fmt --all -- --check
 
       # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
