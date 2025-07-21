@@ -15,21 +15,56 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        linux-target: [gnu, musl]
+        exclude:
+          - os: macos-latest
+            linux-target: gnu
+          - os: macos-latest
+            linux-target: musl
 
     steps:
       - uses: actions/checkout@v4
 
+      - run: |
+          if [[ "${{ matrix.linux-target }}" == "musl" ]]; then
+            # If we're using the musl target, we know we're
+            # running on the ubuntu-latest runner
+
+            sudo apt-get update
+            sudo apt-get -y install musl-tools musl-dev
+
+            mkdir -p ${HOME}/.cargo/
+            echo -e '[build]' > ${HOME}/.cargo/config.toml
+            echo -e 'target = "x86_64-unknown-linux-musl"' >> ${HOME}/.cargo/config.toml
+            echo -e 'rustflags = ["-C", "target-feature=+crt-static"]' >> ${HOME}/.cargo/config.toml
+            echo -e '[target.x86_64-unknown-linux-musl]' >> ${HOME}/.cargo/config.toml
+            echo -e 'linker = "musl-gcc"' >> ${HOME}/.cargo/config.toml
+          fi
+
+          rustup toolchain install nightly
+          rustup toolchain install nightly --component rustfmt
+          if [[ "${{ matrix.linux-target }}" == "musl" ]]; then
+            rustup target add x86_64-unknown-linux-musl --toolchain nightly
+          fi
+
       - run: ./scripts/install-protobuf.sh
         shell: bash
 
-      - run: rustup toolchain install nightly --component rustfmt
-      - run: cargo +nightly fmt --all -- --check
+      - run: |
+          case ${{ matrix.os }} in
+            ubuntu-latest)
+              cargo +nightly-x86_64-unknown-linux-${{ matrix.linux-target }} fmt --all -- --check
+              ;;
+            *)
+              cargo +nightly fmt --all -- --check
+              ;;
+          esac
 
       # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
       - run: cargo check -p runc --all-targets
       - run: cargo clippy -p runc --all-targets -- -D warnings
       - run: cargo check -p containerd-shim --all-targets
-      - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
+      - run: cargo clippy -p containerd-shim --all-targets -- -D warnings
 
       # check the workspace
       - run: cargo check --examples --tests --all-targets
