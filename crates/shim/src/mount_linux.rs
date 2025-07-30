@@ -810,13 +810,13 @@ pub fn setup_loop_dev(backing_file: &str, loop_dev: &str, params: &LoopParams) -
         let ret = libc::ioctl(
             loop_dev.as_raw_fd() as libc::c_int,
             LOOP_SET_STATUS64 as libc::c_ulong,
-            info,
+            &info,
         );
         #[cfg(target_env = "musl")]
         let ret = libc::ioctl(
             loop_dev.as_raw_fd() as libc::c_int,
             LOOP_SET_STATUS64 as libc::c_int,
-            info,
+            &info,
         );
         #[cfg(target_env = "gnu")]
         if let Err(e) = nix::errno::Errno::result(ret) {
@@ -1168,7 +1168,7 @@ mod tests {
         let params = LoopParams {
             readonly: false,
             auto_clear: true,
-            direct: false,
+            direct: true,
         };
         let result = setup_loop(backing_file, params);
         assert!(result.is_ok());
