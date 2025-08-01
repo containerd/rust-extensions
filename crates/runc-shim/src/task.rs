@@ -50,7 +50,7 @@ type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
-use cgroups_rs::hierarchies::is_cgroup2_unified_mode;
+use cgroups_rs::fs::hierarchies::is_cgroup2_unified_mode;
 use containerd_shim::{
     api::{PauseRequest, ResumeRequest},
     protos::events::task::{TaskPaused, TaskResumed},
