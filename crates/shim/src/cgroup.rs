@@ -24,8 +24,11 @@ use std::{
 };
 
 use cgroups_rs::{
-    cgroup::get_cgroups_relative_paths_by_pid, error::Result as CgResult, hierarchies, Cgroup,
-    CgroupPid, MaxValue, Subsystem,
+    fs::{
+        cgroup::get_cgroups_relative_paths_by_pid, error::Result as CgResult, hierarchies, Cgroup,
+        MaxValue, Subsystem,
+    },
+    CgroupPid,
 };
 use containerd_shim_protos::{
     cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle},
@@ -186,8 +189,8 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
                 pid_stats.set_limit(
                     ignore_err(pid_ctr.get_pid_max().map(|val| match val {
                         // See https://github.com/opencontainers/runc/blob/dbe8434359ca35af1c1e10df42b1f4391c1e1010/libcontainer/cgroups/fs/pids.go#L55
-                        cgroups_rs::MaxValue::Max => 0,
-                        cgroups_rs::MaxValue::Value(val) => val as u64,
+                        MaxValue::Max => 0,
+                        MaxValue::Value(val) => val as u64,
                     }))
                     .map_err(other_error!("get pid limit"))?,
                 );
@@ -354,7 +357,10 @@ pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
 mod tests {
     use std::path::PathBuf;
 
-    use cgroups_rs::{hierarchies, Cgroup, CgroupPid};
+    use cgroups_rs::{
+        fs::{hierarchies, Cgroup},
+        CgroupPid,
+    };
 
     use super::parse_cgroups_v2_path;
     use crate::cgroup::{

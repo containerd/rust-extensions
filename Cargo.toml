@@ -26,7 +26,7 @@ edition = "2021"
 # Common dependencies for all crates
 [workspace.dependencies]
 async-trait = "0.1.52"
-cgroups-rs = "0.3.4"
+cgroups-rs = "0.4.0"
 crossbeam = "0.8.1"
 futures = "0.3.19"
 libc = "0.2.112"

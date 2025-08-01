@@ -125,9 +125,12 @@ mod tests {
     use std::path::Path;
 
     use cgroups_rs::{
-        hierarchies::{self, is_cgroup2_unified_mode},
-        memory::MemController,
-        Cgroup, CgroupPid,
+        fs::{
+            hierarchies::{self, is_cgroup2_unified_mode},
+            memory::MemController,
+            Cgroup,
+        },
+        CgroupPid,
     };
     use tokio::{fs::remove_file, io::AsyncWriteExt, process::Command};
 
@@ -139,7 +142,6 @@ mod tests {
             // Create a memory cgroup with limits on both memory and swap.
             let path = "cgroupv1_oom_monitor";
             let cg = Cgroup::new(hierarchies::auto(), path).unwrap();
-
             let mem_controller: &MemController = cg.controller_of().unwrap();
             mem_controller.set_limit(10 * 1024 * 1024).unwrap(); // 10M
             mem_controller.set_swappiness(0).unwrap();
