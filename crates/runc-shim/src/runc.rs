@@ -47,7 +47,7 @@ use containerd_shim::{
 use log::{debug, error};
 use nix::{sys::signal::kill, unistd::Pid};
 use oci_spec::runtime::{LinuxResources, Process};
-use runc::{Command, Runc, Spawner};
+use runc::{Command, Runc, RuncGlobalArgs, Spawner};
 use tokio::{
     fs::{remove_file, File, OpenOptions},
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
@@ -455,7 +455,14 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
         let bundle = self.bundle.to_string();
         let pid_path = Path::new(&bundle).join(format!("{}.pid", &p.id));
+        let log_path = Path::new(&bundle).join(format!("{}-exec.log", &p.id));
+        let custom_global_args = RuncGlobalArgs {
+            log: Some(log_path.clone()),
+            ..Default::default()
+        };
+
         let mut exec_opts = runc::options::ExecOpts {
+            custom_args: custom_global_args,
             io: None,
             pid_file: Some(pid_path.to_owned()),
             console_socket: None,
@@ -475,6 +482,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             .runtime
             .exec(&self.container_id, &self.spec, Some(&exec_opts))
             .await;
+        let _ = tokio::fs::remove_file(log_path).await;
         if let Err(e) = exec_result {
             if let Some(s) = socket {
                 s.clean().await;
