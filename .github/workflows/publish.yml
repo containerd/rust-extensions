@@ -42,7 +42,7 @@ jobs:
       CARGO_FILE: "crates/${{ inputs.crate }}/Cargo.toml"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Extract package version
         id: extract_version
