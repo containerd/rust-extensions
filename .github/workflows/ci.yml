@@ -14,7 +14,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
 
     steps:
       - uses: actions/checkout@v5
@@ -22,20 +28,23 @@ jobs:
       - run: ./scripts/install-protobuf.sh
         shell: bash
 
-      - run: rustup toolchain install nightly --component rustfmt
+      - if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools && rustup target add x86_64-unknown-linux-musl 
+
+      - run: rustup toolchain install nightly --component rustfmt --target ${{ matrix.target }}
       - run: cargo +nightly fmt --all -- --check
 
       # the "runc" and "containerd-shim" crates have `sync` code that is not covered by the workspace
-      - run: cargo check -p runc --all-targets
-      - run: cargo clippy -p runc --all-targets -- -D warnings
-      - run: cargo check -p containerd-shim --all-targets
-      - run: cargo clippy -p containerd-shim --all-targets  -- -D warnings
+      - run: cargo check -p runc --all-targets --target ${{ matrix.target }}
+      - run: cargo clippy -p runc --all-targets --target ${{ matrix.target }} -- -D warnings
+      - run: cargo check -p containerd-shim --all-targets --target ${{ matrix.target }}
+      - run: cargo clippy -p containerd-shim --all-targets --target ${{ matrix.target }}  -- -D warnings
 
       # check the workspace
-      - run: cargo check --examples --tests --all-targets
-      - run: cargo check --examples --tests --all-targets --all-features
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo check --examples --tests --all-targets --target ${{ matrix.target }}
+      - run: cargo check --examples --tests --all-targets --all-features --target ${{ matrix.target }}
+      - run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
+      - run: cargo clippy --all-targets --all-features --target ${{ matrix.target }} -- -D warnings
 
       - run: cargo doc --no-deps --features docs
         env:
