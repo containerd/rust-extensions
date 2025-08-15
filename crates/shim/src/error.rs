@@ -79,6 +79,9 @@ pub enum Error {
     #[error("Failed to send exit event: {0}")]
     Send(#[from] std::sync::mpsc::SendError<ExitEvent>),
 
+    #[error("Deadline exceeded: {0}")]
+    DeadlineExceeded(String),
+
     #[error("Other: {0}")]
     Other(String),
 

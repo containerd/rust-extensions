@@ -519,12 +519,33 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         } else if p.exited_at.is_some() {
             Err(Error::NotFoundError("process already finished".to_string()))
         } else {
-            // TODO this is kill from nix crate, it is os specific, maybe have annotated with target os
-            kill(
-                Pid::from_raw(p.pid),
-                nix::sys::signal::Signal::try_from(signal as i32).unwrap(),
-            )
-            .map_err(Into::into)
+            let pid = p.pid;
+            let kill_future = tokio::task::spawn_blocking(move || {
+                kill(
+                    Pid::from_raw(pid),
+                    nix::sys::signal::Signal::try_from(signal as i32).unwrap(),
+                )
+            });
+
+            match tokio::time::timeout(std::time::Duration::from_secs(3), kill_future).await {
+                Ok(Ok(result)) => result.map_err(Into::into),
+                Ok(Err(e)) => Err(Error::Other(format!("kill task error: {}", e))),
+                Err(_) => {
+                    debug!(
+                        "kill operation timed out for pid {}, signal {}",
+                        pid, signal
+                    );
+                    // timeout also return ok
+                    // For termination signals, it may have taken effect even if it timed out
+                    if signal == 9 || signal == 15 {
+                        Ok(())
+                    } else {
+                        Err(Error::DeadlineExceeded(
+                            "kill operation timed out".to_string(),
+                        ))
+                    }
+                }
+            }
         }
     }
 
