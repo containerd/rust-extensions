@@ -51,7 +51,7 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
 
       - name: check unused dependencies
-        uses: bnjbvr/cargo-machete@v0.8.0
+        uses: bnjbvr/cargo-machete@v0.9.1
         env:
           RUSTUP_TOOLCHAIN: "stable"
 
