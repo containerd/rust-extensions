@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+#[cfg(target_os = "linux")]
+use std::sync::RwLock;
 use std::{
     convert::TryFrom,
     os::{
@@ -29,6 +31,8 @@ use std::{
 };
 
 use async_trait::async_trait;
+#[cfg(target_os = "linux")]
+use cgroups_rs::fs::Cgroup;
 use containerd_shim::{
     api::{CreateTaskRequest, ExecProcessRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
@@ -65,19 +69,6 @@ use crate::{
     },
     io::Stdio,
 };
-
-/// check the process is zombie
-#[cfg(target_os = "linux")]
-fn is_zombie_process(pid: i32) -> bool {
-    if let Ok(status) = std::fs::read_to_string(format!("/proc/{}/status", pid)) {
-        for line in status.lines() {
-            if line.starts_with("State:") && line.contains('Z') {
-                return true;
-            }
-        }
-    }
-    false
-}
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
 pub type InitProcess = ProcessTemplate<RuncInitLifecycle>;
@@ -139,6 +130,12 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
 
         let config = CreateConfig::default();
         self.do_create(&mut init, config).await?;
+        #[cfg(target_os = "linux")]
+        {
+            *init.lifecycle.cgroup_cache.write().unwrap() =
+                containerd_shim::cgroup::get_cgroup(init.pid as u32).ok();
+        }
+
         let container = RuncContainer {
             id: id.to_string(),
             bundle: bundle.to_string(),
@@ -151,6 +148,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             },
             processes: Default::default(),
         };
+
         Ok(container)
     }
 
@@ -270,6 +268,9 @@ pub struct RuncInitLifecycle {
     opts: Options,
     bundle: String,
     exit_signal: Arc<ExitSignal>,
+    /// Cache for cgroup paths to avoid repeated /proc/<pid>/cgroup parsing
+    #[cfg(target_os = "linux")]
+    cgroup_cache: RwLock<Option<Cgroup>>,
 }
 
 #[async_trait]
@@ -327,15 +328,18 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             ));
         }
 
-        // check the process is zombie
-        if is_zombie_process(p.pid) {
+        // Check if cgroup still exists before attempting update
+        if !self.ensure_init_cgroup_exists().await {
             return Err(other!(
-                "failed to update resources because process {} is a zombie",
+                "failed to update resources because cgroup for process {} has been released",
                 p.pid
             ));
         }
-
-        containerd_shim::cgroup::update_resources(p.pid as u32, resources)
+        let cgroup_guard = p.lifecycle.cgroup_cache.read().unwrap();
+        let cgroup = cgroup_guard
+            .as_ref()
+            .ok_or_else(|| other!("cgroup cache is empty for process {}", p.pid))?;
+        containerd_shim::cgroup::update_resources(cgroup, resources)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -352,15 +356,18 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             ));
         }
 
-        // check the process is zombie
-        if is_zombie_process(p.pid) {
+        // Check if cgroup still exists before attempting to collect stats
+        if !self.ensure_init_cgroup_exists().await {
             return Err(other!(
-                "failed to collect metrics because process {} is a zombie",
+                "failed to collect metrics because cgroup for process {} has been released",
                 p.pid
             ));
         }
-
-        containerd_shim::cgroup::collect_metrics(p.pid as u32)
+        let cgroup_guard = p.lifecycle.cgroup_cache.read().unwrap();
+        let cgroup = cgroup_guard
+            .as_ref()
+            .ok_or_else(|| other!("cgroup cache is empty for process {}", p.pid))?;
+        containerd_shim::cgroup::collect_metrics(cgroup)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -436,6 +443,20 @@ impl RuncInitLifecycle {
             opts,
             bundle: bundle.to_string(),
             exit_signal: Default::default(),
+            #[cfg(target_os = "linux")]
+            cgroup_cache: RwLock::new(None),
+        }
+    }
+
+    /// Ensure cgroup exists and cache the path information
+    /// Returns true if cgroup exists, false if released
+    #[cfg(target_os = "linux")]
+    async fn ensure_init_cgroup_exists(&self) -> bool {
+        let cache = self.cgroup_cache.read().unwrap();
+        if let Some(ref cached) = *cache {
+            cached.exists()
+        } else {
+            false
         }
     }
 }

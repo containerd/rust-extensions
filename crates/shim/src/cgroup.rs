@@ -109,13 +109,11 @@ fn write_process_oom_score(pid: u32, score: i64) -> Result<()> {
 
 /// Collect process cgroup stats, return only necessary parts of it
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
-pub fn collect_metrics(pid: u32) -> Result<Metrics> {
+pub fn collect_metrics(cgroup: &Cgroup) -> Result<Metrics> {
     let mut metrics = Metrics::new();
 
-    let cgroup = get_cgroup(pid)?;
-
     // to make it easy, fill the necessary metrics only.
-    for sub_system in Cgroup::subsystems(&cgroup) {
+    for sub_system in Cgroup::subsystems(cgroup) {
         match sub_system {
             Subsystem::Cpu(cpu_ctr) => {
                 let mut cpu_usage = CPUUsage::new();
@@ -204,7 +202,7 @@ pub fn collect_metrics(pid: u32) -> Result<Metrics> {
 
 // get_cgroup will return either cgroup v1 or v2 depending on system configuration
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
-fn get_cgroup(pid: u32) -> Result<Cgroup> {
+pub fn get_cgroup(pid: u32) -> Result<Cgroup> {
     let hierarchies = hierarchies::auto();
     let cgroup = if hierarchies.v2() {
         let path = get_cgroups_v2_path_by_pid(pid)?;
@@ -250,11 +248,8 @@ fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
 
 /// Update process cgroup limits
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
-pub fn update_resources(pid: u32, resources: &LinuxResources) -> Result<()> {
-    // get container main process cgroup
-    let cgroup = get_cgroup(pid)?;
-
-    for sub_system in Cgroup::subsystems(&cgroup) {
+pub fn update_resources(cgroup: &Cgroup, resources: &LinuxResources) -> Result<()> {
+    for sub_system in Cgroup::subsystems(cgroup) {
         match sub_system {
             Subsystem::Pid(pid_ctr) => {
                 // set maximum number of PIDs
