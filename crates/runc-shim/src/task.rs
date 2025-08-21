@@ -391,7 +391,7 @@ where
     }
 
     async fn update(&self, _ctx: &TtrpcContext, mut req: UpdateTaskRequest) -> TtrpcResult<Empty> {
-        debug!("Update request for {:?}", req);
+        debug!("Update request for id {:?}", req.id);
 
         let id = req.take_id();
 
@@ -407,6 +407,7 @@ where
                 format!("failed to parse resource spec: {}", e),
             ))
         })?;
+        debug!("Update resource is {:?}", resources);
         self.container_mut(&id).await?.update(&resources).await?;
         Ok(Empty::new())
     }
