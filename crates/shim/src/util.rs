@@ -121,6 +121,7 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     #[cfg(not(target_os = "linux"))]
     {
         use std::os::fd::BorrowedFd;
+
         use nix::fcntl::{fcntl, FcntlArg, FdFlag};
         // SAFETY: fd is a valid file descriptor that we just created
         let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
