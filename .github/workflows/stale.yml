@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      actions: write
+      contents: write # only for delete-branch option
       issues: write
       pull-requests: write
 
@@ -33,4 +35,4 @@ jobs:
           # Comment on the staled PRs while closed
           close-pr-message: 'This PR was closed because it has been stalled for 7 days with no activity.'
           # Enable dry-run when changing this file from a PR.
-          debug-only: github.event_name == 'pull_request'
+          debug-only: ${{ github.event_name == 'pull_request' }}
