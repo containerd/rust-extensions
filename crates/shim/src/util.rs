@@ -120,8 +120,11 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     // so there is a chance of leak if fork + exec happens in between of these calls.
     #[cfg(not(target_os = "linux"))]
     {
+        use std::os::fd::BorrowedFd;
         use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-        fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(|e| {
+        // SAFETY: fd is a valid file descriptor that we just created
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        fcntl(borrowed_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(|e| {
             let _ = close(fd);
             e
         })?;
