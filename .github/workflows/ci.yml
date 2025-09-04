@@ -173,7 +173,7 @@ jobs:
           sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
 
       ## get latest go version for integrations tests so we can skip runnings tests
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.23'
 
