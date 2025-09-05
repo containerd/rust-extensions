@@ -28,7 +28,7 @@ name = "windows-log-reader"
 path = "examples/windows_log_reader.rs"
 
 [dependencies]
-which = "7.0.1"
+which = "8.0.0"
 containerd-shim-protos = { path = "../shim-protos", version = "0.10.0" }
 go-flag = "0.1.0"
 lazy_static = "1.4.0"
