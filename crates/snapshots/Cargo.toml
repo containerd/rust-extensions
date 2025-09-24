@@ -42,4 +42,4 @@ tonic-prost-build.workspace = true
 features = ["docs"]
 
 [package.metadata.cargo-machete]
-ignored = ["prost"]
+ignored = ["prost", "tonic-prost"]
