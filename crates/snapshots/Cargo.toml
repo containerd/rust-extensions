@@ -26,6 +26,7 @@ prost-types.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tonic.workspace = true
+tonic-prost.workspace = true
 tokio-stream = "0.1.8"
 
 [dev-dependencies]
@@ -35,7 +36,7 @@ simple_logger.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 
 [build-dependencies]
-tonic-build.workspace = true
+tonic-prost-build.workspace = true
 
 [package.metadata.docs.rs]
 features = ["docs"]

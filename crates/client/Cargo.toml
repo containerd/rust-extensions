@@ -28,11 +28,11 @@ prost.workspace = true
 prost-types.workspace = true
 tokio = { workspace = true, optional = true }
 tonic.workspace = true
+tonic-prost.workspace = true
 tower = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-build.workspace = true
-prost-build.workspace = true
+tonic-prost-build.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"]}
