@@ -66,13 +66,13 @@ const FIXUP_MODULES: &[&str] = &[
 ];
 
 fn main() {
-    let mut config = prost_build::Config::new();
+    let mut config = tonic_prost_build::Config::new();
     config.protoc_arg("--experimental_allow_proto3_optional");
     config.enable_type_names();
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(false)
-        .compile_protos_with_config(config, PROTO_FILES, &["vendor/"])
+        .compile_with_config(config, PROTO_FILES, &["vendor/"])
         .expect("Failed to generate GRPC bindings");
 
     for module in FIXUP_MODULES {
