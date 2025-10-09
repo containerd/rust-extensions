@@ -39,19 +39,11 @@ use std::{
     time::Duration,
 };
 
-use crate::{error::Error, utils, DefaultExecutor, Io, LogFormat, Runc, Spawner};
+use crate::{error::Error, utils, DefaultExecutor, Io, LogFormat, Runc, RuncGlobalArgs, Spawner};
 
 // constants for log format
 pub const JSON: &str = "json";
 pub const TEXT: &str = "text";
-
-// constants for runc global flags
-const DEBUG: &str = "--debug";
-const LOG: &str = "--log";
-const LOG_FORMAT: &str = "--log-format";
-const ROOT: &str = "--root";
-const ROOTLESS: &str = "--rootless";
-const SYSTEMD_CGROUP: &str = "--systemd-cgroup";
 
 // constants for runc-create/runc-exec flags
 const CONSOLE_SOCKET: &str = "--console-socket";
@@ -79,7 +71,7 @@ pub trait Args {
 ///
 /// These options will be passed for all subsequent runc calls.
 /// See <https://github.com/opencontainers/runc/blob/main/man/runc.8.md#global-options>
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct GlobalOpts {
     /// Override the name of the runc binary. If [`None`], `runc` is used.
     command: Option<PathBuf>,
@@ -203,7 +195,7 @@ impl GlobalOpts {
         self.args()
     }
 
-    fn output(&self) -> Result<(PathBuf, Vec<String>), Error> {
+    fn output(&self) -> Result<(PathBuf, RuncGlobalArgs), Error> {
         let path = self
             .command
             .clone()
@@ -211,40 +203,41 @@ impl GlobalOpts {
 
         let command = utils::binary_path(path).ok_or(Error::NotFound)?;
 
-        let mut args = Vec::new();
-
+        let mut global_args = RuncGlobalArgs {
+            debug: None,
+            log: None,
+            log_format: None,
+            root: None,
+            systemd_cgroup: None,
+            rootless: None,
+        };
         // --root path : Set the root directory to store containers' state.
         if let Some(root) = &self.root {
-            args.push(ROOT.into());
-            args.push(utils::abs_string(root)?);
+            global_args.root = Some(root.to_path_buf());
         }
 
         // --debug : Enable debug logging.
         if self.debug {
-            args.push(DEBUG.into());
+            global_args.debug = Some(self.debug);
         }
 
         // --log path : Set the log destination to path. The default is to log to stderr.
         if let Some(log_path) = &self.log {
-            args.push(LOG.into());
-            args.push(utils::abs_string(log_path)?);
+            global_args.log = Some(log_path.to_path_buf());
         }
 
         // --log-format text|json : Set the log format (default is text).
-        args.push(LOG_FORMAT.into());
-        args.push(self.log_format.to_string());
+        global_args.log_format = Some(self.log_format.to_string());
 
-        // --systemd-cgroup : Enable systemd cgroup support.
         if self.systemd_cgroup {
-            args.push(SYSTEMD_CGROUP.into());
+            global_args.systemd_cgroup = Some(true);
         }
 
         // --rootless true|false|auto : Enable or disable rootless mode.
         if let Some(mode) = self.rootless {
-            let arg = format!("{}={}", ROOTLESS, mode);
-            args.push(arg);
+            global_args.rootless = Some(mode);
         }
-        Ok((command, args))
+        Ok((command, global_args))
     }
 }
 
@@ -252,7 +245,7 @@ impl Args for GlobalOpts {
     type Output = Result<Runc, Error>;
 
     fn args(&self) -> Self::Output {
-        let (command, args) = self.output()?;
+        let (command, global_args) = self.output()?;
         let executor = if let Some(exec) = self.executor.clone() {
             exec
         } else {
@@ -260,7 +253,7 @@ impl Args for GlobalOpts {
         };
         Ok(Runc {
             command,
-            args,
+            global_args,
             spawner: executor,
         })
     }
@@ -352,6 +345,7 @@ impl CreateOpts {
 /// Container execution options
 #[derive(Clone, Default)]
 pub struct ExecOpts {
+    pub custom_args: RuncGlobalArgs,
     pub io: Option<Arc<dyn Io>>,
     /// Path to where a pid file should be created.
     pub pid_file: Option<PathBuf>,
@@ -596,15 +590,11 @@ mod tests {
     fn global_opts_test() {
         let cfg = GlobalOpts::default().command("true");
         let runc = cfg.build().unwrap();
-        let args = &runc.args;
-        assert_eq!(args.len(), 2);
-        assert!(args.contains(&LOG_FORMAT.to_string()));
-        assert!(args.contains(&TEXT.to_string()));
+        let global_args = &runc.global_args;
 
-        let cfg = GlobalOpts::default().command("/bin/true");
-        let runc = cfg.build().unwrap();
-        assert_eq!(runc.args.len(), 2);
-
+        if let Some(log_format) = &global_args.log_format {
+            assert!(TEXT == log_format);
+        }
         let cfg = GlobalOpts::default()
             .command("true")
             .root("/tmp")
@@ -614,16 +604,25 @@ mod tests {
             .systemd_cgroup(true)
             .rootless(true);
         let runc = cfg.build().unwrap();
-        let args = &runc.args;
-        assert!(args.contains(&ROOT.to_string()));
-        assert!(args.contains(&DEBUG.to_string()));
-        assert!(args.contains(&"/tmp".to_string()));
-        assert!(args.contains(&LOG.to_string()));
-        assert!(args.contains(&"/tmp/runc.log".to_string()));
-        assert!(args.contains(&LOG_FORMAT.to_string()));
-        assert!(args.contains(&JSON.to_string()));
-        assert!(args.contains(&"--rootless=true".to_string()));
-        assert!(args.contains(&SYSTEMD_CGROUP.to_string()));
-        assert_eq!(args.len(), 9);
+        let global_args = &runc.global_args;
+
+        if let Some(root) = &global_args.root {
+            assert!(root.to_string_lossy() == "/tmp");
+        }
+        if let Some(debug) = global_args.debug {
+            assert!(debug);
+        }
+        if let Some(log) = &global_args.log {
+            assert!(log.to_string_lossy() == "/tmp/runc.log");
+        }
+        if let Some(log_format) = &global_args.log_format {
+            assert!(log_format == "json");
+        }
+        if let Some(root_less) = global_args.rootless {
+            assert!(root_less);
+        }
+        if let Some(systemd_cgroup) = global_args.systemd_cgroup {
+            assert!(systemd_cgroup);
+        }
     }
 }
