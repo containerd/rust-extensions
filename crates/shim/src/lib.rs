@@ -17,24 +17,17 @@
 #![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 
 use std::{fs::File, path::PathBuf};
+#[cfg(windows)]
+use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
 #[cfg(unix)]
 use std::{os::unix::net::UnixListener, path::Path};
 
 pub use containerd_shim_protos as protos;
-#[cfg(unix)]
-use nix::ioctl_write_ptr_bad;
 pub use protos::{
     shim::shim::DeleteResponse,
     ttrpc::{context::Context, Result as TtrpcResult},
 };
 use sha2::{Digest, Sha256};
-
-#[cfg(unix)]
-ioctl_write_ptr_bad!(ioctl_set_winsz, libc::TIOCSWINSZ, libc::winsize);
-
-#[cfg(windows)]
-use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
-
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
