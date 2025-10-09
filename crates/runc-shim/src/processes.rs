@@ -14,23 +14,19 @@
    limitations under the License.
 */
 
-use std::{
-    os::unix::io::AsRawFd,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use containerd_shim::{
-    ioctl_set_winsz,
     protos::{
         api::{ProcessInfo, StateResponse, Status},
         cgroups::metrics::Metrics,
         protobuf::well_known_types::timestamp::Timestamp,
     },
-    util::asyncify,
     Console, Result,
 };
 use oci_spec::runtime::LinuxResources;
+use rustix::termios::{tcsetwinsize, Winsize};
 use time::OffsetDateTime;
 use tokio::{
     fs::File,
@@ -174,17 +170,14 @@ where
 
     async fn resize_pty(&mut self, height: u32, width: u32) -> Result<()> {
         if let Some(console) = self.console.as_ref() {
-            let w = libc::winsize {
+            let w = Winsize {
                 ws_row: height as u16,
                 ws_col: width as u16,
                 ws_xpixel: 0,
                 ws_ypixel: 0,
             };
-            let fd = console.file.as_raw_fd();
-            asyncify(move || -> Result<()> {
-                unsafe { ioctl_set_winsz(fd, &w).map(|_x| ()).map_err(Into::into) }
-            })
-            .await?;
+            tcsetwinsize(&console.file, w)
+                .map_err(|e| containerd_shim::Error::Other(e.to_string()))?;
         }
         Ok(())
     }
