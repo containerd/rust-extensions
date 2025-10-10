@@ -39,6 +39,10 @@ uuid.workspace = true
 # Async dependencies
 async-trait.workspace = true
 tokio = { workspace = true, features = ["full"] }
+rustix = { version = "1", features = ["termios"] }
+
+[package.metadata.cargo-machete]
+ignored = ["libc"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs.workspace = true
