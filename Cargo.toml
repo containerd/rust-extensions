@@ -43,7 +43,7 @@ serde_json = "1.0"
 simple_logger = { version = "5.0", default-features = false }
 tempfile = "3.6"
 thiserror = "2.0"
-time = { version = "0.3.29", features = ["serde", "std", "formatting"] }
+time = { version = "0.3.44", features = ["serde", "std", "formatting", "local-offset"] }
 tokio = "1.26"
 tonic = "0.14"
 tonic-prost = "0.14"
