@@ -36,7 +36,7 @@ use crate::{
 /// The publisher reports events and uses a queue to retry the event reporting.
 /// The maximum number of attempts to report is 5 times.
 /// When the ttrpc client fails to report, it attempts to reconnect to the client and report.
-
+///
 /// Max queue size
 const QUEUE_SIZE: i64 = 1024;
 /// Max try five times

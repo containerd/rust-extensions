@@ -56,7 +56,7 @@ pub trait Process {
     async fn resume(&mut self) -> Result<()>;
     async fn id(&self) -> &str;
 }
-
+#[allow(dead_code)]
 #[async_trait]
 pub trait ProcessLifecycle<P: Process> {
     async fn start(&self, p: &mut P) -> Result<()>;

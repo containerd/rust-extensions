@@ -791,12 +791,12 @@ pub fn setup_loop_dev(backing_file: &str, loop_dev: &str, params: &LoopParams) -
     }
     // 3. set info
     let mut info = LoopInfo::default();
-    let backing_file_truncated = if backing_file.as_bytes().len() > info.file_name.len() {
+    let backing_file_truncated = if backing_file.len() > info.file_name.len() {
         &backing_file[0..info.file_name.len()]
     } else {
         backing_file
     };
-    info.file_name[..backing_file_truncated.as_bytes().len()]
+    info.file_name[..backing_file_truncated.len()]
         .copy_from_slice(backing_file_truncated.as_bytes());
     if params.readonly {
         info.flags |= LO_FLAGS_READ_ONLY;

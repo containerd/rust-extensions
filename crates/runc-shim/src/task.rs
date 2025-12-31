@@ -474,7 +474,7 @@ where
     async fn shutdown(&self, _ctx: &TtrpcContext, _req: ShutdownRequest) -> TtrpcResult<Empty> {
         debug!("Shutdown request");
         let containers = self.containers.read().await;
-        if containers.len() > 0 {
+        if !containers.is_empty() {
             return Ok(Empty::new());
         }
         self.exit.signal();
