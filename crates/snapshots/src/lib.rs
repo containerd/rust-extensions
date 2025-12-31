@@ -32,8 +32,8 @@ pub use wrap::server;
 
 /// Generated GRPC apis.
 pub mod api {
-    #[allow(clippy::tabs_in_doc_comments)]
-    #[allow(rustdoc::invalid_rust_codeblocks)]
+    #![allow(clippy::tabs_in_doc_comments)]
+    #![allow(rustdoc::invalid_rust_codeblocks)]
 
     /// Generated snapshots bindings.
     pub mod snapshots {
