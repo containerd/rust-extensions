@@ -95,6 +95,7 @@ allow = [
     "Apache-2.0",
     "BSD-3-Clause",
     "Unicode-3.0",
+    "Zlib",
     #"Apache-2.0 WITH LLVM-exception",
 ]
 # The confidence threshold for detecting a license from license text.
