@@ -174,8 +174,6 @@ jobs:
 
       ## get latest go version for integrations tests so we can skip runnings tests
       - uses: actions/setup-go@v6
-        with:
-          go-version: '1.23'
 
       - name: Integration
         env:
