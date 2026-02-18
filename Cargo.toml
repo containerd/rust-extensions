@@ -33,8 +33,6 @@ libc = { version = "0.2", default-features = false }
 log = { version = "0.4", default-features = false }
 nix = { version = "0.31", default-features = false }
 oci-spec = { version = "0.9", default-features = false }
-os_pipe = { version = "1.2", default-features = false }
-prctl = "1.0.0"
 prost = { version = "0.14", default-features = false }
 prost-build = { version = "0.14", default-features = false }
 prost-types = { version = "0.14", default-features = false }

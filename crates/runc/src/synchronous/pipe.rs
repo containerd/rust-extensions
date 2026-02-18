@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use os_pipe::{pipe, PipeReader, PipeWriter};
+use std::io::{PipeReader, PipeWriter};
 
 #[derive(Debug)]
 pub struct Pipe {
@@ -24,7 +24,7 @@ pub struct Pipe {
 
 impl Pipe {
     pub fn new() -> std::io::Result<Self> {
-        let (rd, wr) = pipe()?;
+        let (rd, wr) = std::io::pipe()?;
         Ok(Self { rd, wr })
     }
 }

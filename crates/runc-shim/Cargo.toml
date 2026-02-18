@@ -30,7 +30,6 @@ libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["socket", "uio", "term", "signal"] }
 oci-spec = { workspace = true, features = ["runtime"] }
-prctl.workspace = true
 runc = { path = "../runc", version = "0.3.0", features = ["async"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

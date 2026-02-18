@@ -31,7 +31,6 @@ path = "examples/windows_log_reader.rs"
 which = { version = "8.0.0", default-features = false, features = ["real-sys"] }
 containerd-shim-protos = { path = "../shim-protos", version = "0.10.0" }
 go-flag = "0.1.0"
-lazy_static = "1.5.0"
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
 libc.workspace = true
 log = { workspace = true, features = ["std", "kv_unstable"] }
@@ -43,8 +42,6 @@ nix = { workspace = true, features = [
     "sched",
 ] }
 oci-spec = { workspace = true, features = ["runtime"] }
-page_size = "0.6.0"
-prctl.workspace = true
 signal-hook = "0.3.18"
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

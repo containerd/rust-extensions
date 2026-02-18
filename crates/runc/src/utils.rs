@@ -21,7 +21,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use path_absolutize::*;
 use serde::Serialize;
 #[cfg(not(feature = "async"))]
 use tempfile::{Builder, NamedTempFile};
@@ -36,11 +35,7 @@ pub fn abs_path_buf<P>(path: P) -> Result<PathBuf, Error>
 where
     P: AsRef<Path>,
 {
-    Ok(path
-        .as_ref()
-        .absolutize()
-        .map_err(Error::InvalidPath)?
-        .to_path_buf())
+    std::path::absolute(path).map_err(Error::InvalidPath)
 }
 
 fn path_to_string(path: impl AsRef<Path>) -> Result<String, Error> {

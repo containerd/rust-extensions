@@ -20,9 +20,6 @@ libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["user", "fs"] }
 oci-spec = { workspace = true, features = ["runtime"] }
-os_pipe.workspace = true
-path-absolutize = { version = "3.1", default-features = false }
-prctl.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 tempfile.workspace = true
