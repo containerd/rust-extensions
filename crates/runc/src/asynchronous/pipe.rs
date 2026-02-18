@@ -14,8 +14,10 @@
    limitations under the License.
 */
 
-use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
-use std::sync::Mutex;
+use std::{
+    os::unix::io::{AsRawFd, OwnedFd, RawFd},
+    sync::Mutex,
+};
 
 /// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
 ///
@@ -65,8 +67,10 @@ impl Pipe {
 mod tests {
     use std::os::fd::IntoRawFd;
 
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::unix::pipe;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::unix::pipe,
+    };
 
     use super::*;
 
@@ -78,10 +82,7 @@ mod tests {
             pipe.rd.into_raw_fd() >= 0,
             "Read file descriptor is invalid"
         );
-        assert!(
-            wr.into_raw_fd() >= 0,
-            "Write file descriptor is invalid"
-        );
+        assert!(wr.into_raw_fd() >= 0, "Write file descriptor is invalid");
     }
 
     #[tokio::test]

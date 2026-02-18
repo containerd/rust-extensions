@@ -14,8 +14,10 @@
    limitations under the License.
 */
 
-use std::io::{PipeReader, PipeWriter};
-use std::sync::Mutex;
+use std::{
+    io::{PipeReader, PipeWriter},
+    sync::Mutex,
+};
 
 #[derive(Debug)]
 pub struct Pipe {

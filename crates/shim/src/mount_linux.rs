@@ -21,9 +21,8 @@ use std::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
     os::fd::AsRawFd,
     path::Path,
+    sync::LazyLock,
 };
-
-use std::sync::LazyLock;
 
 #[cfg(not(feature = "async"))]
 use log::error;
@@ -915,9 +914,7 @@ fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
 }
 
 fn prefix_filter(prefix: String) -> impl Fn(MountInfo) -> bool {
-    move |m: MountInfo| {
-        !(m.mountpoint.clone() + "/").starts_with(&(prefix.clone() + "/"))
-    }
+    move |m: MountInfo| !(m.mountpoint.clone() + "/").starts_with(&(prefix.clone() + "/"))
 }
 
 fn get_mounts<F>(f: Option<F>) -> Result<Vec<MountInfo>>
