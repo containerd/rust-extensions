@@ -13,8 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-#![allow(unused)]
-
 use std::{
     collections::HashMap,
     env,
@@ -27,12 +25,13 @@ use std::{
 
 use std::sync::LazyLock;
 
+#[cfg(not(feature = "async"))]
 use log::error;
-use nix::{
-    mount::{mount, MntFlags, MsFlags},
-    sched::{unshare, CloneFlags},
-    unistd::{fork, ForkResult},
-};
+use nix::mount::{mount, MntFlags, MsFlags};
+#[cfg(feature = "async")]
+use nix::sched::{unshare, CloneFlags};
+#[cfg(not(feature = "async"))]
+use nix::unistd::{fork, ForkResult};
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
@@ -94,6 +93,7 @@ const LOOP_DEV_FORMAT: &str = "/dev/loop";
 const EBUSY_STRING: &str = "device or resource busy";
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone)]
 struct MountInfo {
     /// id is a unique identifier of the mount (may be reused after umount).
@@ -319,6 +319,12 @@ const MS_PROPAGATION: MsFlags = PROPAGATION_TYPES
 
 const MS_BIND_RO: MsFlags = MsFlags::MS_BIND.union(MsFlags::MS_RDONLY);
 
+fn page_size() -> usize {
+    let ret = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    assert!(ret > 0, "sysconf(_SC_PAGESIZE) failed");
+    ret as usize
+}
+
 fn options_size(options: &[String]) -> usize {
     options.iter().fold(0, |sum, x| sum + x.len())
 }
@@ -496,7 +502,7 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
-    let max_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let max_size = page_size();
     // avoid hitting one page limit of mount argument buffer
     //
     // NOTE: 512 id a buffer during pagesize check.
@@ -610,7 +616,7 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
-    let max_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let max_size = page_size();
     // NOTE: 512 id a buffer during pagesize check.
     let (chdir, options) =
         if fs_type.unwrap_or("") == "overlay" && options_size(options) >= max_size - 512 {
@@ -661,7 +667,7 @@ pub fn mount_rootfs(
     }
     let zero: MsFlags = MsFlags::empty();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
-        let mut lo_file = String::new();
+        let lo_file: String;
         let s = if lo_setup {
             lo_file = setup_loop(source, loop_params)?;
             Some(lo_file.as_str())
@@ -879,8 +885,8 @@ pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
     if let Some(target) = target {
         let mut mounts = get_mounts(Some(prefix_filter(target.to_string())))?;
         mounts.sort_by(|a, b| b.mountpoint.len().cmp(&a.mountpoint.len()));
-        for (index, target) in mounts.iter().enumerate() {
-            umount_all(Some(target.clone().mountpoint), flags)?;
+        for target in &mounts {
+            umount_all(Some(target.mountpoint.clone()), flags)?;
         }
     };
     Ok(())
@@ -910,10 +916,7 @@ fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
 
 fn prefix_filter(prefix: String) -> impl Fn(MountInfo) -> bool {
     move |m: MountInfo| {
-        if let Some(s) = (m.mountpoint.clone() + "/").strip_prefix(&(prefix.clone() + "/")) {
-            return false;
-        }
-        true
+        !(m.mountpoint.clone() + "/").starts_with(&(prefix.clone() + "/"))
     }
 }
 

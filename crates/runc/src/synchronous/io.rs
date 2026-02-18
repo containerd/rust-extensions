@@ -74,7 +74,9 @@ impl PipedIo {
             let rd = pipe.rd.try_clone()?;
             nix::unistd::fchown(rd, uid, gid)?;
         } else {
-            let wr = pipe.wr.try_clone()?;
+            let wr = pipe
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             nix::unistd::fchown(wr, uid, gid)?;
         }
         Ok(Some(pipe))
@@ -235,7 +237,7 @@ mod tests {
         buf[0] = 0xce;
         io.stdout
             .as_ref()
-            .map(|v| v.wr.try_clone().unwrap().write(&buf).unwrap());
+            .map(|v| v.try_clone_wr().unwrap().write(&buf).unwrap());
         buf[0] = 0x0;
         stdout.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, &[0xceu8]);
@@ -244,7 +246,7 @@ mod tests {
         buf[0] = 0xa5;
         io.stderr
             .as_ref()
-            .map(|v| v.wr.try_clone().unwrap().write(&buf).unwrap());
+            .map(|v| v.try_clone_wr().unwrap().write(&buf).unwrap());
         buf[0] = 0x0;
         stderr.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, &[0xa5u8]);

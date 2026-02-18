@@ -14,9 +14,8 @@
    limitations under the License.
 */
 
-use std::os::unix::io::OwnedFd;
-
-use tokio::net::unix::pipe;
+use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
+use std::sync::Mutex;
 
 /// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
 ///
@@ -25,15 +24,40 @@ use tokio::net::unix::pipe;
 #[derive(Debug)]
 pub struct Pipe {
     pub rd: OwnedFd,
-    pub wr: OwnedFd,
+    wr: Mutex<Option<OwnedFd>>,
 }
 
 impl Pipe {
     pub fn new() -> std::io::Result<Self> {
-        let (tx, rx) = pipe::pipe()?;
-        let rd = rx.into_blocking_fd()?;
-        let wr = tx.into_blocking_fd()?;
-        Ok(Self { rd, wr })
+        let (rd, wr) = std::io::pipe()?;
+        Ok(Self {
+            rd: OwnedFd::from(rd),
+            wr: Mutex::new(Some(OwnedFd::from(wr))),
+        })
+    }
+
+    /// Return the raw fd of the write end. Returns `None` if closed.
+    pub fn wr_as_raw_fd(&self) -> Option<RawFd> {
+        self.wr.lock().unwrap().as_ref().map(|w| w.as_raw_fd())
+    }
+
+    /// Clone the write end. Returns `None` if closed.
+    pub fn try_clone_wr(&self) -> Option<OwnedFd> {
+        self.wr
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|w| w.try_clone().ok())
+    }
+
+    /// Close the write end by dropping it. No-op if already closed.
+    pub fn close_wr(&self) {
+        let _ = self.wr.lock().unwrap().take();
+    }
+
+    /// Take ownership of the write end. Returns `None` if already closed.
+    pub fn take_wr(&self) -> Option<OwnedFd> {
+        self.wr.lock().unwrap().take()
     }
 }
 
@@ -42,18 +66,20 @@ mod tests {
     use std::os::fd::IntoRawFd;
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::unix::pipe;
 
     use super::*;
 
     #[tokio::test]
     async fn test_pipe_creation() {
         let pipe = Pipe::new().expect("Failed to create pipe");
+        let wr = pipe.take_wr().unwrap();
         assert!(
             pipe.rd.into_raw_fd() >= 0,
             "Read file descriptor is invalid"
         );
         assert!(
-            pipe.wr.into_raw_fd() >= 0,
+            wr.into_raw_fd() >= 0,
             "Write file descriptor is invalid"
         );
     }
@@ -61,8 +87,8 @@ mod tests {
     #[tokio::test]
     async fn test_pipe_write_read() {
         let pipe = Pipe::new().expect("Failed to create pipe");
+        let mut write_end = pipe::Sender::from_owned_fd(pipe.take_wr().unwrap()).unwrap();
         let mut read_end = pipe::Receiver::from_owned_fd(pipe.rd).unwrap();
-        let mut write_end = pipe::Sender::from_owned_fd(pipe.wr).unwrap();
         let write_data = b"hello";
 
         write_end
@@ -85,8 +111,8 @@ mod tests {
     #[tokio::test]
     async fn test_pipe_async_write_read() {
         let pipe = Pipe::new().expect("Failed to create pipe");
+        let mut write_end = pipe::Sender::from_owned_fd(pipe.take_wr().unwrap()).unwrap();
         let mut read_end = pipe::Receiver::from_owned_fd(pipe.rd).unwrap();
-        let mut write_end = pipe::Sender::from_owned_fd(pipe.wr).unwrap();
 
         let write_data = b"hello";
         tokio::spawn(async move {
