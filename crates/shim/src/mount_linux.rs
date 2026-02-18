@@ -88,7 +88,9 @@ impl Default for LoopInfo {
 }
 
 const LOOP_CONTROL_PATH: &str = "/dev/loop-control";
+#[cfg(feature = "async")]
 const LOOP_DEV_FORMAT: &str = "/dev/loop";
+#[cfg(feature = "async")]
 const EBUSY_STRING: &str = "device or resource busy";
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
 
@@ -706,6 +708,7 @@ pub fn mount_rootfs(
     Ok(())
 }
 
+#[cfg(feature = "async")]
 fn setup_loop(source: Option<&str>, params: LoopParams) -> Result<String> {
     let src = source.ok_or(other!("loop source is None"))?;
     for _ in 0..100 {
