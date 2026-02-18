@@ -18,11 +18,10 @@ use std::{
     collections::HashMap,
     sync::{
         mpsc::{channel, Receiver, Sender},
-        Mutex,
+        LazyLock, Mutex,
     },
 };
 
-use lazy_static::lazy_static;
 use log::{error, warn};
 
 use crate::{
@@ -30,16 +29,13 @@ use crate::{
     Result,
 };
 
-lazy_static! {
-    pub static ref MONITOR: Mutex<Monitor> = {
-        let monitor = Monitor {
-            seq_id: 0,
-            subscribers: HashMap::new(),
-            topic_subs: HashMap::new(),
-        };
-        Mutex::new(monitor)
-    };
-}
+pub static MONITOR: LazyLock<Mutex<Monitor>> = LazyLock::new(|| {
+    Mutex::new(Monitor {
+        seq_id: 0,
+        subscribers: HashMap::new(),
+        topic_subs: HashMap::new(),
+    })
+});
 
 pub fn monitor_subscribe(topic: Topic) -> Result<Subscription> {
     let mut monitor = MONITOR.lock().unwrap();
