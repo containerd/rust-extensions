@@ -23,19 +23,19 @@ name = "version"
 path = "examples/version.rs"
 
 [dependencies]
-hyper-util = "0.1.6" # https://github.com/hyperium/hyper/issues/3110
-prost.workspace = true
-prost-types.workspace = true
-tokio = { workspace = true, optional = true }
-tonic.workspace = true
+hyper-util = { version = "0.1.20", default-features = false, features = ["tokio"] }
+prost = { workspace = true, features = ["derive", "std"] }
+prost-types = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["net"], optional = true }
+tonic = { workspace = true, features = ["codegen", "channel"] }
 tonic-prost.workspace = true
-tower = { workspace = true, optional = true }
+tower = { workspace = true, features = ["util"], optional = true }
 
 [build-dependencies]
 tonic-prost-build.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"]}
+tokio = { workspace = true, features = ["rt", "macros", "net"] }
 
 [features]
 connect = ["tokio", "tower"]

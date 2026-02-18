@@ -28,47 +28,45 @@ name = "windows-log-reader"
 path = "examples/windows_log_reader.rs"
 
 [dependencies]
-which = "8.0.0"
+which = { version = "8.0.0", default-features = false, features = ["real-sys"] }
 containerd-shim-protos = { path = "../shim-protos", version = "0.10.0" }
 go-flag = "0.1.0"
-lazy_static = "1.4.0"
-sha2 = "0.10.2"
+lazy_static = "1.5.0"
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
 libc.workspace = true
 log = { workspace = true, features = ["std", "kv_unstable"] }
 nix = { workspace = true, features = [
-    "ioctl",
     "fs",
     "socket",
     "signal",
     "mount",
     "sched",
 ] }
-oci-spec.workspace = true
+oci-spec = { workspace = true, features = ["runtime"] }
 page_size = "0.6.0"
 prctl.workspace = true
-signal-hook = "0.3.13"
-serde.workspace = true
-serde_json.workspace = true
+signal-hook = "0.3.18"
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 tempfile.workspace = true
 thiserror.workspace = true
-time.workspace = true
+time = { workspace = true, features = ["std", "formatting"] }
 
 # tracing
-tracing = { version = "0.1", optional = true }
+tracing = { version = "0.1", default-features = false, optional = true }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["full"], optional = true }
+futures = { workspace = true, features = ["std", "alloc"], optional = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "time", "signal", "io-std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-mio = { version = "1.0", features = ["os-ext", "os-poll"] }
-windows-sys = { version = "0.52.0", features = [
+mio = { version = "1.1", default-features = false, features = ["os-ext", "os-poll"] }
+windows-sys = { version = "0.52.0", default-features = false, features = [
     "Win32_Foundation",
-    "Win32_System_WindowsProgramming",
     "Win32_System_Console",
     "Win32_System_Pipes",
     "Win32_Security",

@@ -18,22 +18,23 @@ homepage.workspace = true
 docs = []
 
 [dependencies]
-async-stream = "0.3.3"
-futures.workspace = true
+async-stream = "0.3.6"
+futures = { workspace = true, features = ["std", "alloc"] }
 pin-utils = "0.1.0"
-prost.workspace = true
-prost-types.workspace = true
-serde.workspace = true
+prost = { workspace = true, features = ["derive", "std"] }
+prost-types = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 thiserror.workspace = true
-tonic.workspace = true
+tonic = { workspace = true, features = ["codegen"] }
 tonic-prost.workspace = true
-tokio-stream = "0.1.8"
+tokio-stream = { version = "0.1", default-features = false }
 
 [dev-dependencies]
 futures.workspace = true
 log.workspace = true
 simple_logger.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "net", "io-util"] }
+tonic = { workspace = true, features = ["server", "router"] }
 
 [build-dependencies]
 tonic-prost-build.workspace = true
