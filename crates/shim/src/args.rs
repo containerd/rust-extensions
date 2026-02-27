@@ -50,9 +50,12 @@ pub struct Flags {
 pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
     let mut flags = Flags::default();
 
+    let mut version_short = false;
+    let mut version_long = false;
     let args: Vec<String> = go_flag::parse_args(args, |f| {
         f.add_flag("debug", &mut flags.debug);
-        f.add_flag("v", &mut flags.version);
+        f.add_flag("v", &mut version_short);
+        f.add_flag("version", &mut version_long);
         f.add_flag("namespace", &mut flags.namespace);
         f.add_flag("id", &mut flags.id);
         f.add_flag("socket", &mut flags.socket);
@@ -62,6 +65,8 @@ pub fn parse<S: AsRef<OsStr>>(args: &[S]) -> Result<Flags> {
         f.add_flag("info", &mut flags.info);
     })
     .map_err(|e| Error::InvalidArgument(e.to_string()))?;
+
+    flags.version = version_short || version_long;
 
     if let Some(action) = args.first() {
         flags.action = action.into();
@@ -96,6 +101,7 @@ mod tests {
         let flags = parse(&args).unwrap();
 
         assert!(flags.debug);
+        assert!(!flags.version);
         assert_eq!(flags.id, "123");
         assert_eq!(flags.namespace, "default");
         assert_eq!(flags.socket, "/path/to/socket");
@@ -124,5 +130,17 @@ mod tests {
         let flags = parse(&args).unwrap();
         assert_eq!(flags.action, "start");
         assert_eq!(flags.id, "");
+    }
+
+    #[test]
+    fn parse_version_long_flag() {
+        let flags = parse(&["-version"]).unwrap();
+        assert!(flags.version);
+    }
+
+    #[test]
+    fn parse_version_short_flag() {
+        let flags = parse(&["-v"]).unwrap();
+        assert!(flags.version);
     }
 }
