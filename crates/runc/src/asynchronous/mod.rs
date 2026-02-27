@@ -19,7 +19,6 @@ mod runc;
 use std::{fmt::Debug, io::Result, os::fd::AsRawFd};
 
 use async_trait::async_trait;
-use log::debug;
 pub use pipe::Pipe;
 pub use runc::{DefaultExecutor, Spawner};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -57,10 +56,11 @@ pub struct PipedIo {
 impl Io for PipedIo {
     fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
         self.stdin.as_ref().and_then(|pipe| {
-            let fd = pipe.wr.as_raw_fd();
-            tokio_pipe::PipeWrite::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncWrite + Send + Sync + Unpin>)
-                .ok()
+            pipe.wr_as_raw_fd().and_then(|fd| {
+                tokio_pipe::PipeWrite::from_raw_fd_checked(fd)
+                    .map(|x| Box::new(x) as Box<dyn AsyncWrite + Send + Sync + Unpin>)
+                    .ok()
+            })
         })
     }
 
@@ -91,12 +91,16 @@ impl Io for PipedIo {
         }
 
         if let Some(p) = self.stdout.as_ref() {
-            let pw = p.wr.try_clone()?;
+            let pw = p
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             cmd.stdout(pw);
         }
 
         if let Some(p) = self.stderr.as_ref() {
-            let pw = p.wr.try_clone()?;
+            let pw = p
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             cmd.stdout(pw);
         }
 
@@ -105,11 +109,11 @@ impl Io for PipedIo {
 
     async fn close_after_start(&self) {
         if let Some(p) = self.stdout.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
+            p.close_wr();
         }
 
         if let Some(p) = self.stderr.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
+            p.close_wr();
         }
     }
 }

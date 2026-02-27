@@ -19,10 +19,8 @@ mod runc;
 use std::{
     fmt::Debug,
     io::{Read, Result, Write},
-    os::fd::AsRawFd,
 };
 
-use log::debug;
 pub use pipe::Pipe;
 pub use runc::{DefaultExecutor, Spawner};
 
@@ -61,12 +59,10 @@ pub struct PipedIo {
 
 impl Io for PipedIo {
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
-        self.stdin.as_ref().and_then(|pipe| {
-            pipe.wr
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
-                .ok()
-        })
+        self.stdin
+            .as_ref()
+            .and_then(|pipe| pipe.try_clone_wr())
+            .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
     }
 
     fn stdout(&self) -> Option<Box<dyn Read + Send>> {
@@ -95,12 +91,16 @@ impl Io for PipedIo {
         }
 
         if let Some(p) = self.stdout.as_ref() {
-            let pw = p.wr.try_clone()?;
+            let pw = p
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             cmd.stdout(pw);
         }
 
         if let Some(p) = self.stderr.as_ref() {
-            let pw = p.wr.try_clone()?;
+            let pw = p
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             cmd.stdout(pw);
         }
 
@@ -109,11 +109,11 @@ impl Io for PipedIo {
 
     fn close_after_start(&self) {
         if let Some(p) = self.stdout.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stdout: {}", e));
+            p.close_wr();
         }
 
         if let Some(p) = self.stderr.as_ref() {
-            nix::unistd::close(p.wr.as_raw_fd()).unwrap_or_else(|e| debug!("close stderr: {}", e));
+            p.close_wr();
         }
     }
 }

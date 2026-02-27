@@ -14,17 +14,37 @@
    limitations under the License.
 */
 
-use os_pipe::{pipe, PipeReader, PipeWriter};
+use std::{
+    io::{PipeReader, PipeWriter},
+    sync::Mutex,
+};
 
 #[derive(Debug)]
 pub struct Pipe {
     pub rd: PipeReader,
-    pub wr: PipeWriter,
+    wr: Mutex<Option<PipeWriter>>,
 }
 
 impl Pipe {
     pub fn new() -> std::io::Result<Self> {
-        let (rd, wr) = pipe()?;
-        Ok(Self { rd, wr })
+        let (rd, wr) = std::io::pipe()?;
+        Ok(Self {
+            rd,
+            wr: Mutex::new(Some(wr)),
+        })
+    }
+
+    /// Clone the write end. Returns `None` if closed.
+    pub fn try_clone_wr(&self) -> Option<PipeWriter> {
+        self.wr
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|w| w.try_clone().ok())
+    }
+
+    /// Close the write end by dropping it. No-op if already closed.
+    pub fn close_wr(&self) {
+        let _ = self.wr.lock().unwrap().take();
     }
 }

@@ -19,21 +19,18 @@ docs = []
 libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["user", "fs"] }
-oci-spec.workspace = true
-path-absolutize = "3.0.11"
-prctl.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+oci-spec = { workspace = true, features = ["runtime"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 tempfile.workspace = true
 thiserror.workspace = true
-time.workspace = true
-uuid.workspace = true
-os_pipe.workspace = true
+time = { workspace = true, features = ["serde", "std"] }
+uuid = { workspace = true, features = ["v4"] }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["full"], optional = true }
-tokio-pipe = { version = "0.2.10", optional = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "net", "time"], optional = true }
+tokio-pipe = { version = "0.2.12", default-features = false, optional = true }
 
 [package.metadata.docs.rs]
 features = ["docs"]
