@@ -207,7 +207,8 @@ fn configure_logging_level(debug: bool, default_log_level: &str) {
 }
 
 pub(crate) fn rfc3339_formated() -> String {
-    OffsetDateTime::now_utc()
+    OffsetDateTime::now_local()
+        .unwrap_or(OffsetDateTime::now_utc())
         .format(&Rfc3339)
         .unwrap_or(OffsetDateTime::now_utc().to_string())
 }
