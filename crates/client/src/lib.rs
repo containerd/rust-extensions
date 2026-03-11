@@ -35,6 +35,7 @@ pub mod types {
 
 /// Generated `google.rpc` types, containerd services typically use some of these types.
 pub mod google {
+    #[allow(rustdoc::broken_intra_doc_links)]
     pub mod rpc {
         tonic::include_proto!("google.rpc");
     }

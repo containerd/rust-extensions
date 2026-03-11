@@ -57,9 +57,16 @@ impl Runc {
                 #[cfg(target_os = "linux")]
                 if let Ok(thp) = std::env::var("THP_DISABLED") {
                     if let Ok(thp_disabled) = thp.parse::<bool>() {
-                        if let Err(e) = prctl::set_thp_disable(thp_disabled) {
-                            debug!("set_thp_disable err: {}", e);
-                        };
+                        let ret = libc::prctl(
+                            libc::PR_SET_THP_DISABLE,
+                            if thp_disabled { 1u64 } else { 0u64 },
+                            0,
+                            0,
+                            0,
+                        );
+                        if ret < 0 {
+                            debug!("set_thp_disable err: {}", std::io::Error::last_os_error());
+                        }
                     }
                 }
                 Ok(())

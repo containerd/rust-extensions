@@ -13,8 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-#![allow(unused)]
-
 use std::{
     collections::HashMap,
     env,
@@ -23,15 +21,16 @@ use std::{
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
     os::fd::AsRawFd,
     path::Path,
+    sync::LazyLock,
 };
 
-use lazy_static::lazy_static;
+#[cfg(not(feature = "async"))]
 use log::error;
-use nix::{
-    mount::{mount, MntFlags, MsFlags},
-    sched::{unshare, CloneFlags},
-    unistd::{fork, ForkResult},
-};
+use nix::mount::{mount, MntFlags, MsFlags};
+#[cfg(feature = "async")]
+use nix::sched::{unshare, CloneFlags};
+#[cfg(not(feature = "async"))]
+use nix::unistd::{fork, ForkResult};
 
 use crate::error::{Error, Result};
 #[cfg(not(feature = "async"))]
@@ -89,10 +88,13 @@ impl Default for LoopInfo {
 }
 
 const LOOP_CONTROL_PATH: &str = "/dev/loop-control";
+#[cfg(feature = "async")]
 const LOOP_DEV_FORMAT: &str = "/dev/loop";
+#[cfg(feature = "async")]
 const EBUSY_STRING: &str = "device or resource busy";
 const OVERLAY_LOWERDIR_PREFIX: &str = "lowerdir=";
 
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone)]
 struct MountInfo {
     /// id is a unique identifier of the mount (may be reused after umount).
@@ -126,195 +128,202 @@ struct MountInfo {
     pub vfs_options: String,
 }
 
-lazy_static! {
-    static ref MOUNT_FLAGS: HashMap<&'static str, Flag> = {
-        let mut mf = HashMap::new();
-        let zero: MsFlags = MsFlags::empty();
-        mf.insert(
-            "async",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_SYNCHRONOUS,
-            },
-        );
-        mf.insert(
-            "atime",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_NOATIME,
-            },
-        );
-        mf.insert(
-            "bind",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_BIND,
-            },
-        );
-        mf.insert(
-            "defaults",
-            Flag {
-                clear: false,
-                flags: zero,
-            },
-        );
-        mf.insert(
-            "dev",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_NODEV,
-            },
-        );
-        mf.insert(
-            "diratime",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_NODIRATIME,
-            },
-        );
-        mf.insert(
-            "dirsync",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_DIRSYNC,
-            },
-        );
-        mf.insert(
-            "exec",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_NOEXEC,
-            },
-        );
-        mf.insert(
-            "mand",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_MANDLOCK,
-            },
-        );
-        mf.insert(
-            "noatime",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_NOATIME,
-            },
-        );
-        mf.insert(
-            "nodev",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_NODEV,
-            },
-        );
-        mf.insert(
-            "nodiratime",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_NODIRATIME,
-            },
-        );
-        mf.insert(
-            "noexec",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_NOEXEC,
-            },
-        );
-        mf.insert(
-            "nomand",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_MANDLOCK,
-            },
-        );
-        mf.insert(
-            "norelatime",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_RELATIME,
-            },
-        );
-        mf.insert(
-            "nostrictatime",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_STRICTATIME,
-            },
-        );
-        mf.insert(
-            "nosuid",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_NOSUID,
-            },
-        );
-        mf.insert(
-            "rbind",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_BIND | MsFlags::MS_REC,
-            },
-        );
-        mf.insert(
-            "relatime",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_RELATIME,
-            },
-        );
-        mf.insert(
-            "remount",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_REMOUNT,
-            },
-        );
-        mf.insert(
-            "ro",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_RDONLY,
-            },
-        );
-        mf.insert(
-            "rw",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_RDONLY,
-            },
-        );
-        mf.insert(
-            "strictatime",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_STRICTATIME,
-            },
-        );
-        mf.insert(
-            "suid",
-            Flag {
-                clear: true,
-                flags: MsFlags::MS_NOSUID,
-            },
-        );
-        mf.insert(
-            "sync",
-            Flag {
-                clear: false,
-                flags: MsFlags::MS_SYNCHRONOUS,
-            },
-        );
-        mf
-    };
-    static ref PROPAGATION_TYPES: MsFlags = MsFlags::MS_SHARED
-        .bitor(MsFlags::MS_PRIVATE)
-        .bitor(MsFlags::MS_SLAVE)
-        .bitor(MsFlags::MS_UNBINDABLE);
-    static ref MS_PROPAGATION: MsFlags = PROPAGATION_TYPES
-        .bitor(MsFlags::MS_REC)
-        .bitor(MsFlags::MS_SILENT);
-    static ref MS_BIND_RO: MsFlags = MsFlags::MS_BIND.bitor(MsFlags::MS_RDONLY);
+static MOUNT_FLAGS: LazyLock<HashMap<&'static str, Flag>> = LazyLock::new(|| {
+    let mut mf = HashMap::new();
+    let zero: MsFlags = MsFlags::empty();
+    mf.insert(
+        "async",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_SYNCHRONOUS,
+        },
+    );
+    mf.insert(
+        "atime",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_NOATIME,
+        },
+    );
+    mf.insert(
+        "bind",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_BIND,
+        },
+    );
+    mf.insert(
+        "defaults",
+        Flag {
+            clear: false,
+            flags: zero,
+        },
+    );
+    mf.insert(
+        "dev",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_NODEV,
+        },
+    );
+    mf.insert(
+        "diratime",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_NODIRATIME,
+        },
+    );
+    mf.insert(
+        "dirsync",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_DIRSYNC,
+        },
+    );
+    mf.insert(
+        "exec",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_NOEXEC,
+        },
+    );
+    mf.insert(
+        "mand",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_MANDLOCK,
+        },
+    );
+    mf.insert(
+        "noatime",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_NOATIME,
+        },
+    );
+    mf.insert(
+        "nodev",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_NODEV,
+        },
+    );
+    mf.insert(
+        "nodiratime",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_NODIRATIME,
+        },
+    );
+    mf.insert(
+        "noexec",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_NOEXEC,
+        },
+    );
+    mf.insert(
+        "nomand",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_MANDLOCK,
+        },
+    );
+    mf.insert(
+        "norelatime",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_RELATIME,
+        },
+    );
+    mf.insert(
+        "nostrictatime",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_STRICTATIME,
+        },
+    );
+    mf.insert(
+        "nosuid",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_NOSUID,
+        },
+    );
+    mf.insert(
+        "rbind",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_BIND.union(MsFlags::MS_REC),
+        },
+    );
+    mf.insert(
+        "relatime",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_RELATIME,
+        },
+    );
+    mf.insert(
+        "remount",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_REMOUNT,
+        },
+    );
+    mf.insert(
+        "ro",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_RDONLY,
+        },
+    );
+    mf.insert(
+        "rw",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_RDONLY,
+        },
+    );
+    mf.insert(
+        "strictatime",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_STRICTATIME,
+        },
+    );
+    mf.insert(
+        "suid",
+        Flag {
+            clear: true,
+            flags: MsFlags::MS_NOSUID,
+        },
+    );
+    mf.insert(
+        "sync",
+        Flag {
+            clear: false,
+            flags: MsFlags::MS_SYNCHRONOUS,
+        },
+    );
+    mf
+});
+
+const PROPAGATION_TYPES: MsFlags = MsFlags::MS_SHARED
+    .union(MsFlags::MS_PRIVATE)
+    .union(MsFlags::MS_SLAVE)
+    .union(MsFlags::MS_UNBINDABLE);
+
+const MS_PROPAGATION: MsFlags = PROPAGATION_TYPES
+    .union(MsFlags::MS_REC)
+    .union(MsFlags::MS_SILENT);
+
+const MS_BIND_RO: MsFlags = MsFlags::MS_BIND.union(MsFlags::MS_RDONLY);
+
+fn page_size() -> usize {
+    let ret = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    assert!(ret > 0, "sysconf(_SC_PAGESIZE) failed");
+    ret as usize
 }
 
 fn options_size(options: &[String]) -> usize {
@@ -494,7 +503,7 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
-    let max_size = page_size::get();
+    let max_size = page_size();
     // avoid hitting one page limit of mount argument buffer
     //
     // NOTE: 512 id a buffer during pagesize check.
@@ -558,12 +567,12 @@ pub fn mount_rootfs(
                 });
             }
             // change the propagation type
-            if flags.bitand(*PROPAGATION_TYPES).ne(&zero) {
+            if flags.bitand(PROPAGATION_TYPES).ne(&zero) {
                 mount::<str, Path, str, str>(
                     None,
                     target.as_ref(),
                     None,
-                    flags.bitand(*MS_PROPAGATION),
+                    flags.bitand(MS_PROPAGATION),
                     None,
                 )
                 .unwrap_or_else(|err| {
@@ -576,7 +585,7 @@ pub fn mount_rootfs(
                     unsafe { libc::_exit(code.into()) };
                 });
             }
-            if oflags.bitand(*MS_BIND_RO).eq(&MS_BIND_RO) {
+            if oflags.bitand(MS_BIND_RO).eq(&MS_BIND_RO) {
                 mount::<str, Path, str, str>(
                     None,
                     target.as_ref(),
@@ -608,7 +617,7 @@ pub fn mount_rootfs(
     target: impl AsRef<Path>,
 ) -> Result<()> {
     //TODO add helper to mount fuse
-    let max_size = page_size::get();
+    let max_size = page_size();
     // NOTE: 512 id a buffer during pagesize check.
     let (chdir, options) =
         if fs_type.unwrap_or("") == "overlay" && options_size(options) >= max_size - 512 {
@@ -659,7 +668,7 @@ pub fn mount_rootfs(
     }
     let zero: MsFlags = MsFlags::empty();
     if flags.bitand(MsFlags::MS_REMOUNT).eq(&zero) || data.is_some() {
-        let mut lo_file = String::new();
+        let lo_file: String;
         let s = if lo_setup {
             lo_file = setup_loop(source, loop_params)?;
             Some(lo_file.as_str())
@@ -675,13 +684,13 @@ pub fn mount_rootfs(
     }
 
     // change the propagation type
-    if flags.bitand(*PROPAGATION_TYPES).ne(&zero) {
-        mount::<str, Path, str, str>(None, target.as_ref(), None, *MS_PROPAGATION, None).map_err(
+    if flags.bitand(PROPAGATION_TYPES).ne(&zero) {
+        mount::<str, Path, str, str>(None, target.as_ref(), None, MS_PROPAGATION, None).map_err(
             mount_error!(e, "Change {} mount propagation", target.as_ref().display()),
         )?;
     }
 
-    if oflags.bitand(*MS_BIND_RO).eq(&MS_BIND_RO) {
+    if oflags.bitand(MS_BIND_RO).eq(&MS_BIND_RO) {
         mount::<str, Path, str, str>(
             None,
             target.as_ref(),
@@ -699,6 +708,7 @@ pub fn mount_rootfs(
     Ok(())
 }
 
+#[cfg(feature = "async")]
 fn setup_loop(source: Option<&str>, params: LoopParams) -> Result<String> {
     let src = source.ok_or(other!("loop source is None"))?;
     for _ in 0..100 {
@@ -877,8 +887,8 @@ pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
     if let Some(target) = target {
         let mut mounts = get_mounts(Some(prefix_filter(target.to_string())))?;
         mounts.sort_by(|a, b| b.mountpoint.len().cmp(&a.mountpoint.len()));
-        for (index, target) in mounts.iter().enumerate() {
-            umount_all(Some(target.clone().mountpoint), flags)?;
+        for target in &mounts {
+            umount_all(Some(target.mountpoint.clone()), flags)?;
         }
     };
     Ok(())
@@ -907,12 +917,7 @@ fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
 }
 
 fn prefix_filter(prefix: String) -> impl Fn(MountInfo) -> bool {
-    move |m: MountInfo| {
-        if let Some(s) = (m.mountpoint.clone() + "/").strip_prefix(&(prefix.clone() + "/")) {
-            return false;
-        }
-        true
-    }
+    move |m: MountInfo| !(m.mountpoint.clone() + "/").starts_with(&(prefix.clone() + "/"))
 }
 
 fn get_mounts<F>(f: Option<F>) -> Result<Vec<MountInfo>>
