@@ -14,9 +14,8 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
-use lazy_static::lazy_static;
 use log::error;
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -28,16 +27,13 @@ use crate::{
     monitor::{ExitEvent, Subject, Topic},
 };
 
-lazy_static! {
-    pub static ref MONITOR: Mutex<Monitor> = {
-        let monitor = Monitor {
-            seq_id: 0,
-            subscribers: HashMap::new(),
-            topic_subs: HashMap::new(),
-        };
-        Mutex::new(monitor)
-    };
-}
+pub static MONITOR: LazyLock<Mutex<Monitor>> = LazyLock::new(|| {
+    Mutex::new(Monitor {
+        seq_id: 0,
+        subscribers: HashMap::new(),
+        topic_subs: HashMap::new(),
+    })
+});
 
 pub async fn monitor_subscribe(topic: Topic) -> Result<Subscription> {
     let mut monitor = MONITOR.lock().await;

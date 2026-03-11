@@ -69,7 +69,9 @@ impl PipedIo {
             let rd = pipe.rd.try_clone()?;
             nix::unistd::fchown(rd, uid, gid)?;
         } else {
-            let wr = pipe.wr.try_clone()?;
+            let wr = pipe
+                .try_clone_wr()
+                .ok_or_else(|| std::io::Error::other("write end closed"))?;
             nix::unistd::fchown(wr, uid, gid)?;
         }
         Ok(Some(pipe))

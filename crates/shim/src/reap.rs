@@ -27,7 +27,14 @@ use crate::error::Result;
 /// on the process to discover its termination status.
 pub fn set_subreaper() -> Result<()> {
     use crate::error::Error;
-    prctl::set_child_subreaper(true).map_err(other_error!("linux prctl returned"))
+    let ret = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
+    if ret < 0 {
+        return Err(other!(
+            "linux prctl returned: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -43,6 +50,17 @@ mod tests {
     #[test]
     fn test_set_subreaper() {
         set_subreaper().unwrap();
-        assert!(prctl::get_child_subreaper().unwrap());
+        let mut val: libc::c_int = 0;
+        let ret = unsafe {
+            libc::prctl(
+                libc::PR_GET_CHILD_SUBREAPER,
+                &mut val as *mut libc::c_int as libc::c_ulong,
+                0,
+                0,
+                0,
+            )
+        };
+        assert!(ret >= 0);
+        assert!(val != 0);
     }
 }

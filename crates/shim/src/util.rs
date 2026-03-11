@@ -125,15 +125,13 @@ pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
         use nix::fcntl::{fcntl, FcntlArg, FdFlag};
         // SAFETY: fd is a valid file descriptor that we just created
         let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-        fcntl(borrowed_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(|e| {
+        fcntl(borrowed_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).inspect_err(|_| {
             let _ = close(fd);
-            e
         })?;
     }
 
-    connect(fd, &unix_addr).map_err(|e| {
+    connect(fd, &unix_addr).inspect_err(|_| {
         let _ = close(fd);
-        e
     })?;
 
     Ok(fd)

@@ -164,7 +164,7 @@ impl<S: Snapshotter> Snapshots for Wrapper<S> {
         let sn = self.snapshotter.clone();
         let output = async_stream::try_stream! {
             let walk_stream = sn.list(request.snapshotter, request.filters).await?;
-            pin_utils::pin_mut!(walk_stream);
+            let mut walk_stream = std::pin::pin!(walk_stream);
             let mut infos = Vec::<Info>::new();
             while let Some(info) = walk_stream.next().await {
                 infos.push(info?.into());
