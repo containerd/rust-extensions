@@ -20,6 +20,7 @@ use std::{
         mpsc::{channel, Receiver, Sender},
         Mutex,
     },
+    time::Duration,
 };
 
 use lazy_static::lazy_static;
@@ -48,13 +49,24 @@ pub fn monitor_subscribe(topic: Topic) -> Result<Subscription> {
 }
 
 pub fn monitor_notify_by_pid(pid: i32, exit_code: i32) -> Result<()> {
-    let monitor = MONITOR.lock().unwrap();
-    monitor.notify_by_pid(pid, exit_code)
+    let mut monitor = MONITOR.lock().unwrap();
+    let subject = Subject::Pid(pid);
+    monitor.notify_topic(&Topic::Pid, &subject, exit_code);
+    monitor.notify_topic(&Topic::All, &subject, exit_code);
+    Ok(())
 }
 
 pub fn monitor_notify_by_exec(id: &str, exec_id: &str, exit_code: i32) -> Result<()> {
-    let monitor = MONITOR.lock().unwrap();
-    monitor.notify_by_exec(id, exec_id, exit_code)
+    let mut monitor = MONITOR.lock().unwrap();
+    let subject = Subject::Exec(id.into(), exec_id.into());
+    monitor.notify_topic(&Topic::Exec, &subject, exit_code);
+    monitor.notify_topic(&Topic::All, &subject, exit_code);
+    Ok(())
+}
+
+pub fn monitor_unsubscribe(id: i64) -> Result<()> {
+    let mut monitor = MONITOR.lock().unwrap();
+    monitor.unsubscribe(id)
 }
 
 pub struct Monitor {
@@ -87,34 +99,21 @@ impl Monitor {
         Ok(Subscription { id, rx })
     }
 
-    pub fn notify_by_pid(&self, pid: i32, exit_code: i32) -> Result<()> {
-        let subject = Subject::Pid(pid);
-        self.notify_topic(&Topic::Pid, &subject, exit_code);
-        self.notify_topic(&Topic::All, &subject, exit_code);
-        Ok(())
-    }
-
-    pub fn notify_by_exec(&self, cid: &str, exec_id: &str, exit_code: i32) -> Result<()> {
-        let subject = Subject::Exec(cid.into(), exec_id.into());
-        self.notify_topic(&Topic::Exec, &subject, exit_code);
-        self.notify_topic(&Topic::All, &subject, exit_code);
-        Ok(())
-    }
-
-    fn notify_topic(&self, topic: &Topic, subject: &Subject, exit_code: i32) {
-        self.topic_subs.get(topic).map_or((), |subs| {
+    fn notify_topic(&mut self, topic: &Topic, subject: &Subject, exit_code: i32) {
+        if let Some(subs) = self.topic_subs.get(topic) {
             for i in subs {
-                self.subscribers.get(i).and_then(|sub| {
-                    sub.tx
-                        .send(ExitEvent {
-                            subject: subject.clone(),
-                            exit_code,
-                        })
-                        .map_err(|e| warn!("failed to send {}", e))
-                        .ok()
-                });
+                if let Some(sub) = self.subscribers.get(i) {
+                    // channel::Sender::send is non-blocking when using unbounded channel.
+                    // Sending while holding the lock prevents races with unsubscribe.
+                    if let Err(e) = sub.tx.send(ExitEvent {
+                        subject: subject.clone(),
+                        exit_code,
+                    }) {
+                        warn!("failed to send exit event to subscriber {}: {}", i, e);
+                    }
+                }
             }
-        })
+        }
     }
 
     pub fn unsubscribe(&mut self, id: i64) -> Result<()> {
@@ -141,14 +140,179 @@ impl Drop for Subscription {
 
 pub fn wait_pid(pid: i32, s: Subscription) -> i32 {
     loop {
-        if let Ok(ExitEvent {
-            subject: Subject::Pid(epid),
-            exit_code: code,
-        }) = s.rx.recv()
-        {
-            if pid == epid {
-                return code;
+        match s.rx.recv_timeout(Duration::from_secs(1)) {
+            Ok(ExitEvent {
+                subject: Subject::Pid(epid),
+                exit_code: code,
+            }) => {
+                if pid == epid {
+                    return code;
+                }
             }
+            Ok(_) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return 128,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+
+    use super::*;
+
+    lazy_static! {
+        static ref SYNC_TEST_LOCK: Mutex<()> = Mutex::new(());
+    }
+
+    #[test]
+    fn test_monitor_table_sync() {
+        let _guard = SYNC_TEST_LOCK.lock().unwrap();
+        {
+            let mut monitor = MONITOR.lock().unwrap();
+            monitor.subscribers.clear();
+            monitor.topic_subs.clear();
+        }
+
+        struct TestCase {
+            name: &'static str,
+            subscribe_to: Topic,
+            notify_pid: Option<i32>,
+            notify_exec: Option<(&'static str, &'static str)>,
+            expected_pid: Option<i32>,
+            expected_exec: Option<(&'static str, &'static str)>,
+        }
+
+        let cases = vec![
+            TestCase {
+                name: "pid_topic_receives_pid_event",
+                subscribe_to: Topic::Pid,
+                notify_pid: Some(301),
+                notify_exec: None,
+                expected_pid: Some(301),
+                expected_exec: None,
+            },
+            TestCase {
+                name: "exec_topic_receives_exec_event",
+                subscribe_to: Topic::Exec,
+                notify_pid: None,
+                notify_exec: Some(("c2", "e2")),
+                expected_pid: None,
+                expected_exec: Some(("c2", "e2")),
+            },
+        ];
+
+        for tc in cases {
+            let s = monitor_subscribe(tc.subscribe_to.clone()).unwrap();
+
+            if let Some(pid) = tc.notify_pid {
+                monitor_notify_by_pid(pid, 0).unwrap();
+            }
+            if let Some((cid, eid)) = tc.notify_exec {
+                monitor_notify_by_exec(cid, eid, 0).unwrap();
+            }
+
+            if let Some(exp_pid) = tc.expected_pid {
+                let event =
+                    s.rx.recv_timeout(Duration::from_millis(100))
+                        .unwrap_or_else(|_| panic!("{}: timed out", tc.name));
+                match event.subject {
+                    Subject::Pid(p) => assert_eq!(p, exp_pid, "{}", tc.name),
+                    _ => panic!("{}: unexpected subject", tc.name),
+                }
+            }
+
+            if let Some((exp_cid, exp_eid)) = tc.expected_exec {
+                let event =
+                    s.rx.recv_timeout(Duration::from_millis(100))
+                        .unwrap_or_else(|_| panic!("{}: timed out", tc.name));
+                match event.subject {
+                    Subject::Exec(c, e) => {
+                        assert_eq!(c, exp_cid, "{}", tc.name);
+                        assert_eq!(e, exp_eid, "{}", tc.name);
+                    }
+                    _ => panic!("{}: unexpected subject", tc.name),
+                }
+            }
+
+            monitor_unsubscribe(s.id).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_monitor_backpressure_sync() {
+        let _guard = SYNC_TEST_LOCK.lock().unwrap();
+        {
+            let mut monitor = MONITOR.lock().unwrap();
+            monitor.subscribers.clear();
+            monitor.topic_subs.clear();
+        }
+
+        let s = monitor_subscribe(Topic::Pid).unwrap();
+        let sid = s.id;
+        let count = 200;
+        let base_pid = 20000;
+
+        let handle = thread::spawn(move || {
+            let mut received = 0;
+            while received < count {
+                if let Ok(event) = s.rx.recv_timeout(Duration::from_secs(5)) {
+                    match event.subject {
+                        Subject::Pid(pid) => {
+                            assert_eq!(pid, base_pid + received)
+                        }
+                        _ => continue,
+                    }
+                    received += 1;
+                    if received % 10 == 0 {
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                } else {
+                    break;
+                }
+            }
+            received
+        });
+
+        for i in 0..count {
+            monitor_notify_by_pid(base_pid + i, 0).unwrap();
+        }
+
+        let received_count = handle.join().expect("Receiver thread panicked");
+        assert_eq!(received_count, count);
+
+        monitor_unsubscribe(sid).unwrap();
+    }
+
+    #[test]
+    fn test_monitor_reliability_sync() {
+        let _guard = SYNC_TEST_LOCK.lock().unwrap();
+        {
+            let mut monitor = MONITOR.lock().unwrap();
+            monitor.subscribers.clear();
+            monitor.topic_subs.clear();
+        }
+
+        let s_to_drop = monitor_subscribe(Topic::Pid).unwrap();
+        let s_stay = monitor_subscribe(Topic::Pid).unwrap();
+        let rid = s_to_drop.id;
+        let test_pid = 30000;
+
+        drop(s_to_drop);
+        thread::sleep(Duration::from_millis(50));
+
+        monitor_notify_by_pid(test_pid, 0).unwrap();
+
+        let event = s_stay.rx.recv_timeout(Duration::from_millis(200)).unwrap();
+        match event.subject {
+            Subject::Pid(p) => assert_eq!(p, test_pid),
+            _ => panic!("unexpected event"),
+        }
+
+        let monitor = MONITOR.lock().unwrap();
+        assert!(!monitor.subscribers.contains_key(&rid));
+        drop(monitor);
+        monitor_unsubscribe(s_stay.id).unwrap();
     }
 }
