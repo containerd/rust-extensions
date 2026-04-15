@@ -32,7 +32,9 @@ async fn main() {
     let pid = args.get(2).map(|str| str.to_owned()).unwrap_or_default();
 
     println!("Connecting to {}...", socket_path);
-    let client = Client::connect(socket_path).expect("Failed to connect to shim");
+    let client = Client::connect(socket_path)
+        .await
+        .expect("Failed to connect to shim");
 
     let task_client = TaskClient::new(client);
 

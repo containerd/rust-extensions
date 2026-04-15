@@ -30,7 +30,9 @@ fn default_ctx() -> Context {
 
 #[tokio::main]
 async fn main() {
-    let c = Client::connect("unix:///tmp/shim-proto-ttrpc-001").unwrap();
+    let c = Client::connect("unix:///tmp/shim-proto-ttrpc-001")
+        .await
+        .unwrap();
     let task = TaskClient::new(c);
     let now = std::time::Instant::now();
 
