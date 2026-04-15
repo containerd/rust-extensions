@@ -349,11 +349,11 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
 
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]
 async fn create_server(flags: &args::Flags) -> Result<Server> {
-    use std::os::fd::IntoRawFd;
+    use containerd_shim_protos::ttrpc::r#async::transport::Listener;
     let listener = start_listener(&flags.socket).await?;
-    let mut server = Server::new();
-    server = server.add_listener(listener.into_raw_fd())?;
-    server = server.set_domain_unix();
+    let listener =
+        Listener::try_from(listener).map_err(io_error!(e, "creating ttrpc listener"))?;
+    let server = Server::new().add_listener(listener);
     Ok(server)
 }
 
@@ -543,7 +543,7 @@ async fn start_listener(address: &str) -> Result<UnixListener> {
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 async fn wait_socket_working(address: &str, interval_in_ms: u64, count: u32) -> Result<()> {
     for _i in 0..count {
-        match Client::connect(address) {
+        match Client::connect(address).await {
             Ok(_) => {
                 return Ok(());
             }
