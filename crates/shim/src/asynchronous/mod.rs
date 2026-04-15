@@ -351,8 +351,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
 async fn create_server(flags: &args::Flags) -> Result<Server> {
     use containerd_shim_protos::ttrpc::r#async::transport::Listener;
     let listener = start_listener(&flags.socket).await?;
-    let listener =
-        Listener::try_from(listener).map_err(io_error!(e, "creating ttrpc listener"))?;
+    let listener = Listener::try_from(listener).map_err(io_error!(e, "creating ttrpc listener"))?;
     let server = Server::new().add_listener(listener);
     Ok(server)
 }
