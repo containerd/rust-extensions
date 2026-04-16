@@ -609,10 +609,7 @@ async fn copy_console(
     let f = unsafe { File::from_raw_fd(fd.into_raw_fd()) };
     if !stdio.stdin.is_empty() {
         debug!("copy_console: pipe stdin to console");
-        let console_stdin = f
-            .try_clone()
-            .await
-            .map_err(io_error!(e, "failed to clone console file"))?;
+        let console_stdin = unsafe { tokio::fs::File::from_raw_fd(f.as_raw_fd()) };
         let stdin = handle_file_open(|| async {
             OpenOptions::new()
                 .read(true)
@@ -625,10 +622,7 @@ async fn copy_console(
     }
 
     if !stdio.stdout.is_empty() {
-        let console_stdout = f
-            .try_clone()
-            .await
-            .map_err(io_error!(e, "failed to clone console file"))?;
+        let console_stdout = unsafe { tokio::fs::File::from_raw_fd(f.as_raw_fd()) };
         debug!("copy_console: pipe stdout from console");
         let stdout = OpenOptions::new()
             .write(true)
