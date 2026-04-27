@@ -33,6 +33,7 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
             "vendor/github.com/containerd/containerd/api/types/introspection.proto",
+            "vendor/github.com/containerd/containerd/api/types/metrics.proto",
             #[cfg(feature = "sandbox")]
             "vendor/github.com/containerd/containerd/api/types/platform.proto",
         ],
@@ -92,14 +93,20 @@ fn main() {
     {
         genmodule(
             "sandbox",
-            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
+            &[
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             false,
         );
 
         #[cfg(feature = "async")]
         genmodule(
             "sandbox_async",
-            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
+            &[
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             true,
         );
     }

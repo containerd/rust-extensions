@@ -14,6 +14,10 @@
    limitations under the License.
 */
 
+pub mod metrics {
+    include!(concat!(env!("OUT_DIR"), "/sandbox/metrics.rs"));
+}
+
 pub mod sandbox {
     include!(concat!(env!("OUT_DIR"), "/sandbox/sandbox.rs"));
 }
