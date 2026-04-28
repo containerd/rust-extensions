@@ -46,6 +46,12 @@ fn main() {
     );
 
     genmodule(
+        "cgroups_v2",
+        &["vendor/github.com/containerd/cgroups/cgroup2/stats/metrics.proto"],
+        false,
+    );
+
+    genmodule(
         "stats",
         &["vendor/microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/stats/stats.proto"],
         false,

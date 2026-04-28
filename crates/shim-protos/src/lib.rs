@@ -21,6 +21,7 @@ pub use protobuf;
 pub use ttrpc;
 
 pub mod cgroups;
+pub mod cgroups_v2;
 pub mod events;
 #[cfg(feature = "sandbox")]
 mod sandbox;
