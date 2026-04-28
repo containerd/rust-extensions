@@ -18,7 +18,7 @@
 
 use client::{
     protobuf::MessageDyn,
-    shim::events,
+    shim::{event::Envelope, events},
     ttrpc::{self, context::Context},
     types::empty,
     Client, Events, EventsClient,
@@ -91,7 +91,7 @@ impl RemotePublisher {
         namespace: &str,
         event: Box<dyn MessageDyn>,
     ) -> Result<()> {
-        let mut envelope = events::Envelope::new();
+        let mut envelope = Envelope::new();
         envelope.set_topic(topic.to_owned());
         envelope.set_namespace(namespace.to_owned());
         envelope.set_timestamp(timestamp()?);

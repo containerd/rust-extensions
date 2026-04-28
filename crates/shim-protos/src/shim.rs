@@ -18,6 +18,10 @@ pub mod oci {
     include!(concat!(env!("OUT_DIR"), "/shim/oci.rs"));
 }
 
+pub mod event {
+    include!(concat!(env!("OUT_DIR"), "/shim/event.rs"));
+}
+
 pub mod events {
     include!(concat!(env!("OUT_DIR"), "/shim/events.rs"));
 }

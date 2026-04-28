@@ -57,6 +57,7 @@ async fn main() {
         architecture: arch.to_string(),
         variant: "".to_string(),
         os_version: "".to_string(),
+        os_features: vec![],
     };
 
     // Create the destination (ImageStore)

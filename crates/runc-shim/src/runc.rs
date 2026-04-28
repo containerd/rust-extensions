@@ -433,11 +433,6 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
 
 impl RuncInitLifecycle {
     pub fn new(runtime: Runc, opts: Options, bundle: &str) -> Self {
-        let work_dir = Path::new(bundle).join("work");
-        let mut opts = opts;
-        if opts.criu_path().is_empty() {
-            opts.criu_path = work_dir.to_string_lossy().to_string();
-        }
         Self {
             runtime,
             opts,

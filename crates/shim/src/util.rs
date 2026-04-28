@@ -55,11 +55,14 @@ pub struct JsonOptions {
     pub io_gid: u32,
     pub binary_name: ::std::string::String,
     pub root: ::std::string::String,
-    pub criu_path: ::std::string::String,
     #[serde(default)]
     pub systemd_cgroup: bool,
     pub criu_image_path: ::std::string::String,
     pub criu_work_path: ::std::string::String,
+    #[serde(default)]
+    pub task_api_address: ::std::string::String,
+    #[serde(default)]
+    pub task_api_version: u32,
 }
 
 impl From<Options> for JsonOptions {
@@ -72,10 +75,11 @@ impl From<Options> for JsonOptions {
             io_gid: o.io_gid,
             binary_name: o.binary_name,
             root: o.root,
-            criu_path: o.criu_path,
             systemd_cgroup: o.systemd_cgroup,
             criu_image_path: o.criu_image_path,
             criu_work_path: o.criu_work_path,
+            task_api_address: o.task_api_address,
+            task_api_version: o.task_api_version,
         }
     }
 }
@@ -90,10 +94,11 @@ impl From<JsonOptions> for Options {
             io_gid: j.io_gid,
             binary_name: j.binary_name,
             root: j.root,
-            criu_path: j.criu_path,
             systemd_cgroup: j.systemd_cgroup,
             criu_image_path: j.criu_image_path,
             criu_work_path: j.criu_work_path,
+            task_api_address: j.task_api_address,
+            task_api_version: j.task_api_version,
             ..Default::default()
         }
     }

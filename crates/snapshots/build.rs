@@ -16,17 +16,17 @@
 
 use std::{env, fs, io};
 
-const PROTO_FILES: &[&str] = &[
-    "vendor/github.com/containerd/containerd/api/types/mount.proto",
-    "vendor/github.com/containerd/containerd/api/services/snapshots/v1/snapshots.proto",
-];
+const PROTO_FILES: &[&str] = &["types/mount.proto", "services/snapshots/v1/snapshots.proto"];
 
 const FIXUP_MODULES: &[&str] = &["containerd.services.snapshots.v1"];
 
 fn main() {
     tonic_prost_build::configure()
         .build_server(true)
-        .compile_protos(PROTO_FILES, &["vendor/"])
+        .compile_protos(
+            PROTO_FILES,
+            &["vendor/github.com/containerd/containerd/api/", "vendor/"],
+        )
         .expect("Failed to generate GRPC bindings");
 
     for module in FIXUP_MODULES {
