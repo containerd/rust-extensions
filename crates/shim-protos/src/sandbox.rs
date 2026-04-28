@@ -18,6 +18,10 @@ pub mod sandbox {
     include!(concat!(env!("OUT_DIR"), "/sandbox/sandbox.rs"));
 }
 
+pub mod metrics {
+    include!(concat!(env!("OUT_DIR"), "/sandbox/metrics.rs"));
+}
+
 pub mod sandbox_ttrpc {
     include!(concat!(env!("OUT_DIR"), "/sandbox/sandbox_ttrpc.rs"));
 }

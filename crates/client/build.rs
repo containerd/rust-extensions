@@ -18,39 +18,39 @@ use std::{env, fs, io};
 
 const PROTO_FILES: &[&str] = &[
     // Types
-    "vendor/github.com/containerd/containerd/api/types/descriptor.proto",
-    "vendor/github.com/containerd/containerd/api/types/metrics.proto",
-    "vendor/github.com/containerd/containerd/api/types/mount.proto",
-    "vendor/github.com/containerd/containerd/api/types/platform.proto",
-    "vendor/github.com/containerd/containerd/api/types/sandbox.proto",
-    "vendor/github.com/containerd/containerd/api/types/task/task.proto",
-    "vendor/github.com/containerd/containerd/api/types/transfer/imagestore.proto",
-    "vendor/github.com/containerd/containerd/api/types/transfer/importexport.proto",
-    "vendor/github.com/containerd/containerd/api/types/transfer/progress.proto",
-    "vendor/github.com/containerd/containerd/api/types/transfer/registry.proto",
-    "vendor/github.com/containerd/containerd/api/types/transfer/streaming.proto",
+    "types/descriptor.proto",
+    "types/metrics.proto",
+    "types/mount.proto",
+    "types/platform.proto",
+    "types/sandbox.proto",
+    "types/task/task.proto",
+    "types/transfer/imagestore.proto",
+    "types/transfer/importexport.proto",
+    "types/transfer/progress.proto",
+    "types/transfer/registry.proto",
+    "types/transfer/streaming.proto",
     // Services
-    "vendor/github.com/containerd/containerd/api/services/containers/v1/containers.proto",
-    "vendor/github.com/containerd/containerd/api/services/content/v1/content.proto",
-    "vendor/github.com/containerd/containerd/api/services/diff/v1/diff.proto",
-    "vendor/github.com/containerd/containerd/api/services/events/v1/events.proto",
-    "vendor/github.com/containerd/containerd/api/services/images/v1/images.proto",
-    "vendor/github.com/containerd/containerd/api/services/introspection/v1/introspection.proto",
-    "vendor/github.com/containerd/containerd/api/services/leases/v1/leases.proto",
-    "vendor/github.com/containerd/containerd/api/services/namespaces/v1/namespace.proto",
-    "vendor/github.com/containerd/containerd/api/services/sandbox/v1/sandbox.proto",
-    "vendor/github.com/containerd/containerd/api/services/snapshots/v1/snapshots.proto",
-    "vendor/github.com/containerd/containerd/api/services/streaming/v1/streaming.proto",
-    "vendor/github.com/containerd/containerd/api/services/tasks/v1/tasks.proto",
-    "vendor/github.com/containerd/containerd/api/services/transfer/v1/transfer.proto",
-    "vendor/github.com/containerd/containerd/api/services/version/v1/version.proto",
+    "services/containers/v1/containers.proto",
+    "services/content/v1/content.proto",
+    "services/diff/v1/diff.proto",
+    "services/events/v1/events.proto",
+    "services/images/v1/images.proto",
+    "services/introspection/v1/introspection.proto",
+    "services/leases/v1/leases.proto",
+    "services/namespaces/v1/namespace.proto",
+    "services/sandbox/v1/sandbox.proto",
+    "services/snapshots/v1/snapshots.proto",
+    "services/streaming/v1/streaming.proto",
+    "services/tasks/v1/tasks.proto",
+    "services/transfer/v1/transfer.proto",
+    "services/version/v1/version.proto",
     // Events
-    "vendor/github.com/containerd/containerd/api/events/container.proto",
-    "vendor/github.com/containerd/containerd/api/events/content.proto",
-    "vendor/github.com/containerd/containerd/api/events/image.proto",
-    "vendor/github.com/containerd/containerd/api/events/namespace.proto",
-    "vendor/github.com/containerd/containerd/api/events/snapshot.proto",
-    "vendor/github.com/containerd/containerd/api/events/task.proto",
+    "events/container.proto",
+    "events/content.proto",
+    "events/image.proto",
+    "events/namespace.proto",
+    "events/snapshot.proto",
+    "events/task.proto",
 ];
 
 const FIXUP_MODULES: &[&str] = &[
@@ -72,7 +72,11 @@ fn main() {
 
     tonic_prost_build::configure()
         .build_server(false)
-        .compile_with_config(config, PROTO_FILES, &["vendor/"])
+        .compile_with_config(
+            config,
+            PROTO_FILES,
+            &["vendor/github.com/containerd/containerd/api/", "vendor/"],
+        )
         .expect("Failed to generate GRPC bindings");
 
     for module in FIXUP_MODULES {

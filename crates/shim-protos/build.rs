@@ -29,7 +29,7 @@ fn main() {
         &[
             "vendor/gogoproto/gogo.proto",
             "vendor/google/protobuf/empty.proto",
-            "vendor/github.com/containerd/containerd/protobuf/plugin/fieldpath.proto",
+            "vendor/github.com/containerd/containerd/api/types/fieldpath.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
             "vendor/github.com/containerd/containerd/api/types/introspection.proto",
@@ -69,8 +69,9 @@ fn main() {
     genmodule(
         "shim",
         &[
-            "vendor/github.com/containerd/containerd/runtime/v2/runc/options/oci.proto",
+            "vendor/github.com/containerd/containerd/api/types/runc/options/oci.proto",
             "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
+            "vendor/github.com/containerd/containerd/api/types/event.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
         false,
@@ -82,6 +83,7 @@ fn main() {
             "shim_async",
             &[
                 "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
+                "vendor/github.com/containerd/containerd/api/types/event.proto",
                 "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             ],
             true,
@@ -92,14 +94,20 @@ fn main() {
     {
         genmodule(
             "sandbox",
-            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
+            &[
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             false,
         );
 
         #[cfg(feature = "async")]
         genmodule(
             "sandbox_async",
-            &["vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto"],
+            &[
+                "vendor/github.com/containerd/containerd/api/types/metrics.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/sandbox/v1/sandbox.proto",
+            ],
             true,
         );
     }
@@ -113,6 +121,11 @@ fn genmodule(name: &str, inputs: &[&str], async_all: bool) {
 
     Codegen::new()
         .inputs(inputs)
+        // Order matters: containerd/api first so containerd's internal
+        // imports like `types/fieldpath.proto` (new in v2.3.0) resolve
+        // there. `vendor/` second for third-party imports
+        // (google/, gogoproto/, microsoft/, github.com/containerd/cgroups/).
+        .include("vendor/github.com/containerd/containerd/api/")
         .include("vendor/")
         .rust_protobuf()
         .rust_protobuf_customize(

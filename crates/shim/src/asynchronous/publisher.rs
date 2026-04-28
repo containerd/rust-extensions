@@ -18,9 +18,9 @@ use std::os::unix::io::RawFd;
 
 use async_trait::async_trait;
 use containerd_shim_protos::{
-    api::{Empty, Envelope},
+    api::Empty,
     protobuf::MessageDyn,
-    shim::events,
+    shim::{event::Envelope, events},
     shim_async::{Client, Events, EventsClient},
     ttrpc,
     ttrpc::{context::Context, r#async::TtrpcContext},
@@ -149,7 +149,7 @@ impl RemotePublisher {
         namespace: &str,
         event: Box<dyn MessageDyn>,
     ) -> Result<()> {
-        let mut envelope = events::Envelope::new();
+        let mut envelope = Envelope::new();
         envelope.set_topic(topic.to_owned());
         envelope.set_namespace(namespace.to_owned());
         envelope.set_timestamp(timestamp()?);

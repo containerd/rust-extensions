@@ -8,7 +8,7 @@
 # For each crate, the script expects a text file named `rsync.txt` in the crate's directory.
 # The file should contain a list of proto files that should be synchronized from containerd.
 
-VERSION="v2.1.1"
+VERSION="v2.3.0"
 
 set -x
 
@@ -43,6 +43,6 @@ function sync_crate() {
         crates/$crate_name/vendor/github.com/containerd/containerd/
 }
 
-sync_crate "shim_protos" $TEMP_DIR
+sync_crate "shim-protos" $TEMP_DIR
 sync_crate "snapshots" $TEMP_DIR
 sync_crate "client" $TEMP_DIR
