@@ -71,7 +71,11 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add $CARGO_FILE
-          git commit -m "Bump $CRATE to v$VERSION"
+          if git diff --cached --quiet; then
+            echo "Version already at v$VERSION, skipping commit"
+          else
+            git commit -m "Bump $CRATE to v$VERSION"
+          fi
 
       - name: Install protobuf
         if: ${{ contains(fromJSON('["client","snapshots"]'), inputs.crate) }}
