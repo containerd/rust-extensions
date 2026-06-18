@@ -47,7 +47,7 @@ jobs:
       CARGO_FILE: "crates/${{ inputs.crate }}/Cargo.toml"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Validate version
         env:
