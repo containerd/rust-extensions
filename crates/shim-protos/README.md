@@ -25,15 +25,15 @@ edit those auto-generated source files.
 
 If upgrading/modification is needed, please follow the steps:
  - Synchronize the latest protobuf source files from the upstream projects into directory 'vendor/'.
- - Re-generate the source files by `cargo build --features=generate_bindings`.
+ - Re-generate the source files by building this crate, e.g. `cargo build -p containerd-shim-protos`.
  - Commit the synchronized protobuf source files and auto-generated source files, keeping them in synchronization.
 
 ## Usage
-Add `containerd-shim-client` as a dependency in your `Cargo.toml`
+Add `containerd-shim-protos` as a dependency in your `Cargo.toml`
 
 ```toml
 [dependencies]
-containerd-shim-protos = "0.4"
+containerd-shim-protos = "0.11"
 ```
 
 Basic client code looks as follows:
@@ -63,13 +63,13 @@ let resp = task_client.connect(context, &req).expect("Connect request failed");
 The way to build the example:
 ```bash
 # build sync connect, client and server
-$ cargo build --example shim-proto-connect
-$ sudo ./shim-proto-connect unix:///containerd-shim/shim_socket_path.sock
-$ cargo build --example shim-proto-client
-$ cargo build --example shim-proto-server
+$ cargo build -p containerd-shim-protos --example shim-proto-connect
+$ sudo ./target/debug/examples/shim-proto-connect unix:///containerd-shim/shim_socket_path.sock
+$ cargo build -p containerd-shim-protos --example shim-proto-client
+$ cargo build -p containerd-shim-protos --example shim-proto-server
 
 # build async connect, client and server
-$ cargo build --example shim-proto-connect-async --features async
-$ cargo build --example shim-proto-client-async --features async
-$ cargo build --example shim-proto-server-async --features async
+$ cargo build -p containerd-shim-protos --example shim-proto-connect-async --features async
+$ cargo build -p containerd-shim-protos --example shim-proto-client-async --features async
+$ cargo build -p containerd-shim-protos --example shim-proto-server-async --features async
 ```
