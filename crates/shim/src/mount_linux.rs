@@ -1139,7 +1139,13 @@ mod tests {
         ];
         // mount target.
         let result = mount_rootfs(Some("overlay"), Some("overlay"), &options, &target);
-        assert!(result.is_ok());
+        if let Err(err) = &result {
+            if crate::error::is_permission_error(err) {
+                eprintln!("skipping test_mount_rootfs_umount_recursive: {err}");
+                return;
+            }
+        }
+        assert!(result.is_ok(), "{result:?}");
         let mut mountinfo = get_mounts(Some(prefix_filter(
             target
                 .path()
@@ -1176,6 +1182,12 @@ mod tests {
             direct: true,
         };
         let result = setup_loop(backing_file, params);
-        assert!(result.is_ok());
+        if let Err(err) = &result {
+            if crate::error::is_permission_error(err) {
+                eprintln!("skipping test_setup_loop_dev: {err}");
+                return;
+            }
+        }
+        assert!(result.is_ok(), "{result:?}");
     }
 }
