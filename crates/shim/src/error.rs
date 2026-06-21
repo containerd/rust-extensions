@@ -89,6 +89,21 @@ pub enum Error {
     Unimplemented(String),
 }
 
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn is_permission_error(err: &Error) -> bool {
+    match err {
+        Error::IoError { err, .. } => err.kind() == std::io::ErrorKind::PermissionDenied,
+        #[cfg(unix)]
+        Error::Nix(err) | Error::MountError { err, .. } => {
+            matches!(err, nix::errno::Errno::EACCES | nix::errno::Errno::EPERM)
+        }
+        Error::Other(msg) => {
+            msg.contains("Permission denied") || msg.contains("Operation not permitted")
+        }
+        _ => false,
+    }
+}
+
 impl From<Error> for ttrpc::Error {
     fn from(e: Error) -> Self {
         match e {

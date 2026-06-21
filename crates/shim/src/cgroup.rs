@@ -350,10 +350,10 @@ pub fn update_resources(cgroup: &Cgroup, resources: &LinuxResources) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{error::Error as _, path::PathBuf};
 
     use cgroups_rs::{
-        fs::{hierarchies, Cgroup},
+        fs::{error::ErrorKind, hierarchies, Cgroup},
         CgroupPid,
     };
 
@@ -362,16 +362,37 @@ mod tests {
         add_task_to_cgroup, adjust_oom_score, read_process_oom_score, OOM_SCORE_ADJ_MAX,
     };
 
+    fn is_cgroup_permission_error(err: &cgroups_rs::fs::error::Error) -> bool {
+        *err.kind() == ErrorKind::FsError
+            && err
+                .source()
+                .and_then(|source| source.downcast_ref::<std::io::Error>())
+                .is_some_and(|source| source.kind() == std::io::ErrorKind::PermissionDenied)
+    }
+
     #[test]
     fn test_add_cgroup() {
         let path = "runc_shim_test_cgroup";
         let h = hierarchies::auto();
 
         // create cgroup path first
-        let cg = Cgroup::new(h, path).unwrap();
+        let cg = match Cgroup::new(h, path) {
+            Ok(cg) => cg,
+            Err(err) if is_cgroup_permission_error(&err) => {
+                eprintln!("skipping test_add_cgroup: {err}");
+                return;
+            }
+            Err(err) => panic!("failed to create cgroup for test: {err}"),
+        };
 
         let pid = std::process::id();
-        add_task_to_cgroup(path, pid).unwrap();
+        if let Err(err) = add_task_to_cgroup(path, pid) {
+            if crate::error::is_permission_error(&err) {
+                eprintln!("skipping test_add_cgroup: {err}");
+                return;
+            }
+            panic!("failed to add task to cgroup for test: {err}");
+        }
         let cg_id = CgroupPid::from(pid as u64);
         assert!(cg.tasks().contains(&cg_id));
 
