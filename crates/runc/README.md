@@ -9,28 +9,31 @@ A crate for consuming the runc binary in your Rust applications, similar to [go-
 This crate is based on archived [rust-runc](https://github.com/pwFoo/rust-runc).
 
 ## Usage
-Both sync/async version is available.
-You can build runc client with `RuncConfig` in method chaining style.
-Call `build()` or `build_async()` to get client.
-Note that async client depends on [tokio](https://github.com/tokio-rs/tokio), then please use it on tokio runtime.
+Both sync and async versions are available.
+You can build a runc client with `GlobalOpts` in method chaining style.
+Call `build()` to get a client.
+To use the async client, enable the `async` feature and run it on a [tokio](https://github.com/tokio-rs/tokio) runtime.
 
 ```rust,ignore
 #[tokio::main]
 async fn main() {
-    let config = runc::GlobalOpts::new()
+    let config = runc::options::GlobalOpts::new()
         .root("./new_root")
         .debug(false)
         .log("/path/to/logfile.json")
         .log_format(runc::LogFormat::Json)
         .rootless(true);
 
-    let client = config.build_async().unwrap();
+    let client = config.build().unwrap();
 
     let opts = runc::options::CreateOpts::new()
         .pid_file("/path/to/pid/file")
         .no_pivot(true);
 
-    client.create("container-id", "path/to/bundle", Some(&opts)).unwrap();
+    client
+        .create("container-id", "path/to/bundle", Some(&opts))
+        .await
+        .unwrap();
 }
 ```
 
