@@ -7,6 +7,10 @@
 
 This crate implements a GRPC client to query containerd APIs.
 
+## Build requirements
+
+`protoc` must be installed to build this crate because the gRPC bindings are generated in `build.rs`.
+
 ## Example
 
 Run with `cargo run --example version`

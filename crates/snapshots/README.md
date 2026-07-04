@@ -8,6 +8,10 @@
 Snapshots crate implements containerd's proxy plugin for snapshotting. It aims hide the underlying complexity of GRPC
 interfaces, streaming, and request/response conversions and provide one `Snapshots` trait to implement.
 
+## Build requirements
+
+`protoc` must be installed to build this crate because the gRPC bindings are generated in `build.rs`.
+
 [containerd Documentation](https://github.com/containerd/containerd/blob/main/docs/PLUGINS.md#proxy-plugins)
 
 ## Proxy plugins

@@ -1,6 +1,6 @@
 # Rust extensions for containerd
 
-[![CI](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mxpv/shim-rs/actions/workflows/ci.yml)
+[![CI](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/containerd/rust-extensions/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/containerd/rust-extensions/graph/badge.svg?token=VPUPN3MOFX)](https://codecov.io/gh/containerd/rust-extensions)
 [![Crates.io](https://img.shields.io/crates/l/containerd-client)](https://github.com/containerd/rust-extensions/blob/main/LICENSE)
 [![dependency status](https://deps.rs/repo/github/containerd/rust-extensions/status.svg)](https://deps.rs/repo/github/containerd/rust-extensions)
@@ -20,7 +20,9 @@ This repository contains the following crates:
 | [containerd-runc-shim](crates/runc-shim) | Runtime v2 runc shim implementation | [![Crates.io](https://img.shields.io/crates/v/containerd-runc-shim)](https://crates.io/crates/containerd-runc-shim) |
 
 ## How to build
-The build process as easy as:
+Install `protoc` first. The CI workflow does this explicitly via [scripts/install-protobuf.sh](./scripts/install-protobuf.sh), and crates such as `containerd-client` and `containerd-snapshots` require it during `build.rs`.
+
+Once `protoc` is available, build the workspace with:
 ```bash
 cargo build --release
 ```
