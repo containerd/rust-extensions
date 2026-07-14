@@ -14,51 +14,25 @@
    limitations under the License.
 */
 
-use std::{env, fs, io};
-
-const PROTO_FILES: &[&str] = &["types/mount.proto", "services/snapshots/v1/snapshots.proto"];
-
-const FIXUP_MODULES: &[&str] = &["containerd.services.snapshots.v1"];
-
 fn main() {
+    let includes = &["vendor/github.com/containerd/containerd/api/", "vendor/"];
+
+    tonic_prost_build::configure()
+        .build_server(false)
+        .compile_protos(&["types/mount.proto"], includes)
+        .expect("Failed to generate type bindings");
+
+    // Tab-indented `filters[0]` in proto comments becomes a Markdown code block
+    // that rustdoc tries to compile as a doc-test.
+    let mut svc_config = tonic_prost_build::Config::new();
+    svc_config.disable_comments([".containerd.services.snapshots.v1.ListSnapshotsRequest.filters"]);
     tonic_prost_build::configure()
         .build_server(true)
-        .compile_protos(
-            PROTO_FILES,
-            &["vendor/github.com/containerd/containerd/api/", "vendor/"],
+        .extern_path(".containerd.types", "crate::api::types")
+        .compile_with_config(
+            svc_config,
+            &["services/snapshots/v1/snapshots.proto"],
+            includes,
         )
         .expect("Failed to generate GRPC bindings");
-
-    for module in FIXUP_MODULES {
-        fixup_imports(module).expect("Failed to fixup module");
-    }
-}
-
-// Original containerd's protobuf files contain Go style imports:
-// import "github.com/containerd/containerd/api/types/mount.proto";
-//
-// Tonic produces invalid code for these imports:
-// error[E0433]: failed to resolve: there are too many leading `super` keywords
-//   --> /containerd-rust-extensions/target/debug/build/containerd-client-protos-0a328c0c63f60cd0/out/containerd.services.diff.v1.rs:47:52
-//    |
-// 47 |     pub diff: ::core::option::Option<super::super::super::types::Descriptor>,
-//    |                                                    ^^^^^ there are too many leading `super` keywords
-//
-// This func fixes imports to crate level ones, like `crate::types::Mount`
-fn fixup_imports(path: &str) -> Result<(), io::Error> {
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let path = format!("{}/{}.rs", out_dir, path);
-
-    let contents = fs::read_to_string(&path)?
-        .replace("super::super::super::types", "crate::api::types")
-        .replace(
-            "/// 	filters\\[0\\] or filters\\[1\\] or ... or filters\\[n-1\\] or filters\\[n\\]",
-            r#"
-            /// ```notrust
-            /// 	filters[0] or filters[1] or ... or filters[n-1] or filters[n]
-            /// ```"#,
-        );
-
-    fs::write(path, contents)?;
-    Ok(())
 }

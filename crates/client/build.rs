@@ -14,22 +14,37 @@
    limitations under the License.
 */
 
-use std::{env, fs, io};
-
-const PROTO_FILES: &[&str] = &[
-    // Types
+const TYPE_PROTO_FILES: &[&str] = &[
+    // containerd.types
     "types/descriptor.proto",
+    "types/event.proto",
+    "types/fieldpath.proto",
+    "types/introspection.proto",
     "types/metrics.proto",
     "types/mount.proto",
     "types/platform.proto",
     "types/sandbox.proto",
+    // containerd.v1.types
     "types/task/task.proto",
+    // containerd.types.transfer
+    "types/transfer/container.proto",
     "types/transfer/imagestore.proto",
     "types/transfer/importexport.proto",
     "types/transfer/progress.proto",
     "types/transfer/registry.proto",
     "types/transfer/streaming.proto",
-    // Services
+    // containerd.events
+    "events/container.proto",
+    "events/content.proto",
+    "events/image.proto",
+    "events/namespace.proto",
+    "events/snapshot.proto",
+    "events/task.proto",
+    // google.rpc
+    "google/rpc/status.proto",
+];
+
+const SERVICE_PROTO_FILES: &[&str] = &[
     "services/containers/v1/containers.proto",
     "services/content/v1/content.proto",
     "services/diff/v1/diff.proto",
@@ -44,73 +59,39 @@ const PROTO_FILES: &[&str] = &[
     "services/tasks/v1/tasks.proto",
     "services/transfer/v1/transfer.proto",
     "services/version/v1/version.proto",
-    // Events
-    "events/container.proto",
-    "events/content.proto",
-    "events/image.proto",
-    "events/namespace.proto",
-    "events/snapshot.proto",
-    "events/task.proto",
-];
-
-const FIXUP_MODULES: &[&str] = &[
-    "containerd.services.diff.v1",
-    "containerd.services.images.v1",
-    "containerd.services.introspection.v1",
-    "containerd.services.sandbox.v1",
-    "containerd.services.snapshots.v1",
-    "containerd.services.tasks.v1",
-    "containerd.services.containers.v1",
-    "containerd.services.content.v1",
-    "containerd.services.events.v1",
 ];
 
 fn main() {
-    let mut config = tonic_prost_build::Config::new();
-    config.protoc_arg("--experimental_allow_proto3_optional");
-    config.enable_type_names();
+    let includes = &["vendor/github.com/containerd/containerd/api/", "vendor/"];
+
+    let mut type_config = tonic_prost_build::Config::new();
+    type_config.protoc_arg("--experimental_allow_proto3_optional");
+    type_config.enable_type_names();
 
     tonic_prost_build::configure()
         .build_server(false)
-        .compile_with_config(
-            config,
-            PROTO_FILES,
-            &["vendor/github.com/containerd/containerd/api/", "vendor/"],
-        )
+        .compile_with_config(type_config, TYPE_PROTO_FILES, includes)
+        .expect("Failed to generate type bindings");
+
+    let mut svc_config = tonic_prost_build::Config::new();
+    svc_config.protoc_arg("--experimental_allow_proto3_optional");
+    svc_config.enable_type_names();
+    // Tab-indented `filters[0]` in proto comments becomes a Markdown code block
+    // that rustdoc tries to compile as a doc-test.
+    svc_config.disable_comments([
+        ".containerd.services.containers.v1.ListContainersRequest.filters",
+        ".containerd.services.content.v1.ListContentRequest.filters",
+        ".containerd.services.images.v1.ListImagesRequest.filters",
+        ".containerd.services.introspection.v1.PluginsRequest.filters",
+        ".containerd.services.snapshots.v1.ListSnapshotsRequest.filters",
+    ]);
+
+    tonic_prost_build::configure()
+        .build_server(false)
+        .extern_path(".containerd.types", "crate::types")
+        .extern_path(".containerd.v1.types", "crate::types::v1")
+        .extern_path(".containerd.types.transfer", "crate::types::transfer")
+        .extern_path(".google.rpc", "crate::google::rpc")
+        .compile_with_config(svc_config, SERVICE_PROTO_FILES, includes)
         .expect("Failed to generate GRPC bindings");
-
-    for module in FIXUP_MODULES {
-        fixup_imports(module).expect("Failed to fixup module");
-    }
-}
-
-// Original containerd's protobuf files contain Go style imports:
-// import "github.com/containerd/containerd/api/types/mount.proto";
-//
-// Tonic produces invalid code for these imports:
-// error[E0433]: failed to resolve: there are too many leading `super` keywords
-//   --> /containerd-rust-extensions/target/debug/build/containerd-client-protos-0a328c0c63f60cd0/out/containerd.services.diff.v1.rs:47:52
-//    |
-// 47 |     pub diff: ::core::option::Option<super::super::super::types::Descriptor>,
-//    |                                                    ^^^^^ there are too many leading `super` keywords
-//
-// This func fixes imports to crate level ones, like `crate::types::Mount`
-fn fixup_imports(path: &str) -> Result<(), io::Error> {
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let path = format!("{}/{}.rs", out_dir, path);
-
-    let contents = fs::read_to_string(&path)?
-        .replace("super::super::super::v1::types", "crate::types::v1") // for tasks service
-        .replace("super::super::super::super::types", "crate::types")
-        .replace("super::super::super::types", "crate::types")
-        .replace("super::super::super::super::google", "crate::google")
-        .replace(
-            "/// 	filters\\[0\\] or filters\\[1\\] or ... or filters\\[n-1\\] or filters\\[n\\]",
-            r#"
-            /// ```notrust
-            /// 	filters[0] or filters[1] or ... or filters[n-1] or filters[n]
-            /// ```"#,
-        );
-    fs::write(path, contents)?;
-    Ok(())
 }
