@@ -4,7 +4,7 @@ on:
   push:
   merge_group:
   schedule:
-    - cron: '0 0 * * *' # Every day at midnight
+    - cron: "0 0 * * *" # Every day at midnight
 
 jobs:
   checks:
@@ -29,7 +29,7 @@ jobs:
         shell: bash
 
       - if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools && rustup target add x86_64-unknown-linux-musl 
+        run: sudo apt-get update && sudo apt-get install -y musl-tools && rustup target add x86_64-unknown-linux-musl
 
       - run: rustup toolchain install nightly --component rustfmt --target ${{ matrix.target }}
       - run: cargo +nightly fmt --all -- --check
@@ -138,7 +138,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        containerd: [v1.7.30, v2.1.6, v2.2.1]
+        containerd: [v1.7.33, v2.1.9, v2.2.6]
 
     steps:
       - name: Checkout extensions
@@ -172,8 +172,9 @@ jobs:
           cargo build --release --bin containerd-shim-runc-v2-rs
           sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
 
-      ## get latest go version for integrations tests so we can skip runnings tests
       - uses: actions/setup-go@v6
+        with:
+          go-version-file: src/github.com/containerd/containerd/go.mod
 
       - name: Integration
         env:
@@ -258,7 +259,15 @@ jobs:
     name: Report required job statuses
     runs-on: ubuntu-latest
     # List job dependencies which are required to pass status checks in order to be merged via merge queue.
-    needs: [checks, windows-checks, tests, deny, linux-integration, windows-integration]
+    needs:
+      [
+        checks,
+        windows-checks,
+        tests,
+        deny,
+        linux-integration,
+        windows-integration,
+      ]
     if: ${{ always() }}
     steps:
       - run: exit 1
