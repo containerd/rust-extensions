@@ -65,7 +65,6 @@ fn main() {
     let includes = &["vendor/github.com/containerd/containerd/api/", "vendor/"];
 
     let mut type_config = tonic_prost_build::Config::new();
-    type_config.protoc_arg("--experimental_allow_proto3_optional");
     type_config.enable_type_names();
 
     tonic_prost_build::configure()
@@ -74,7 +73,6 @@ fn main() {
         .expect("Failed to generate type bindings");
 
     let mut svc_config = tonic_prost_build::Config::new();
-    svc_config.protoc_arg("--experimental_allow_proto3_optional");
     svc_config.enable_type_names();
     // Tab-indented `filters[0]` in proto comments becomes a Markdown code block
     // that rustdoc tries to compile as a doc-test.
