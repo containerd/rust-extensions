@@ -172,7 +172,7 @@ jobs:
           cargo build --release --bin containerd-shim-runc-v2-rs
           sudo install -D ./target/release/containerd-shim-runc-v2-rs /usr/local/bin/
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: src/github.com/containerd/containerd/go.mod
 
