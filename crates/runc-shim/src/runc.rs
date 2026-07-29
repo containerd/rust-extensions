@@ -307,12 +307,9 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 Some(&runc::options::DeleteOpts { force: true }),
             )
             .await
+            && !e.to_string().to_lowercase().contains("does not exist")
         {
-            if !e.to_string().to_lowercase().contains("does not exist") {
-                return Err(
-                    runtime_error(&p.lifecycle.bundle, e, "OCI runtime delete failed").await,
-                );
-            }
+            return Err(runtime_error(&p.lifecycle.bundle, e, "OCI runtime delete failed").await);
         }
         umount_recursive(Path::new(&self.bundle).join("rootfs").to_str(), 0)?;
         self.exit_signal.signal();
@@ -698,36 +695,36 @@ pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal
             }
         }
 
-        if let Some(r) = io.stderr() {
-            if !stdio.stderr.is_empty() {
-                debug!("copy_io: pipe stderr from to {}", stdio.stderr.as_str());
-                let stderr = handle_file_open(|| async {
-                    OpenOptions::new()
-                        .write(true)
-                        .open(stdio.stderr.as_str())
-                        .await
-                })
-                .await
-                .map_err(io_error!(e, "open stderr"))?;
-                // open a read to make sure even if the read end of containerd shutdown,
-                // copy still continue until the restart of containerd succeed
-                let stderr_r = handle_file_open(|| async {
-                    OpenOptions::new()
-                        .read(true)
-                        .open(stdio.stderr.as_str())
-                        .await
-                })
-                .await
-                .map_err(io_error!(e, "open stderr for read"))?;
-                spawn_copy(
-                    r,
-                    stderr,
-                    exit_signal,
-                    Some(move || {
-                        drop(stderr_r);
-                    }),
-                );
-            }
+        if let Some(r) = io.stderr()
+            && !stdio.stderr.is_empty()
+        {
+            debug!("copy_io: pipe stderr from to {}", stdio.stderr.as_str());
+            let stderr = handle_file_open(|| async {
+                OpenOptions::new()
+                    .write(true)
+                    .open(stdio.stderr.as_str())
+                    .await
+            })
+            .await
+            .map_err(io_error!(e, "open stderr"))?;
+            // open a read to make sure even if the read end of containerd shutdown,
+            // copy still continue until the restart of containerd succeed
+            let stderr_r = handle_file_open(|| async {
+                OpenOptions::new()
+                    .read(true)
+                    .open(stdio.stderr.as_str())
+                    .await
+            })
+            .await
+            .map_err(io_error!(e, "open stderr for read"))?;
+            spawn_copy(
+                r,
+                stderr,
+                exit_signal,
+                Some(move || {
+                    drop(stderr_r);
+                }),
+            );
         }
     }
 
@@ -834,11 +831,10 @@ async fn wait_pid(pid: i32, s: Subscription) -> i32 {
             subject: Subject::Pid(epid),
             exit_code: code,
         }) = s.rx.recv().await
+            && pid == epid
         {
-            if pid == epid {
-                monitor_unsubscribe(s.id).await.unwrap_or_default();
-                return code;
-            }
+            monitor_unsubscribe(s.id).await.unwrap_or_default();
+            return code;
         }
     }
 }

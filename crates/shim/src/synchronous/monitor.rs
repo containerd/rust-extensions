@@ -141,10 +141,9 @@ pub fn wait_pid(pid: i32, s: Subscription) -> i32 {
             subject: Subject::Pid(epid),
             exit_code: code,
         }) = s.rx.recv()
+            && pid == epid
         {
-            if pid == epid {
-                return code;
-            }
+            return code;
         }
     }
 }

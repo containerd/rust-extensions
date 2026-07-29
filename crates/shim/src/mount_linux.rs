@@ -896,10 +896,10 @@ pub fn umount_recursive(target: Option<&str>, flags: i32) -> Result<()> {
 
 fn umount_all(target: Option<String>, flags: i32) -> Result<()> {
     if let Some(target) = target {
-        if let Err(e) = std::fs::metadata(target.clone()) {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                return Ok(());
-            }
+        if let Err(e) = std::fs::metadata(target.clone())
+            && e.kind() == std::io::ErrorKind::NotFound
+        {
+            return Ok(());
         }
         loop {
             if let Err(e) = nix::mount::umount2(
@@ -997,11 +997,11 @@ where
             }
             mount_info.major = str::parse::<u32>(major_minor[0]).ok()?;
             mount_info.minor = str::parse::<u32>(major_minor[1]).ok()?;
-            if let Some(f) = &f {
-                if f(mount_info.clone()) {
-                    // skip this mountpoint. This mountpoint is not the container's mountpoint
-                    return None;
-                }
+            if let Some(f) = &f
+                && f(mount_info.clone())
+            {
+                // skip this mountpoint. This mountpoint is not the container's mountpoint
+                return None;
             }
             Some(mount_info)
         })
@@ -1139,11 +1139,11 @@ mod tests {
         ];
         // mount target.
         let result = mount_rootfs(Some("overlay"), Some("overlay"), &options, &target);
-        if let Err(err) = &result {
-            if crate::error::is_permission_error(err) {
-                eprintln!("skipping test_mount_rootfs_umount_recursive: {err}");
-                return;
-            }
+        if let Err(err) = &result
+            && crate::error::is_permission_error(err)
+        {
+            eprintln!("skipping test_mount_rootfs_umount_recursive: {err}");
+            return;
         }
         assert!(result.is_ok(), "{result:?}");
         let mut mountinfo = get_mounts(Some(prefix_filter(
@@ -1182,11 +1182,11 @@ mod tests {
             direct: true,
         };
         let result = setup_loop(backing_file, params);
-        if let Err(err) = &result {
-            if crate::error::is_permission_error(err) {
-                eprintln!("skipping test_setup_loop_dev: {err}");
-                return;
-            }
+        if let Err(err) = &result
+            && crate::error::is_permission_error(err)
+        {
+            eprintln!("skipping test_setup_loop_dev: {err}");
+            return;
         }
         assert!(result.is_ok(), "{result:?}");
     }
