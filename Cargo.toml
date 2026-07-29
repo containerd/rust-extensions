@@ -1,12 +1,12 @@
 [workspace]
 members = [
-  "crates/client",
-  "crates/logging",
-  "crates/runc",
-  "crates/runc-shim",
-  "crates/shim",
-  "crates/shim-protos",
-  "crates/snapshots",
+    "crates/client",
+    "crates/logging",
+    "crates/runc",
+    "crates/runc-shim",
+    "crates/shim",
+    "crates/shim-protos",
+    "crates/snapshots",
 ]
 resolver = "2"
 
@@ -21,7 +21,7 @@ panic = 'abort'
 license = "Apache-2.0"
 repository = "https://github.com/containerd/rust-extensions"
 homepage = "https://containerd.io"
-edition = "2021"
+edition = "2024"
 
 # Common dependencies for all crates
 [workspace.dependencies]

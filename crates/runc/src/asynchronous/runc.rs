@@ -55,18 +55,18 @@ impl Runc {
         unsafe {
             cmd.pre_exec(move || {
                 #[cfg(target_os = "linux")]
-                if let Ok(thp) = std::env::var("THP_DISABLED") {
-                    if let Ok(thp_disabled) = thp.parse::<bool>() {
-                        let ret = libc::prctl(
-                            libc::PR_SET_THP_DISABLE,
-                            if thp_disabled { 1u64 } else { 0u64 },
-                            0,
-                            0,
-                            0,
-                        );
-                        if ret < 0 {
-                            debug!("set_thp_disable err: {}", std::io::Error::last_os_error());
-                        }
+                if let Ok(thp) = std::env::var("THP_DISABLED")
+                    && let Ok(thp_disabled) = thp.parse::<bool>()
+                {
+                    let ret = libc::prctl(
+                        libc::PR_SET_THP_DISABLE,
+                        if thp_disabled { 1u64 } else { 0u64 },
+                        0,
+                        0,
+                        0,
+                    );
+                    if ret < 0 {
+                        debug!("set_thp_disable err: {}", std::io::Error::last_os_error());
                     }
                 }
                 Ok(())

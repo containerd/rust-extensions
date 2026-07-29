@@ -515,14 +515,14 @@ async fn remove_socket_silently(address: &str) {
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 async fn remove_socket(address: &str) -> Result<()> {
     let path = parse_sockaddr(address);
-    if let Ok(md) = Path::new(path).metadata() {
-        if md.file_type().is_socket() {
-            tokio::fs::remove_file(path).await.map_err(io_error!(
-                e,
-                "failed to remove socket {}",
-                address
-            ))?;
-        }
+    if let Ok(md) = Path::new(path).metadata()
+        && md.file_type().is_socket()
+    {
+        tokio::fs::remove_file(path).await.map_err(io_error!(
+            e,
+            "failed to remove socket {}",
+            address
+        ))?;
     }
     Ok(())
 }

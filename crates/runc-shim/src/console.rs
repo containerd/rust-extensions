@@ -57,18 +57,18 @@ impl ConsoleSocket {
 
     // async drop is not supported yet, we can only call clean manually after socket received
     pub async fn clean(self) {
-        if self.rmdir {
-            if let Some(tmp_socket_dir) = self.path.parent() {
-                tokio::fs::remove_dir_all(tmp_socket_dir)
-                    .await
-                    .unwrap_or_else(|e| {
-                        warn!(
-                            "remove tmp console socket path {} : {}",
-                            tmp_socket_dir.display(),
-                            e
-                        )
-                    })
-            }
+        if self.rmdir
+            && let Some(tmp_socket_dir) = self.path.parent()
+        {
+            tokio::fs::remove_dir_all(tmp_socket_dir)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "remove tmp console socket path {} : {}",
+                        tmp_socket_dir.display(),
+                        e
+                    )
+                })
         }
     }
 }

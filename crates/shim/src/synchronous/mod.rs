@@ -371,7 +371,7 @@ fn setup_signals(_config: &Config) -> Option<AppSignals> {
 
 #[cfg(windows)]
 unsafe extern "system" fn signal_handler(_: u32) -> i32 {
-    ReleaseSemaphore(SEMAPHORE, 1, ptr::null_mut());
+    unsafe { ReleaseSemaphore(SEMAPHORE, 1, ptr::null_mut()) };
     1
 }
 
@@ -462,10 +462,10 @@ fn remove_socket(address: &str) -> Result<()> {
     #[cfg(unix)]
     {
         let path = parse_sockaddr(address);
-        if let Ok(md) = Path::new(path).metadata() {
-            if md.file_type().is_socket() {
-                fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
-            }
+        if let Ok(md) = Path::new(path).metadata()
+            && md.file_type().is_socket()
+        {
+            fs::remove_file(path).map_err(io_error!(e, "remove socket"))?;
         }
     }
 

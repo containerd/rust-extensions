@@ -221,6 +221,11 @@ mod tests {
     use super::*;
     use crate::Config;
 
+    // Only this test touches `LOG_ENV`, and it does so from a single thread.
+    fn set_log_env(value: &str) {
+        unsafe { std::env::set_var(LOG_ENV, value) };
+    }
+
     #[test]
     fn test_init_log_level() -> Result<(), Error> {
         let config = Config::default();
@@ -233,38 +238,38 @@ mod tests {
         assert_eq!(log::LevelFilter::Debug, log::max_level());
 
         // ENV different than default
-        std::env::set_var(LOG_ENV, "error");
+        set_log_env("error");
         configure_logging_level(false, &config.default_log_level);
         assert_eq!(log::LevelFilter::Error, log::max_level());
 
-        std::env::set_var(LOG_ENV, "warn");
+        set_log_env("warn");
         configure_logging_level(false, &config.default_log_level);
         assert_eq!(log::LevelFilter::Warn, log::max_level());
 
-        std::env::set_var(LOG_ENV, "off");
+        set_log_env("off");
         configure_logging_level(false, &config.default_log_level);
         assert_eq!(log::LevelFilter::Off, log::max_level());
 
-        std::env::set_var(LOG_ENV, "trace");
+        set_log_env("trace");
         configure_logging_level(false, &config.default_log_level);
         assert_eq!(log::LevelFilter::Trace, log::max_level());
 
-        std::env::set_var(LOG_ENV, "debug");
+        set_log_env("debug");
         configure_logging_level(false, &config.default_log_level);
 
         // ENV Different than default from debug flag
         configure_logging_level(true, &config.default_log_level);
         assert_eq!(log::LevelFilter::Debug, log::max_level());
 
-        std::env::set_var(LOG_ENV, "trace");
+        set_log_env("trace");
         configure_logging_level(true, &config.default_log_level);
         assert_eq!(log::LevelFilter::Trace, log::max_level());
 
-        std::env::set_var(LOG_ENV, "info");
+        set_log_env("info");
         configure_logging_level(true, &config.default_log_level);
         assert_eq!(log::LevelFilter::Debug, log::max_level());
 
-        std::env::set_var(LOG_ENV, "off");
+        set_log_env("off");
         configure_logging_level(true, &config.default_log_level);
         assert_eq!(log::LevelFilter::Debug, log::max_level());
         Ok(())
