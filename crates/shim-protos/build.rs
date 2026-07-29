@@ -73,6 +73,12 @@ fn main() {
     );
 
     genmodule(
+        "bootstrap",
+        &["vendor/github.com/containerd/containerd/api/runtime/bootstrap/v1/bootstrap.proto"],
+        false,
+    );
+
+    genmodule(
         "shim",
         &[
             "vendor/github.com/containerd/containerd/api/types/runc/options/oci.proto",

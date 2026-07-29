@@ -5,7 +5,7 @@
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
 
-        http://www.apache.org/licenses/LICENSE-2.0
+       http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,20 +14,6 @@
    limitations under the License.
 */
 
-syntax = "proto3";
-
-package containerd.types;
-
-import "google/protobuf/any.proto";
-import "google/protobuf/timestamp.proto";
-import "types/fieldpath.proto";
-
-option go_package = "github.com/containerd/containerd/api/types;types";
-
-message Envelope {
-  option (containerd.types.fieldpath) = true;
-  google.protobuf.Timestamp timestamp = 1;
-  string namespace = 2;
-  string topic = 3;
-  google.protobuf.Any event = 4;
+pub mod bootstrap {
+    include!(concat!(env!("OUT_DIR"), "/bootstrap/bootstrap.rs"));
 }
