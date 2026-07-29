@@ -20,6 +20,7 @@
 pub use protobuf;
 pub use ttrpc;
 
+mod bootstrap;
 pub mod cgroups;
 pub mod cgroups_v2;
 pub mod events;
@@ -60,6 +61,9 @@ pub mod api {
     pub use crate::shim::{empty::*, events::*, mount::*, shim::*, task::*};
 }
 
+/// Shim bootstrap protocol: the messages containerd and shims exchange over
+/// stdin/stdout at shim startup.
+pub use bootstrap::bootstrap as bootstrap_api;
 #[cfg(feature = "sandbox")]
 pub use sandbox::sandbox as sandbox_api;
 
