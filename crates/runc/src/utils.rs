@@ -14,19 +14,14 @@
    limitations under the License.
 */
 
-#[cfg(not(feature = "async"))]
-use std::io::Write;
 use std::{
     env,
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use serde::Serialize;
-#[cfg(not(feature = "async"))]
 use tempfile::{Builder, NamedTempFile};
-#[cfg(feature = "async")]
-use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
 
 use crate::error::Error;
 
@@ -75,45 +70,59 @@ fn xdg_runtime_dir() -> String {
         .unwrap_or_else(|_| abs_string(env::temp_dir()).unwrap_or_else(|_| ".".to_string()))
 }
 
-/// Write the serialized 'value' to a temp file
-#[cfg(not(feature = "async"))]
+/// Write the serialized `value` to a temp file, returning the file handle and its path.
+///
+/// The returned [NamedTempFile] owns the file: dropping it removes the file. Callers
+/// must keep it alive for as long as `runc` needs to read the path. This is shared by
+/// the sync and async clients — the write is a few KB to `$XDG_RUNTIME_DIR`, and doing
+/// it synchronously is what makes RAII cleanup possible in async code, where there is
+/// no async `Drop`.
 pub fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<(NamedTempFile, String), Error> {
-    let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
     let mut temp_file = Builder::new()
-        .prefix(&filename)
-        .rand_bytes(0)
-        .tempfile()
+        .prefix("runc-process-")
+        .suffix(".json")
+        .tempfile_in(xdg_runtime_dir())
         .map_err(Error::SpecFileCreationFailed)?;
     let f = temp_file.as_file_mut();
     let spec_json = serde_json::to_string(value).map_err(Error::JsonDeserializationFailed)?;
-    f.write(spec_json.as_bytes())
+    f.write_all(spec_json.as_bytes())
         .map_err(Error::SpecFileCreationFailed)?;
     f.flush().map_err(Error::SpecFileCreationFailed)?;
-    Ok((temp_file, filename))
+    let path = path_to_string(temp_file.path())?;
+    Ok((temp_file, path))
 }
 
-/// Write the serialized 'value' to a temp file
-/// Unlike the same function in non-async feature,
-/// it returns the filename, without the NamedTempFile object,
-/// which implements Drop trait to remove the file if it goes out of scope.
-/// the async Drop is still not supported in rust,
-/// in async context, the created file should be removed by the caller
-#[cfg(feature = "async")]
-pub async fn write_value_to_temp_file<T: Serialize>(value: &T) -> Result<String, Error> {
-    let filename = format!("{}/runc-process-{}", xdg_runtime_dir(), Uuid::new_v4());
-    let mut f = tokio::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&filename)
-        .await
-        .map_err(Error::FileSystemError)?;
-    let spec_json = serde_json::to_string(value).map_err(Error::JsonDeserializationFailed)?;
-    f.write_all(spec_json.as_bytes())
-        .await
-        .map_err(Error::SpecFileCreationFailed)?;
-    f.flush().await.map_err(Error::SpecFileCreationFailed)?;
-    Ok(filename)
+/// Build a `pre_exec` hook that restores the `THP_DISABLED` value the parent exported.
+///
+/// `PR_SET_THP_DISABLE` sets a flag on the *calling* process's mm, and the shim
+/// deliberately disables THP for itself to save RSS. So the restore has to happen in
+/// the child — see `containerd-shim-runc-v2`'s `start_shim`, which stashes the original
+/// value in `THP_DISABLED` precisely so the child can put it back before `execve`.
+///
+/// The environment is read here, in the parent. Everything the returned closure does
+/// runs post-`fork` in a single-threaded child, where only async-signal-safe calls are
+/// legal: `env::var` takes std's `ENV_LOCK` and `log::debug!` allocates and takes the
+/// logger mutex, either of which can deadlock the child if another thread held it at
+/// the moment of the fork. `prctl` is a bare syscall and is safe there.
+///
+/// Returns `None` when the knob is unset, so the caller can skip registering a hook at
+/// all — any `pre_exec` forces `fork` + `execve` instead of the `posix_spawn` fast path.
+#[cfg(target_os = "linux")]
+pub(crate) fn restore_thp() -> Option<impl FnMut() -> std::io::Result<()> + Send + Sync + 'static> {
+    let disabled: bool = env::var("THP_DISABLED").ok()?.parse().ok()?;
+    Some(move || {
+        // SAFETY: async-signal-safe — a single `prctl`, no allocation and no locks.
+        unsafe {
+            libc::prctl(
+                libc::PR_SET_THP_DISABLE,
+                if disabled { 1u64 } else { 0u64 },
+                0,
+                0,
+                0,
+            )
+        };
+        Ok(())
+    })
 }
 
 /// Resolve a binary path according to the `PATH` environment variable.

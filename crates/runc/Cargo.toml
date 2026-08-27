@@ -25,7 +25,6 @@ serde_json = { workspace = true, features = ["std"] }
 tempfile.workspace = true
 thiserror.workspace = true
 time = { workspace = true, features = ["serde", "std"] }
-uuid = { workspace = true, features = ["v4"] }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }
