@@ -112,7 +112,10 @@ pub(crate) fn restore_thp() -> Option<impl FnMut() -> std::io::Result<()> + Send
     let disabled: bool = env::var("THP_DISABLED").ok()?.parse().ok()?;
     Some(move || {
         // SAFETY: async-signal-safe — a single `prctl`, no allocation and no locks.
-        unsafe {
+        // Best-effort: a failure here only loses the THP optimization. There is no
+        // async-signal-safe way to report it from the child; returning `Err` would
+        // abort the spawn, and logging could deadlock after `fork`.
+        let _ = unsafe {
             libc::prctl(
                 libc::PR_SET_THP_DISABLE,
                 if disabled { 1u64 } else { 0u64 },
