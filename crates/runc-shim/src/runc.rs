@@ -17,7 +17,6 @@
 #[cfg(target_os = "linux")]
 use std::sync::RwLock;
 use std::{
-    convert::TryFrom,
     os::{
         fd::{IntoRawFd, OwnedFd},
         unix::{
@@ -49,7 +48,7 @@ use containerd_shim::{
     Console, Error, ExitSignal, Result,
 };
 use log::{debug, error};
-use nix::{sys::signal::kill, unistd::Pid};
+use nix::errno::Errno;
 use oci_spec::runtime::{LinuxResources, Process};
 use runc::{Command, Runc, Spawner};
 use tokio::{
@@ -74,6 +73,16 @@ pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
 pub type InitProcess = ProcessTemplate<RuncInitLifecycle>;
 
 pub type RuncContainer = ContainerTemplate<InitProcess, ExecProcess, RuncExecFactory>;
+
+fn signal_process(pid: i32, signal: u32) -> nix::Result<()> {
+    // SAFETY: `kill` does not dereference either argument.
+    let result = unsafe { libc::kill(pid, signal as libc::c_int) };
+    if result == -1 {
+        Err(Errno::last())
+    } else {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct RuncFactory {}
@@ -533,12 +542,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             Err(Error::NotFoundError("process already finished".to_string()))
         } else {
             let pid = p.pid;
-            let kill_future = tokio::task::spawn_blocking(move || {
-                kill(
-                    Pid::from_raw(pid),
-                    nix::sys::signal::Signal::try_from(signal as i32).unwrap(),
-                )
-            });
+            let kill_future = tokio::task::spawn_blocking(move || signal_process(pid, signal));
 
             match tokio::time::timeout(std::time::Duration::from_secs(3), kill_future).await {
                 Ok(Ok(result)) => result.map_err(Into::into),
@@ -841,13 +845,27 @@ async fn wait_pid(pid: i32, s: Subscription) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::process::ExitStatusExt, path::Path, process::ExitStatus};
+    use std::{
+        os::unix::process::ExitStatusExt,
+        path::Path,
+        process::{Command as StdCommand, ExitStatus},
+    };
 
     use containerd_shim::util::{mkdir, write_str_to_file};
     use runc::error::Error::CommandFailed;
     use tokio::fs::remove_dir_all;
 
+    use super::signal_process;
     use crate::{common::LOG_JSON_FILE, runc::runtime_error};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn signal_process_supports_realtime_signals() {
+        let mut process = StdCommand::new("sleep").arg("60").spawn().unwrap();
+
+        signal_process(process.id() as i32, libc::SIGRTMIN() as u32).unwrap();
+        assert!(!process.wait().unwrap().success());
+    }
 
     #[tokio::test]
     async fn test_runtime_error() {
