@@ -16,7 +16,7 @@
 
 #![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
 
-use std::{fs::File, path::PathBuf};
+use std::{fmt::Write as _, fs::File, path::PathBuf};
 #[cfg(windows)]
 use std::{fs::OpenOptions, os::windows::prelude::OpenOptionsExt};
 #[cfg(unix)]
@@ -164,15 +164,22 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         .join(id)
         .display()
         .to_string();
-    let hash = {
+    let digest = {
         let mut hasher = Sha256::new();
         hasher.update(path);
         hasher.finalize()
     };
+    // Digests no longer implement `LowerHex` as of sha2 0.11, so encode by hand.
+    let hash = digest
+        .iter()
+        .fold(String::with_capacity(digest.len() * 2), |mut hash, byte| {
+            let _ = write!(hash, "{byte:02x}");
+            hash
+        });
     if cfg!(unix) {
-        format!("unix://{}/s/{:x}", SOCKET_ROOT, hash)
+        format!("unix://{}/s/{}", SOCKET_ROOT, hash)
     } else if cfg!(windows) {
-        format!(r"\\.\pipe\containerd-shim-{:x}-pipe", hash)
+        format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
     } else {
         panic!("unsupported platform")
     }
@@ -227,6 +234,35 @@ pub struct Console {
 #[cfg(test)]
 mod tests {
     use crate::start_listener;
+
+    // The hash is part of the address containerd itself computes, so pin the
+    // exact encoding down: sha256 of the joined path as lowercase hex.
+    #[test]
+    #[cfg(unix)]
+    fn test_socket_address() {
+        assert_eq!(
+            crate::socket_address("/run/containerd/containerd.sock", "default", "123"),
+            format!(
+                "unix://{}/s/0ddfbd72d02b3551e75f3a0ed90b9965b533401be618f43a568bc522764e0ad0",
+                crate::SOCKET_ROOT
+            )
+        );
+    }
+
+    // Same inputs as the Windows integration test in .github/workflows/ci.yml,
+    // which connects to this exact pipe name.
+    #[test]
+    #[cfg(windows)]
+    fn test_socket_address() {
+        assert_eq!(
+            crate::socket_address(r"\\.\pipe\containerd-containerd", "default", "1234"),
+            concat!(
+                r"\\.\pipe\containerd-shim-",
+                "bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35",
+                "-pipe"
+            )
+        );
+    }
 
     #[test]
     #[cfg(unix)]
