@@ -13,9 +13,3 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-
-[features]
-docs = []
-
-[package.metadata.docs.rs]
-features = ["docs"]

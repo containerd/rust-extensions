@@ -14,7 +14,8 @@
    limitations under the License.
 */
 
-#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc = include_str!("../README.md"))]
 
 use std::{fmt::Write as _, fs::File, path::PathBuf};
 #[cfg(windows)]

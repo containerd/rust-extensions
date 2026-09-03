@@ -13,7 +13,6 @@ homepage.workspace = true
 
 [features]
 async = ["tokio", "async-trait", "tokio-pipe"]
-docs = []
 
 [dependencies]
 libc.workspace = true
@@ -30,6 +29,3 @@ time = { workspace = true, features = ["serde", "std"] }
 async-trait = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "net", "time"], optional = true }
 tokio-pipe = { version = "0.2.12", default-features = false, optional = true }
-
-[package.metadata.docs.rs]
-features = ["docs"]
