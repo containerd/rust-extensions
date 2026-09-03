@@ -14,9 +14,6 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
-[features]
-docs = []
-
 [dependencies]
 async-stream = "0.3.6"
 futures = { workspace = true, features = ["std", "alloc"] }
@@ -37,9 +34,6 @@ tonic = { workspace = true, features = ["server", "router"] }
 
 [build-dependencies]
 tonic-prost-build.workspace = true
-
-[package.metadata.docs.rs]
-features = ["docs"]
 
 [package.metadata.cargo-machete]
 ignored = ["prost", "tonic-prost"]

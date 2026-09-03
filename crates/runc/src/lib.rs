@@ -33,7 +33,7 @@
  * limitations under the License.
  */
 
-#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
+#![cfg_attr(docsrs, doc = include_str!("../README.md"))]
 
 //! A crate for consuming the runc binary in your Rust applications, similar to
 //! [go-runc](https://github.com/containerd/go-runc) for Go.

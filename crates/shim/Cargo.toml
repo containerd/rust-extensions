@@ -17,7 +17,6 @@ homepage.workspace = true
 [features]
 async = ["async-trait", "containerd-shim-protos/async", "futures", "tokio"]
 tracing = ["dep:tracing"]
-docs = []
 
 [[example]]
 name = "skeleton_async"
@@ -73,6 +72,3 @@ windows-sys = { version = "0.52.0", default-features = false, features = [
 
 [dev-dependencies]
 tempfile.workspace = true
-
-[package.metadata.docs.rs]
-features = ["docs"]

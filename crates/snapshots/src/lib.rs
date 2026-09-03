@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
+#![cfg_attr(docsrs, doc = include_str!("../README.md"))]
 // No way to derive Eq with tonic :(
 // See https://github.com/hyperium/tonic/issues/1056
 #![allow(clippy::derive_partial_eq_without_eq)]

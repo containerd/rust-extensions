@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#![cfg_attr(feature = "docs", doc = include_str!("../README.md"))]
+#![cfg_attr(docsrs, doc = include_str!("../README.md"))]
 
 use std::{env, fmt, fs, os::unix::io::FromRawFd, process};
 

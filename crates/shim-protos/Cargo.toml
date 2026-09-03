@@ -18,7 +18,6 @@ homepage.workspace = true
 default = []
 async = ["ttrpc/async", "async-trait"]
 sandbox = []
-docs = []
 
 [[example]]
 name = "shim-proto-server"
@@ -60,6 +59,3 @@ ctrlc = { version = "3.5", default-features = false, features = ["termination"] 
 simple_logger = { workspace = true, features = ["stderr"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 crossbeam = { workspace = true, features = ["crossbeam-channel"] } # Used by create_ttrpc_context()
-
-[package.metadata.docs.rs]
-features = ["docs"]

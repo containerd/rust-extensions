@@ -46,9 +46,9 @@ jobs:
       - run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: cargo clippy --all-targets --all-features --target ${{ matrix.target }} -- -D warnings
 
-      - run: cargo doc --no-deps --features docs
+      - run: cargo +nightly doc --no-deps
         env:
-          RUSTDOCFLAGS: -Dwarnings
+          RUSTDOCFLAGS: "--cfg docsrs -Dwarnings"
 
       - name: check unused dependencies
         uses: bnjbvr/cargo-machete@v0.9.2
@@ -71,9 +71,9 @@ jobs:
       - run: cargo +nightly fmt -p containerd-shim -p containerd-shim-protos -p containerd-client -- --check
 
       - run: cargo clippy -p containerd-shim -p containerd-shim-protos -- -D warnings
-      - run: cargo doc --no-deps -p containerd-shim -p containerd-shim-protos -p containerd-client
+      - run: cargo +nightly doc --no-deps -p containerd-shim -p containerd-shim-protos -p containerd-client
         env:
-          RUSTDOCFLAGS: -Dwarnings
+          RUSTDOCFLAGS: "--cfg docsrs -Dwarnings"
 
   tests:
     name: Tests
