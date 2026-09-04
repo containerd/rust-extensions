@@ -113,7 +113,7 @@ impl Shim for Service {
             namespace,
             &bundle,
             &opts,
-            Some(Arc::new(ShimExecutor::default())),
+            Arc::new(ShimExecutor::default()),
         )?;
         let pid = read_pid_from_file(&bundle.join(INIT_PID_FILE))
             .await
@@ -149,7 +149,7 @@ impl Shim for Service {
     }
 }
 
-async fn process_exits(
+pub(crate) async fn process_exits(
     s: Subscription,
     task: &TaskService<RuncFactory, RuncContainer>,
     tx: Sender<(String, Box<dyn MessageDyn>)>,
@@ -167,7 +167,8 @@ async fn process_exits(
                     let mut change_process: Vec<&mut (dyn Process + Send + Sync)> = Vec::new();
                     // pid belongs to container init process
                     if cont.init.pid == pid {
-                        // kill all children process if the container has a private PID namespace
+                        // Reap the container's children ourselves unless it has a
+                        // private PID namespace, in which case the kernel does it.
                         if should_kill_all_on_exit(&bundle).await {
                             cont.kill(None, 9, true).await.unwrap_or_else(|e| {
                                 error!("failed to kill init's children: {}", e)
