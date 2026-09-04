@@ -155,7 +155,7 @@ pub fn create_runc(
     namespace: &str,
     bundle: impl AsRef<Path>,
     opts: &Options,
-    spawner: Option<Arc<dyn Spawner + Send + Sync>>,
+    spawner: Arc<dyn Spawner + Send + Sync>,
 ) -> containerd_shim::Result<Runc> {
     let runtime = if runtime.is_empty() {
         DEFAULT_COMMAND
@@ -177,9 +177,7 @@ pub fn create_runc(
         .log(log)
         .log_json()
         .systemd_cgroup(opts.systemd_cgroup);
-    if let Some(s) = spawner {
-        gopts.custom_spawner(s);
-    }
+    gopts.custom_spawner(spawner);
     gopts
         .build()
         .map_err(other_error!("unable to create runc instance"))
@@ -261,5 +259,197 @@ where
             std::io::ErrorKind::TimedOut,
             "File operation timed out",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use containerd_shim::{
+        api::ExecProcessRequest,
+        protos::protobuf::{well_known_types::any::Any, MessageField},
+        Error,
+    };
+    use oci_spec::runtime::{
+        LinuxNamespace, LinuxNamespaceBuilder, LinuxNamespaceType, Process, Spec,
+    };
+
+    use super::{check_kill_error, create_io, get_spec_from_request, has_shared_pid_namespace};
+    use crate::io::Stdio;
+
+    // -----------------------------------------------------------------------
+    // check_kill_error: turning runc stderr into a shim error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn kill_error_finished() {
+        for msg in [
+            "process already finished",
+            "container not running",
+            "no such process",
+            // Casing comes straight off runc stderr, so matching must be insensitive.
+            "Container Not Running",
+        ] {
+            assert!(
+                matches!(check_kill_error(msg.to_string()), Error::NotFoundError(_)),
+                "{:?} should be reported as not found",
+                msg
+            );
+        }
+    }
+
+    #[test]
+    fn kill_error_no_container() {
+        match check_kill_error("container does not exist".to_string()) {
+            Error::NotFoundError(msg) => assert_eq!(msg, "no such container"),
+            other => panic!("expected NotFoundError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn kill_error_unknown() {
+        let err = check_kill_error("disk on fire".to_string());
+        assert!(
+            !matches!(err, Error::NotFoundError(_)),
+            "an unknown failure must not be flattened into not-found"
+        );
+        assert!(err.to_string().contains("disk on fire"));
+    }
+
+    // -----------------------------------------------------------------------
+    // has_shared_pid_namespace: whether the shim must reap the container's children
+    // -----------------------------------------------------------------------
+
+    fn spec_with_namespaces(namespaces: Option<Vec<LinuxNamespace>>) -> Spec {
+        let mut spec = Spec::default();
+        let mut linux = spec
+            .linux()
+            .clone()
+            .expect("the default spec has a linux section");
+        linux.set_namespaces(namespaces);
+        spec.set_linux(Some(linux));
+        spec
+    }
+
+    fn pid_namespace(path: Option<&str>) -> LinuxNamespace {
+        let mut builder = LinuxNamespaceBuilder::default().typ(LinuxNamespaceType::Pid);
+        if let Some(path) = path {
+            builder = builder.path(PathBuf::from(path));
+        }
+        builder.build().expect("build pid namespace")
+    }
+
+    #[test]
+    fn pid_ns() {
+        // No path means the container gets a namespace of its own.
+        let private = spec_with_namespaces(Some(vec![pid_namespace(None)]));
+        assert!(!has_shared_pid_namespace(&private));
+
+        // A path means it joins a namespace that already exists.
+        let joined = spec_with_namespaces(Some(vec![pid_namespace(Some("/proc/1/ns/pid"))]));
+        assert!(has_shared_pid_namespace(&joined));
+
+        // Nothing isolates the container, so it shares whatever it was given.
+        assert!(has_shared_pid_namespace(&spec_with_namespaces(Some(
+            vec![]
+        ))));
+        assert!(has_shared_pid_namespace(&spec_with_namespaces(None)));
+
+        let mut no_linux = Spec::default();
+        no_linux.set_linux(None);
+        assert!(has_shared_pid_namespace(&no_linux));
+    }
+
+    // -----------------------------------------------------------------------
+    // get_spec_from_request
+    // -----------------------------------------------------------------------
+
+    fn exec_request_with_spec(spec: Option<&Process>, terminal: bool) -> ExecProcessRequest {
+        let mut req = ExecProcessRequest {
+            terminal,
+            ..Default::default()
+        };
+        if let Some(spec) = spec {
+            let mut any = Any::new();
+            // Mirrors what containerd sends, even though the shim decodes the
+            // payload as JSON without consulting the type url.
+            any.type_url = "types.containerd.io/opencontainers/runtime-spec/1/Process".to_string();
+            any.value = serde_json::to_vec(spec).expect("encode process spec");
+            req.spec = MessageField::some(any);
+        }
+        req
+    }
+
+    #[test]
+    fn spec_terminal_override() {
+        let mut spec = Process::default();
+        spec.set_terminal(Some(false));
+
+        let parsed = get_spec_from_request(&exec_request_with_spec(Some(&spec), true))
+            .expect("parse process spec");
+        assert_eq!(
+            parsed.terminal(),
+            Some(true),
+            "the exec request decides whether the process gets a tty"
+        );
+
+        let parsed = get_spec_from_request(&exec_request_with_spec(Some(&spec), false))
+            .expect("parse process spec");
+        assert_eq!(parsed.terminal(), Some(false));
+    }
+
+    #[test]
+    fn spec_missing() {
+        let err = get_spec_from_request(&exec_request_with_spec(None, false))
+            .expect_err("a spec is required to exec");
+        assert!(
+            matches!(err, Error::InvalidArgument(_)),
+            "expected InvalidArgument, got {:?}",
+            err
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // create_io: choosing the stdio driver from the containerd-supplied paths
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn io_null() {
+        let stdio = Stdio::default();
+        assert!(stdio.is_null());
+
+        let pio = create_io("id", 0, 0, &stdio).expect("create io");
+        assert!(pio.io.is_some(), "null stdio still needs a driver");
+        assert!(pio.uri.is_none());
+        assert!(!pio.copy);
+    }
+
+    #[test]
+    fn io_fifo() {
+        let stdio = Stdio::new("/run/in", "/run/out", "/run/err", false);
+        assert!(!stdio.is_null());
+
+        let pio = create_io("id", 0, 0, &stdio).expect("create io");
+        assert_eq!(pio.uri.as_deref(), Some("fifo:///run/out"));
+        assert!(pio.io.is_some());
+        assert!(
+            !pio.copy,
+            "runc writes to the fifos directly, so the shim does not copy"
+        );
+    }
+
+    /// Documents current behaviour, which is not obviously the intended one: a
+    /// non-fifo scheme yields no io driver and leaves `copy` false, so nothing
+    /// is wired up and the container's output goes nowhere. Recorded so a fix
+    /// shows up here as a deliberate change.
+    #[test]
+    fn io_scheme() {
+        let stdio = Stdio::new("", "binary:///usr/bin/log", "", false);
+
+        let pio = create_io("id", 0, 0, &stdio).expect("create io");
+        assert_eq!(pio.uri.as_deref(), Some("binary:///usr/bin/log"));
+        assert!(pio.io.is_none());
+        assert!(!pio.copy);
     }
 }

@@ -75,8 +75,20 @@ pub type InitProcess = ProcessTemplate<RuncInitLifecycle>;
 
 pub type RuncContainer = ContainerTemplate<InitProcess, ExecProcess, RuncExecFactory>;
 
-#[derive(Clone, Default)]
-pub(crate) struct RuncFactory {}
+pub(crate) struct RuncFactory {
+    /// How the OCI runtime binary is launched. Defaults to [`ShimExecutor`],
+    /// which reaps through the shim's exit monitor; substitutable so that a
+    /// caller can supply its own execution strategy.
+    pub(crate) spawner: Arc<dyn Spawner + Send + Sync>,
+}
+
+impl Default for RuncFactory {
+    fn default() -> Self {
+        Self {
+            spawner: Arc::new(ShimExecutor::default()),
+        }
+    }
+}
 
 #[async_trait]
 impl ContainerFactory<RuncContainer> for RuncFactory {
@@ -111,13 +123,7 @@ impl ContainerFactory<RuncContainer> for RuncFactory {
             mount_rootfs(&m, rootfs.as_path()).await?
         }
 
-        let runc = create_runc(
-            runtime,
-            ns,
-            bundle,
-            &opts,
-            Some(Arc::new(ShimExecutor::default())),
-        )?;
+        let runc = create_runc(runtime, ns, bundle, &opts, self.spawner.clone())?;
 
         let id = req.id();
         let stdio = Stdio::new(req.stdin(), req.stdout(), req.stderr(), req.terminal());
@@ -268,7 +274,7 @@ pub struct RuncInitLifecycle {
     opts: Options,
     bundle: String,
     exit_signal: Arc<ExitSignal>,
-    /// Cache for cgroup paths to avoid repeated /proc/<pid>/cgroup parsing
+    /// Cache for cgroup paths to avoid repeated `/proc/<pid>/cgroup` parsing
     #[cfg(target_os = "linux")]
     cgroup_cache: RwLock<Option<Cgroup>>,
 }
@@ -841,42 +847,85 @@ async fn wait_pid(pid: i32, s: Subscription) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::process::ExitStatusExt, path::Path, process::ExitStatus};
+    use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
 
-    use containerd_shim::util::{mkdir, write_str_to_file};
-    use runc::error::Error::CommandFailed;
-    use tokio::fs::remove_dir_all;
+    use super::runtime_error;
+    use crate::common::LOG_JSON_FILE;
 
-    use crate::{common::LOG_JSON_FILE, runc::runtime_error};
+    fn command_failed() -> ::runc::error::Error {
+        ::runc::error::Error::CommandFailed {
+            // Raw wait(2) status: the exit code lives in bits 8-15, so a bare
+            // `1` would render as "killed by SIGHUP" rather than "exit code 1".
+            status: ExitStatus::from_raw(1 << 8),
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+    }
 
     #[tokio::test]
-    async fn test_runtime_error() {
-        let empty_err = CommandFailed {
-            status: ExitStatus::from_raw(1),
-            stdout: "".to_string(),
-            stderr: "".to_string(),
-        };
-        let log_json = "\
-        {\"level\":\"info\",\"msg\":\"hello world\",\"time\":\"2022-11-25\"}\n\
-        {\"level\":\"error\",\"msg\":\"failed error\",\"time\":\"2022-11-26\"}\n\
-        {\"level\":\"error\",\"msg\":\"panic\",\"time\":\"2022-11-27\"}\n\
-        ";
-        let test_dir = "/tmp/shim-test";
-        let _ = mkdir(test_dir, 0o744).await;
-        write_str_to_file(Path::new(test_dir).join(LOG_JSON_FILE).as_path(), log_json)
-            .await
-            .expect("write log json should not be error");
+    async fn runtime_error_from_log() {
+        let bundle = tempfile::tempdir().expect("create bundle");
+        std::fs::write(
+            bundle.path().join(LOG_JSON_FILE),
+            "{\"level\":\"info\",\"msg\":\"hello world\",\"time\":\"2022-11-25\"}\n\
+             {\"level\":\"error\",\"msg\":\"failed error\",\"time\":\"2022-11-26\"}\n\
+             {\"level\":\"error\",\"msg\":\"panic\",\"time\":\"2022-11-27\"}\n",
+        )
+        .expect("write runtime log");
 
-        let expectd_msg = "panic";
-        let actual_err = runtime_error(test_dir, empty_err, "").await;
-        remove_dir_all(test_dir)
-            .await
-            .expect("remove test dir should not be error");
+        let err = runtime_error(
+            bundle.path().to_str().unwrap(),
+            command_failed(),
+            "OCI runtime create failed",
+        )
+        .await;
+        let msg = err.to_string();
         assert!(
-            actual_err.to_string().contains(expectd_msg),
-            "actual error \"{}\" should contains \"{}\"",
-            actual_err,
-            expectd_msg
+            msg.contains("OCI runtime create failed"),
+            "the caller context is kept: {:?}",
+            msg
+        );
+        assert!(
+            msg.contains("panic"),
+            "the last error line wins, got {:?}",
+            msg
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_error_no_error_line() {
+        let bundle = tempfile::tempdir().expect("create bundle");
+        std::fs::write(
+            bundle.path().join(LOG_JSON_FILE),
+            "{\"level\":\"info\",\"msg\":\"nothing went wrong\",\"time\":\"2022-11-25\"}\n",
+        )
+        .expect("write runtime log");
+
+        let err = runtime_error(
+            bundle.path().to_str().unwrap(),
+            command_failed(),
+            "OCI runtime start failed",
+        )
+        .await;
+        assert!(err.to_string().contains("no OCI runtime error in logfile"));
+    }
+
+    #[tokio::test]
+    async fn runtime_error_no_log() {
+        let bundle = tempfile::tempdir().expect("create bundle");
+
+        let err = runtime_error(
+            bundle.path().to_str().unwrap(),
+            command_failed(),
+            "OCI runtime delete failed",
+        )
+        .await;
+        let msg = err.to_string();
+        assert!(msg.contains("OCI runtime delete failed"), "got {:?}", msg);
+        assert!(
+            msg.contains("unable to open OCI runtime log file"),
+            "got {:?}",
+            msg
         );
     }
 }

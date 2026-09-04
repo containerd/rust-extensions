@@ -36,3 +36,17 @@ impl Stdio {
         self.stdin.is_empty() && self.stdout.is_empty() && self.stderr.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Stdio;
+
+    #[test]
+    fn is_null() {
+        assert!(Stdio::new("", "", "", false).is_null());
+        assert!(Stdio::new("", "", "", true).is_null(), "a tty is not stdio");
+        assert!(!Stdio::new("/run/in", "", "", false).is_null());
+        assert!(!Stdio::new("", "/run/out", "", false).is_null());
+        assert!(!Stdio::new("", "", "/run/err", false).is_null());
+    }
+}
