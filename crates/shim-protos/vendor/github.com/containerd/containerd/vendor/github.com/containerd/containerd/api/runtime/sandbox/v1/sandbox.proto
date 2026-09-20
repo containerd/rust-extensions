@@ -58,14 +58,12 @@ service Sandbox {
 
   // SandboxMetrics retrieves metrics about a sandbox instance.
   rpc SandboxMetrics(SandboxMetricsRequest) returns (SandboxMetricsResponse);
-}
 
-// Checkpoint is an optional sandbox-shim capability. It is a separate service
-// so existing Sandbox implementations do not need to implement checkpoint and
-// restore methods.
-service Checkpoint {
-  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
-  rpc Restore(RestoreRequest) returns (RestoreResponse);
+  // CheckpointSandbox checkpoints a consistent set of tasks in a sandbox.
+  rpc CheckpointSandbox(CheckpointSandboxRequest) returns (CheckpointSandboxResponse);
+
+  // RestoreSandbox restores a sandbox and all requested tasks in CREATED state.
+  rpc RestoreSandbox(RestoreSandboxRequest) returns (RestoreSandboxResponse);
 }
 
 message CreateSandboxRequest {
@@ -156,46 +154,49 @@ message SandboxMetricsResponse {
   containerd.types.Metric metrics = 1;
 }
 
-message CheckpointContainer {
-  string id = 1;
-  string name = 2;
-  google.protobuf.Any config = 3;
-  google.protobuf.Any status = 4;
+message SandboxCheckpointTask {
+  string checkpoint_key = 1;
+  string task_id = 2;
 }
 
-message CheckpointRequest {
+message CheckpointSandboxRequest {
   string sandbox_id = 1;
   string output_path = 2;
-  google.protobuf.Any sandbox_config = 3;
-  repeated CheckpointContainer containers = 4;
-  map<string, string> options = 5;
+  repeated SandboxCheckpointTask tasks = 3;
+  map<string, string> options = 4;
 }
 
-message CheckpointResponse {}
+message CheckpointSandboxResponse {}
 
-message RestoreContainer {
-  string id = 1;
-  string name = 2;
-  google.protobuf.Any config = 3;
+message SandboxRestoreTask {
+  string checkpoint_key = 1;
+  string task_id = 2;
+  string bundle = 3;
+  bool terminal = 4;
+  string stdin = 5;
+  string stdout = 6;
+  string stderr = 7;
+  google.protobuf.Any options = 8;
 }
 
-message RestoreRequest {
+message RestoreSandboxRequest {
   string sandbox_id = 1;
-  string checkpoint_path = 2;
-  google.protobuf.Any sandbox_config = 3;
-  repeated RestoreContainer containers = 4;
-  map<string, string> options = 5;
-  // Path to the network namespace for the restored sandbox.
-  string netns_path = 6;
+  string bundle_path = 2;
+  string checkpoint_path = 3;
+  google.protobuf.Any sandbox_options = 4;
+  string netns_path = 5;
+  map<string, string> options = 6;
+  repeated SandboxRestoreTask tasks = 7;
 }
 
-message RestoredContainer {
-  string name = 1;
-  // Ownership transfers from the controller to the caller when Restore
-  // succeeds. Empty when no containerd task checkpoint is required.
-  string task_checkpoint_image = 2;
+message RestoredSandboxTask {
+  string checkpoint_key = 1;
+  string task_id = 2;
 }
 
-message RestoreResponse {
-  repeated RestoredContainer containers = 1;
+message RestoreSandboxResponse {
+  uint32 pid = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Any spec = 3;
+  repeated RestoredSandboxTask tasks = 4;
 }
