@@ -14,9 +14,8 @@
    limitations under the License.
 */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use async_trait::async_trait;
 use containerd_shim::{
     api::Status,
     error::Result,
@@ -30,85 +29,64 @@ use containerd_shim::{
 };
 use log::debug;
 use oci_spec::runtime::LinuxResources;
+use runc::Spawner;
 use time::OffsetDateTime;
 use tokio::sync::oneshot::Receiver;
 
-use super::processes::Process;
+use crate::{
+    common::get_spec_from_request,
+    io::Stdio,
+    processes::Process,
+    runc::{prepare_bundle, ExecProcess, InitProcess, RuncInitLifecycle},
+};
 
-#[async_trait]
-pub trait Container {
-    async fn start(&mut self, exec_id: Option<&str>) -> Result<i32>;
-    async fn state(&self, exec_id: Option<&str>) -> Result<StateResponse>;
-    async fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()>;
-    async fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<()>>;
-    async fn get_exit_info(
-        &self,
-        exec_id: Option<&str>,
-    ) -> Result<(i32, i32, Option<OffsetDateTime>)>;
-    async fn delete(
-        &mut self,
-        exec_id_opt: Option<&str>,
-    ) -> Result<(i32, i32, Option<OffsetDateTime>)>;
-    async fn exec(&mut self, req: ExecProcessRequest) -> Result<()>;
-    async fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()>;
-    async fn pid(&self) -> i32;
-    async fn id(&self) -> String;
-    async fn update(&mut self, resources: &LinuxResources) -> Result<()>;
-    async fn stats(&self) -> Result<Metrics>;
-    async fn all_processes(&self) -> Result<Vec<ProcessInfo>>;
-    async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()>;
-    async fn pause(&mut self) -> Result<()>;
-    async fn resume(&mut self) -> Result<()>;
-    async fn init_state(&self) -> EnumOrUnknown<Status>;
-}
-
-#[async_trait]
-pub trait ContainerFactory<C> {
-    async fn create(&self, ns: &str, req: &CreateTaskRequest) -> Result<C>;
-    async fn cleanup(&self, ns: &str, c: &C) -> Result<()>;
-}
-
-#[async_trait]
-pub trait ProcessFactory<E> {
-    async fn create(&self, req: &ExecProcessRequest) -> Result<E>;
-}
-
-/// ContainerTemplate is a template struct to implement Container,
-/// most of the methods can be delegated to either init process or exec process.
-/// that's why we provides a ContainerTemplate struct,
-/// library users only need to implements Process for their own.
-pub struct ContainerTemplate<T, E, P> {
-    /// container id
-    pub id: String,
-    /// container bundle path
-    pub bundle: String,
+/// A container managed by this shim: its init process plus any processes
+/// exec'd into it.
+pub struct Container {
     /// init process of this container
-    pub init: T,
-    /// process factory that create processes when exec
-    pub process_factory: P,
+    pub init: InitProcess,
     /// exec processes of this container
-    pub processes: HashMap<String, E>,
+    pub processes: HashMap<String, ExecProcess>,
 }
 
-#[async_trait]
-impl<T, E, P> Container for ContainerTemplate<T, E, P>
-where
-    T: Process + Send + Sync,
-    E: Process + Send + Sync,
-    P: ProcessFactory<E> + Send + Sync,
-{
-    async fn init_state(&self) -> EnumOrUnknown<Status> {
+impl Container {
+    /// Creates the container through the OCI runtime, launched via `spawner`.
+    pub async fn create(
+        ns: &str,
+        req: &CreateTaskRequest,
+        spawner: Arc<dyn Spawner + Send + Sync>,
+    ) -> Result<Self> {
+        let (runc, opts) = prepare_bundle(ns, req, spawner).await?;
+        let stdio = Stdio::new(req.stdin(), req.stdout(), req.stderr(), req.terminal());
+        let lifecycle = RuncInitLifecycle::new(runc, opts, req.bundle());
+        let init = InitProcess::create(req.id(), stdio, lifecycle).await?;
+        Ok(Self {
+            init,
+            processes: HashMap::new(),
+        })
+    }
+
+    /// The container id, which is also the id of its init process.
+    pub fn id(&self) -> &str {
+        &self.init.id
+    }
+
+    pub fn bundle(&self) -> &str {
+        self.init.lifecycle.bundle()
+    }
+
+    pub async fn init_state(&self) -> EnumOrUnknown<Status> {
         // Default should be unknown
         self.init.state().await.unwrap_or_default().status
     }
 
-    async fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
+    pub async fn start(&mut self, exec_id: Option<&str>) -> Result<i32> {
         let process = self.get_mut_process(exec_id)?;
         process.start().await?;
         Ok(process.pid().await)
     }
 
-    async fn state(&self, exec_id: Option<&str>) -> Result<StateResponse> {
+    pub async fn state(&self, exec_id: Option<&str>) -> Result<StateResponse> {
         let process = self.get_process(exec_id)?;
         let mut resp = process.state().await?;
         let init_state = self.init.state().await?.status;
@@ -117,22 +95,22 @@ where
         {
             resp.status = init_state;
         }
-        resp.bundle = self.bundle.to_string();
+        resp.bundle = self.bundle().to_string();
         debug!("container state: {:?}", resp);
         Ok(resp)
     }
 
-    async fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()> {
+    pub async fn kill(&mut self, exec_id: Option<&str>, signal: u32, all: bool) -> Result<()> {
         let process = self.get_mut_process(exec_id)?;
         process.kill(signal, all).await
     }
 
-    async fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<()>> {
+    pub async fn wait_channel(&mut self, exec_id: Option<&str>) -> Result<Receiver<()>> {
         let process = self.get_mut_process(exec_id)?;
         process.wait_channel().await
     }
 
-    async fn get_exit_info(
+    pub async fn get_exit_info(
         &self,
         exec_id: Option<&str>,
     ) -> Result<(i32, i32, Option<OffsetDateTime>)> {
@@ -144,63 +122,62 @@ where
         ))
     }
 
-    async fn delete(
+    pub async fn delete(
         &mut self,
         exec_id_opt: Option<&str>,
     ) -> Result<(i32, i32, Option<OffsetDateTime>)> {
         let (pid, code, exited_at) = self.get_exit_info(exec_id_opt).await?;
-        let process = self.get_mut_process(exec_id_opt);
-        match process {
-            Ok(p) => p.delete().await?,
-            Err(e) => return Err(e),
-        }
+        self.get_mut_process(exec_id_opt)?.delete().await?;
         if let Some(exec_id) = exec_id_opt {
             self.processes.remove(exec_id);
         }
         Ok((pid, code, exited_at))
     }
 
-    async fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
-        let exec_id = req.exec_id.to_string();
-        let exec_process = self.process_factory.create(&req).await?;
-        self.processes.insert(exec_id, exec_process);
+    pub fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
+        let spec = get_spec_from_request(&req)?;
+        let stdio = Stdio::new(&req.stdin, &req.stdout, &req.stderr, req.terminal);
+        let lifecycle = self.init.lifecycle.exec_lifecycle(self.id(), spec);
+        let exec_process = ExecProcess::new(&req.exec_id, stdio, lifecycle);
+        self.processes.insert(req.exec_id, exec_process);
         Ok(())
     }
 
-    async fn resize_pty(&mut self, exec_id: Option<&str>, height: u32, width: u32) -> Result<()> {
+    pub async fn resize_pty(
+        &mut self,
+        exec_id: Option<&str>,
+        height: u32,
+        width: u32,
+    ) -> Result<()> {
         let process = self.get_mut_process(exec_id)?;
         process.resize_pty(height, width).await
     }
 
-    async fn pid(&self) -> i32 {
+    pub async fn pid(&self) -> i32 {
         self.init.pid().await
     }
 
-    async fn id(&self) -> String {
-        self.id.to_string()
-    }
-
     #[cfg(target_os = "linux")]
-    async fn update(&mut self, resources: &LinuxResources) -> Result<()> {
+    pub async fn update(&mut self, resources: &LinuxResources) -> Result<()> {
         self.init.update(resources).await
     }
 
     #[cfg(not(target_os = "linux"))]
-    async fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
+    pub async fn update(&mut self, _resources: &LinuxResources) -> Result<()> {
         Err(Error::Unimplemented("update".to_string()))
     }
 
     #[cfg(target_os = "linux")]
-    async fn stats(&self) -> Result<Metrics> {
+    pub async fn stats(&self) -> Result<Metrics> {
         self.init.stats().await
     }
 
     #[cfg(not(target_os = "linux"))]
-    async fn stats(&self) -> Result<Metrics> {
+    pub async fn stats(&self) -> Result<Metrics> {
         Err(Error::Unimplemented("stats".to_string()))
     }
 
-    async fn all_processes(&self) -> Result<Vec<ProcessInfo>> {
+    pub async fn all_processes(&self) -> Result<Vec<ProcessInfo>> {
         let mut processes_info = self.init.ps().await?;
         for process_info in &mut processes_info {
             for (exec_id, process) in &self.processes {
@@ -222,25 +199,19 @@ where
         Ok(processes_info)
     }
 
-    async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
+    pub async fn close_io(&mut self, exec_id: Option<&str>) -> Result<()> {
         let process = self.get_mut_process(exec_id)?;
         process.close_io().await
     }
 
-    async fn pause(&mut self) -> Result<()> {
+    pub async fn pause(&mut self) -> Result<()> {
         self.init.pause().await
     }
 
-    async fn resume(&mut self) -> Result<()> {
+    pub async fn resume(&mut self) -> Result<()> {
         self.init.resume().await
     }
-}
 
-impl<T, E, P> ContainerTemplate<T, E, P>
-where
-    T: Process + Send + Sync,
-    E: Process + Send + Sync,
-{
     pub fn get_process(&self, exec_id: Option<&str>) -> Result<&(dyn Process + Send + Sync)> {
         match exec_id {
             Some(exec_id) => {

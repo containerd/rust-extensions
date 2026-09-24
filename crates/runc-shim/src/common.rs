@@ -183,9 +183,6 @@ pub fn create_runc(
         .map_err(other_error!("unable to create runc instance"))
 }
 
-#[derive(Default)]
-pub(crate) struct CreateConfig {}
-
 pub fn receive_socket(stream_fd: RawFd) -> containerd_shim::Result<OwnedFd> {
     let mut buf = [0u8; 4096];
     let mut iovec = [IoSliceMut::new(&mut buf)];
