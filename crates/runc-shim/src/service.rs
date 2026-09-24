@@ -40,9 +40,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::{
     common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS, INIT_PID_FILE},
-    container::Container,
     processes::Process,
-    runc::{RuncContainer, RuncFactory},
     task::TaskService,
 };
 
@@ -54,7 +52,7 @@ pub(crate) struct Service {
 
 #[async_trait]
 impl Shim for Service {
-    type T = TaskService<RuncFactory, RuncContainer>;
+    type T = TaskService;
 
     async fn new(_runtime_id: &str, args: &Flags, _config: &mut Config) -> Self {
         let exit = Arc::new(ExitSignal::default());
@@ -151,7 +149,7 @@ impl Shim for Service {
 
 pub(crate) async fn process_exits(
     s: Subscription,
-    task: &TaskService<RuncFactory, RuncContainer>,
+    task: &TaskService,
     tx: Sender<(String, Box<dyn MessageDyn>)>,
 ) {
     let containers = task.containers.clone();
@@ -162,8 +160,8 @@ pub(crate) async fn process_exits(
                 debug!("receive exit event: {}", &e);
                 let exit_code = e.exit_code;
                 for (_k, cont) in containers.write().await.iter_mut() {
-                    let bundle = cont.bundle.to_string();
-                    let container_id = cont.id.clone();
+                    let bundle = cont.bundle().to_string();
+                    let container_id = cont.id().to_string();
                     let mut change_process: Vec<&mut (dyn Process + Send + Sync)> = Vec::new();
                     // pid belongs to container init process
                     if cont.init.pid == pid {
@@ -174,11 +172,7 @@ pub(crate) async fn process_exits(
                                 error!("failed to kill init's children: {}", e)
                             });
                         }
-                        if let Ok(process_d) = cont.get_mut_process(None) {
-                            change_process.push(process_d);
-                        } else {
-                            break;
-                        }
+                        change_process.push(&mut cont.init);
                     } else {
                         // pid belongs to container common process
                         if let Some((_, p)) = cont.processes.iter_mut().find(|(_, p)| p.pid == pid)

@@ -39,11 +39,12 @@ use containerd_shim::{
 };
 use log::{debug, info, warn};
 use oci_spec::runtime::LinuxResources;
+use runc::Spawner;
 use tokio::sync::{
     mpsc::Sender, RwLock, RwLockMappedWriteGuard, RwLockReadGuard, RwLockWriteGuard,
 };
 
-use super::container::{Container, ContainerFactory};
+use crate::{common::ShimExecutor, container::Container};
 type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 
 #[cfg(target_os = "linux")]
@@ -69,37 +70,36 @@ use tokio::{sync::mpsc::Receiver, task::spawn};
 #[cfg(target_os = "linux")]
 use crate::cgroup_memory;
 
-/// TaskService is a Task template struct, it is considered a helper struct,
-/// which has already implemented `Task` trait, so that users can make it the type `T`
-/// parameter of `Service`, and implements their own `ContainerFactory` and `Container`.
-pub struct TaskService<F, C> {
-    pub factory: F,
+/// TaskService implements the ttrpc `Task` API over the containers this shim
+/// manages.
+pub struct TaskService {
+    /// How the OCI runtime binary is launched. Defaults to [`ShimExecutor`],
+    /// which reaps through the shim's exit monitor; tests substitute a fake.
+    pub spawner: Arc<dyn Spawner + Send + Sync>,
     // In comparison, a Mutex does not distinguish between readers or writers that acquire the lock,
     // therefore causing any tasks waiting for the lock to become available to yield.
     // An RwLock will allow any number of readers to acquire the lock as long as a writer is not holding the lock.
-    pub containers: Arc<RwLock<HashMap<String, C>>>,
+    pub containers: Arc<RwLock<HashMap<String, Container>>>,
     pub namespace: String,
     pub exit: Arc<ExitSignal>,
     pub tx: EventSender,
 }
 
-impl<F, C> TaskService<F, C>
-where
-    F: Default,
-{
+impl TaskService {
     pub fn new(ns: &str, exit: Arc<ExitSignal>, tx: EventSender) -> Self {
         Self {
-            factory: Default::default(),
+            spawner: Arc::new(ShimExecutor::default()),
             containers: Arc::new(RwLock::new(Default::default())),
             namespace: ns.to_string(),
             exit,
             tx,
         }
     }
-}
 
-impl<F, C> TaskService<F, C> {
-    pub async fn container_mut(&self, id: &str) -> TtrpcResult<RwLockMappedWriteGuard<'_, C>> {
+    pub async fn container_mut(
+        &self,
+        id: &str,
+    ) -> TtrpcResult<RwLockMappedWriteGuard<'_, Container>> {
         let mut containers = self.containers.write().await;
         containers.get_mut(id).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
@@ -111,7 +111,7 @@ impl<F, C> TaskService<F, C> {
         Ok(container)
     }
 
-    pub async fn container(&self, id: &str) -> TtrpcResult<RwLockReadGuard<'_, C>> {
+    pub async fn container(&self, id: &str) -> TtrpcResult<RwLockReadGuard<'_, Container>> {
         let containers = self.containers.read().await;
         containers.get(id).ok_or_else(|| {
             ttrpc::Error::RpcStatus(ttrpc::get_status(
@@ -171,11 +171,7 @@ async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
 }
 
 #[async_trait]
-impl<F, C> Task for TaskService<F, C>
-where
-    F: ContainerFactory<C> + Sync + Send,
-    C: Container + Sync + Send + 'static,
-{
+impl Task for TaskService {
     async fn state(&self, _ctx: &TtrpcContext, req: StateRequest) -> TtrpcResult<StateResponse> {
         let container = self.container(req.id()).await?;
         let exec_id = req.exec_id().as_option();
@@ -196,7 +192,7 @@ where
         let mut resp = CreateTaskResponse::new();
         let pid = {
             let mut containers = self.containers.write().await;
-            let container = self.factory.create(ns, &req).await?;
+            let container = Container::create(ns, &req, self.spawner.clone()).await?;
             let pid = container.pid().await as u32;
             resp.pid = pid;
             containers.insert(id.to_string(), container);
@@ -234,7 +230,7 @@ where
                 debug!("container init process has exited, start process should not continue");
                 return Err(ttrpc::Error::RpcStatus(ttrpc::get_status(
                     ttrpc::Code::FAILED_PRECONDITION,
-                    format!("container init process has exited {}", container.id().await),
+                    format!("container init process has exited {}", container.id()),
                 )));
             }
             container.start(req.exec_id.as_str().as_option()).await?
@@ -272,10 +268,9 @@ where
         info!("Delete request for {:?}", &req);
         let (id, pid, exit_status, exited_at) = {
             let mut container = self.container_mut(req.id()).await?;
-            let id = container.id().await;
+            let id = container.id().to_string();
             let exec_id_opt = req.exec_id().as_option();
             let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
-            self.factory.cleanup(&self.namespace, &container).await?;
             (id, pid, exit_status, exited_at)
         };
 
@@ -356,8 +351,8 @@ where
 
         let container_id = {
             let mut container = self.container_mut(req.id()).await?;
-            container.exec(req).await?;
-            container.id().await
+            container.exec(req)?;
+            container.id().to_string()
         };
 
         self.send_event(TaskExecAdded {
@@ -525,19 +520,11 @@ mod tests {
         channel, error::TryRecvError, unbounded_channel, Receiver, UnboundedSender,
     };
 
-    use crate::{
-        runc::{RuncContainer, RuncFactory},
-        service::process_exits,
-        task::TaskService,
-    };
+    use crate::{service::process_exits, task::TaskService};
 
     // ===========================================================================
     // Harness
     // ===========================================================================
-
-    /// The concrete `TaskService` under test, aliased so that collapsing
-    /// `TaskService<F, C>` touches this line rather than the fixture.
-    type Shim = TaskService<RuncFactory, RuncContainer>;
 
     /// Hands out pids that no real process can own.
     ///
@@ -675,7 +662,7 @@ mod tests {
 
     /// A `TaskService` backed by a fake runtime and a throwaway bundle directory.
     struct TestShim {
-        task: Arc<Shim>,
+        task: Arc<TaskService>,
         runc: Arc<FakeRunc>,
         exit: Arc<ExitSignal>,
         /// Feeds process-exit events to this fixture's `process_exits` pump.
@@ -707,8 +694,8 @@ mod tests {
             let (tx, events) = channel(128);
             let exit = Arc::new(ExitSignal::default());
 
-            let mut task = Shim::new("runc-shim-test", exit.clone(), tx.clone());
-            task.factory.spawner = runc.clone();
+            let mut task = TaskService::new("runc-shim-test", exit.clone(), tx.clone());
+            task.spawner = runc.clone();
             let task = Arc::new(task);
 
             // A private stand-in for the global pid monitor. The id is never

@@ -27,14 +27,14 @@ use std::{
     },
     path::{Path, PathBuf},
     process::ExitStatus,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use async_trait::async_trait;
 #[cfg(target_os = "linux")]
 use cgroups_rs::fs::Cgroup;
 use containerd_shim::{
-    api::{CreateTaskRequest, ExecProcessRequest, Options, Status},
+    api::{CreateTaskRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
     io_error,
     monitor::{ExitEvent, Subject, Topic},
@@ -59,13 +59,12 @@ use tokio::{
 
 use super::{
     console::ConsoleSocket,
-    container::{ContainerFactory, ContainerTemplate, ProcessFactory},
     processes::{ProcessLifecycle, ProcessTemplate},
 };
 use crate::{
     common::{
-        check_kill_error, create_io, create_runc, get_spec_from_request, handle_file_open,
-        receive_socket, CreateConfig, Log, ProcessIO, ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
+        check_kill_error, create_io, create_runc, handle_file_open, receive_socket, Log, ProcessIO,
+        ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
     },
     io::Stdio,
 };
@@ -73,99 +72,50 @@ use crate::{
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
 pub type InitProcess = ProcessTemplate<RuncInitLifecycle>;
 
-pub type RuncContainer = ContainerTemplate<InitProcess, ExecProcess, RuncExecFactory>;
-
-pub(crate) struct RuncFactory {
-    /// How the OCI runtime binary is launched. Defaults to [`ShimExecutor`],
-    /// which reaps through the shim's exit monitor; substitutable so that a
-    /// caller can supply its own execution strategy.
-    pub(crate) spawner: Arc<dyn Spawner + Send + Sync>,
-}
-
-impl Default for RuncFactory {
-    fn default() -> Self {
-        Self {
-            spawner: Arc::new(ShimExecutor::default()),
-        }
+/// Prepares the bundle for a new container: decodes the runtime options,
+/// records them and the runtime name in the bundle, and mounts the rootfs.
+///
+/// Returns the OCI runtime, launched via `spawner`, and the decoded options.
+pub async fn prepare_bundle(
+    ns: &str,
+    req: &CreateTaskRequest,
+    spawner: Arc<dyn Spawner + Send + Sync>,
+) -> Result<(Runc, Options)> {
+    let bundle = req.bundle();
+    let mut opts = Options::new();
+    if let Some(any) = req.options.as_ref() {
+        let mut input = CodedInputStream::from_bytes(any.value.as_ref());
+        opts.merge_from(&mut input)?;
     }
-}
+    if opts.compute_size() > 0 {
+        debug!("create options: {:?}", &opts);
+    }
+    let runtime = opts.binary_name.as_str();
+    write_options(bundle, &opts).await?;
+    write_runtime(bundle, runtime).await?;
 
-#[async_trait]
-impl ContainerFactory<RuncContainer> for RuncFactory {
-    async fn create(
-        &self,
-        ns: &str,
-        req: &CreateTaskRequest,
-    ) -> containerd_shim::Result<RuncContainer> {
-        let bundle = req.bundle();
-        let mut opts = Options::new();
-        if let Some(any) = req.options.as_ref() {
-            let mut input = CodedInputStream::from_bytes(any.value.as_ref());
-            opts.merge_from(&mut input)?;
-        }
-        if opts.compute_size() > 0 {
-            debug!("create options: {:?}", &opts);
-        }
-        let runtime = opts.binary_name.as_str();
-        write_options(bundle, &opts).await?;
-        write_runtime(bundle, runtime).await?;
+    let rootfs_vec = req.rootfs().to_vec();
+    let rootfs = if !rootfs_vec.is_empty() {
+        let tmp_rootfs = Path::new(bundle).join("rootfs");
+        mkdir(&tmp_rootfs, 0o711).await?;
+        tmp_rootfs
+    } else {
+        PathBuf::new()
+    };
 
-        let rootfs_vec = req.rootfs().to_vec();
-        let rootfs = if !rootfs_vec.is_empty() {
-            let tmp_rootfs = Path::new(bundle).join("rootfs");
-            mkdir(&tmp_rootfs, 0o711).await?;
-            tmp_rootfs
-        } else {
-            PathBuf::new()
-        };
-
-        for m in rootfs_vec {
-            mount_rootfs(&m, rootfs.as_path()).await?
-        }
-
-        let runc = create_runc(runtime, ns, bundle, &opts, self.spawner.clone())?;
-
-        let id = req.id();
-        let stdio = Stdio::new(req.stdin(), req.stdout(), req.stderr(), req.terminal());
-
-        let mut init = InitProcess::new(
-            id,
-            stdio,
-            RuncInitLifecycle::new(runc.clone(), opts.clone(), bundle),
-        );
-
-        let config = CreateConfig::default();
-        self.do_create(&mut init, config).await?;
-        #[cfg(target_os = "linux")]
-        {
-            *init.lifecycle.cgroup_cache.write().unwrap() =
-                containerd_shim::cgroup::get_cgroup(init.pid as u32).ok();
-        }
-
-        let container = RuncContainer {
-            id: id.to_string(),
-            bundle: bundle.to_string(),
-            init,
-            process_factory: RuncExecFactory {
-                runtime: runc,
-                bundle: bundle.to_string(),
-                io_uid: opts.io_uid,
-                io_gid: opts.io_gid,
-            },
-            processes: Default::default(),
-        };
-
-        Ok(container)
+    for m in rootfs_vec {
+        mount_rootfs(&m, rootfs.as_path()).await?
     }
 
-    async fn cleanup(&self, _ns: &str, _c: &RuncContainer) -> containerd_shim::Result<()> {
-        Ok(())
-    }
+    let runc = create_runc(runtime, ns, bundle, &opts, spawner)?;
+    Ok((runc, opts))
 }
 
-impl RuncFactory {
-    async fn do_create(&self, init: &mut InitProcess, _config: CreateConfig) -> Result<()> {
-        let id = init.id.to_string();
+impl InitProcess {
+    /// Creates a container's init process through the OCI runtime.
+    pub async fn create(id: &str, stdio: Stdio, lifecycle: RuncInitLifecycle) -> Result<Self> {
+        let mut init = Self::new(id, stdio, lifecycle);
+
         let stdio = &init.stdio;
         let opts = &init.lifecycle.opts;
         let bundle = &init.lifecycle.bundle;
@@ -180,7 +130,7 @@ impl RuncFactory {
             create_opts.console_socket = Some(s.path.to_owned());
             (Some(s), None)
         } else {
-            let pio = create_io(&id, opts.io_uid, opts.io_gid, stdio)?;
+            let pio = create_io(id, opts.io_uid, opts.io_gid, stdio)?;
             create_opts.io = pio.io.as_ref().cloned();
             (None, Some(pio))
         };
@@ -188,7 +138,7 @@ impl RuncFactory {
         let resp = init
             .lifecycle
             .runtime
-            .create(&id, bundle, Some(&create_opts))
+            .create(id, bundle, Some(&create_opts))
             .await;
         if let Err(e) = resp {
             if let Some(s) = socket {
@@ -196,10 +146,17 @@ impl RuncFactory {
             }
             return Err(runtime_error(bundle, e, "OCI runtime create failed").await);
         }
-        copy_io_or_console(init, socket, pio, init.lifecycle.exit_signal.clone()).await?;
-        let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
-        init.pid = pid;
-        Ok(())
+        let exit_signal = init.lifecycle.exit_signal.clone();
+        copy_io_or_console(&mut init, socket, pio, exit_signal).await?;
+        init.pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
+
+        #[cfg(target_os = "linux")]
+        {
+            *init.lifecycle.cgroup_cache.write().unwrap() =
+                containerd_shim::cgroup::get_cgroup(init.pid as u32).ok();
+        }
+
+        Ok(init)
     }
 }
 
@@ -227,45 +184,6 @@ pub async fn runtime_error(bundle: &str, e: runc::error::Error, msg: &str) -> Er
                 other!("{}: (no OCI runtime error in logfile) {}", msg, e)
             }
         }
-    }
-}
-
-pub struct RuncExecFactory {
-    runtime: Runc,
-    bundle: String,
-    io_uid: u32,
-    io_gid: u32,
-}
-
-#[async_trait]
-impl ProcessFactory<ExecProcess> for RuncExecFactory {
-    async fn create(&self, req: &ExecProcessRequest) -> Result<ExecProcess> {
-        let p = get_spec_from_request(req)?;
-        Ok(ExecProcess {
-            state: Status::CREATED,
-            id: req.exec_id.to_string(),
-            stdio: Stdio {
-                stdin: req.stdin.to_string(),
-                stdout: req.stdout.to_string(),
-                stderr: req.stderr.to_string(),
-                terminal: req.terminal,
-            },
-            pid: 0,
-            exit_code: 0,
-            exited_at: None,
-            wait_chan_tx: vec![],
-            console: None,
-            lifecycle: Arc::from(RuncExecLifecycle {
-                runtime: self.runtime.clone(),
-                bundle: self.bundle.to_string(),
-                container_id: req.id.to_string(),
-                io_uid: self.io_uid,
-                io_gid: self.io_gid,
-                spec: p,
-                exit_signal: Default::default(),
-            }),
-            stdin: Arc::new(Mutex::new(None)),
-        })
     }
 }
 
@@ -443,6 +361,24 @@ impl RuncInitLifecycle {
             exit_signal: Default::default(),
             #[cfg(target_os = "linux")]
             cgroup_cache: RwLock::new(None),
+        }
+    }
+
+    pub fn bundle(&self) -> &str {
+        &self.bundle
+    }
+
+    /// Lifecycle for a process exec'd into this container, sharing the init
+    /// process's runtime, bundle and IO ownership settings.
+    pub fn exec_lifecycle(&self, container_id: &str, spec: Process) -> RuncExecLifecycle {
+        RuncExecLifecycle {
+            runtime: self.runtime.clone(),
+            bundle: self.bundle.clone(),
+            container_id: container_id.to_string(),
+            io_uid: self.opts.io_uid,
+            io_gid: self.opts.io_gid,
+            spec,
+            exit_signal: Default::default(),
         }
     }
 
