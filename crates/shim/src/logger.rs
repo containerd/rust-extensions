@@ -133,9 +133,13 @@ pub(crate) struct SimpleWriteVistor {
 
 impl<'kvs> Visitor<'kvs> for SimpleWriteVistor {
     fn visit_pair(&mut self, k: kv::Key<'kvs>, v: kv::Value<'kvs>) -> Result<(), kv::Error> {
-        write!(&mut self.key_values, " {}=\"{}\"", k, v)?;
+        write!(&mut self.key_values, " {}={}", k, json_quote(&v))?;
         Ok(())
     }
+}
+
+fn json_quote(v: &impl std::fmt::Display) -> String {
+    serde_json::to_string(&format_args!("{v}")).unwrap_or_default()
 }
 
 impl SimpleWriteVistor {
@@ -165,12 +169,15 @@ impl log::Log for FifoLogger {
             // interleave it with output from other shims. containerd copies raw bytes
             // from the FIFO straight to its log, so a record split across several
             // writes can be read partially.
+            //
+            // Quote the message, otherwise a quote or newline in it could end the
+            // field or start a fake record.
             let line = format!(
-                "time=\"{}\" level={}{} msg=\"{}\"\n",
+                "time=\"{}\" level={}{} msg={}\n",
                 rfc3339_formated(),
                 record.level().as_str().to_lowercase(),
                 writer.as_str(),
-                record.args()
+                json_quote(record.args())
             );
 
             let mut guard = self.file.lock().unwrap();
@@ -348,6 +355,7 @@ mod tests {
 
         let contents = fs::read_to_string(path.clone()).unwrap();
         assert!(contents.contains("level=info msg=\"no keys\""));
+        assert_eq!(decode_field(&contents, "msg"), "no keys");
 
         let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
         let record = Record::builder()
@@ -360,6 +368,114 @@ mod tests {
 
         let contents = fs::read_to_string(path).unwrap();
         assert!(contents.contains("level=error key=\"1\" b=\"2\" msg=\"structured!\""));
+        let line = contents.lines().last().unwrap();
+        assert_eq!(decode_field(line, "key"), "1");
+        assert_eq!(decode_field(line, "b"), "2");
+        assert_eq!(decode_field(line, "msg"), "structured!");
+    }
+
+    fn log_to_string(record: &Record) -> String {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("log");
+        File::create(&path).unwrap();
+
+        let logger = FifoLogger::with_path(&path).unwrap();
+        let _guard = lock_log_level();
+        log::set_max_level(log::LevelFilter::Info);
+        logger.log(record);
+        logger.flush();
+
+        fs::read_to_string(path).unwrap()
+    }
+
+    fn assert_single_record(line: &str) {
+        assert_eq!(
+            line.matches('\n').count(),
+            1,
+            "record must be exactly one line: {line:?}"
+        );
+        assert!(line.ends_with('\n'), "got: {line:?}");
+        assert!(line.starts_with("time=\""), "got: {line:?}");
+    }
+
+    #[test]
+    fn test_message_is_escaped() {
+        let msg =
+            "q\" level=fatal nl\ntime=\"1970-01-01T00:00:00Z\" cr\r tab\t esc\x1b[31m bel\x07 bs\\";
+        let line = log_to_string(
+            &Record::builder()
+                .level(log::Level::Info)
+                .args(format_args!("{msg}"))
+                .build(),
+        );
+
+        assert_single_record(&line);
+        assert!(
+            line.trim_end_matches('\n').ends_with(
+                r#" level=info msg="q\" level=fatal nl\ntime=\"1970-01-01T00:00:00Z\" cr\r tab\t esc\u001b[31m bel\u0007 bs\\""#
+            ),
+            "got: {line:?}"
+        );
+        assert_eq!(decode_field(&line, "msg"), msg, "got: {line:?}");
+    }
+
+    #[test]
+    fn test_key_values_are_escaped() {
+        let kvs: &[(&str, &str)] = &[
+            ("probe", "kv\" level=fatal injected=\"yes"),
+            ("nl", "line1\nline2\x1b"),
+        ];
+        let line = log_to_string(
+            &Record::builder()
+                .level(log::Level::Info)
+                .key_values(&kvs)
+                .args(format_args!("kv"))
+                .build(),
+        );
+
+        assert_single_record(&line);
+        assert!(
+            line.contains(
+                r#" level=info probe="kv\" level=fatal injected=\"yes" nl="line1\nline2\u001b" msg="kv""#
+            ),
+            "got: {line:?}"
+        );
+        for (k, v) in kvs {
+            assert_eq!(decode_field(&line, k), *v, "got: {line:?}");
+        }
+        assert_eq!(decode_field(&line, "msg"), "kv", "got: {line:?}");
+    }
+
+    /// Returns the unescaped value of the quoted `key` field in a log line.
+    fn decode_field(line: &str, key: &str) -> String {
+        let needle = format!(" {key}=");
+        let start = line
+            .find(&format!("{needle}\""))
+            .unwrap_or_else(|| panic!("no {key} field in {line:?}"))
+            + needle.len();
+        serde_json::Deserializer::from_str(&line[start..])
+            .into_iter::<String>()
+            .next()
+            .unwrap_or_else(|| panic!("no {key} value in {line:?}"))
+            .unwrap_or_else(|e| panic!("{key} is not logfmt-decodable ({e}): {line:?}"))
+    }
+
+    #[test]
+    fn test_escaped_values_round_trip_through_logfmt() {
+        let msg = "message nul\0 esc\x1b[31m bel\x07 del\x7f nel\u{85} ls\u{2028} q\" bs\\ nl\n";
+        let value = "value bs\\ q\" ls\u{2028} nel\u{85} del\x7f bel\x07 esc\x1b[0m nul\0 nl\n";
+        let kvs: &[(&str, &str)] = &[("probe", value)];
+        let line = log_to_string(
+            &Record::builder()
+                .level(log::Level::Info)
+                .key_values(&kvs)
+                .args(format_args!("{msg}"))
+                .build(),
+        );
+
+        assert_single_record(&line);
+        assert_eq!(decode_field(&line, "probe"), value, "got: {line:?}");
+        assert_eq!(decode_field(&line, "msg"), msg, "got: {line:?}");
     }
 
     #[cfg(unix)]
@@ -400,6 +516,9 @@ mod tests {
             "got: {:?}",
             messages[0]
         );
+        assert_eq!(decode_field(&messages[0], "key"), "1");
+        assert_eq!(decode_field(&messages[0], "b"), "2");
+        assert_eq!(decode_field(&messages[0], "msg"), "single write");
     }
 }
 
