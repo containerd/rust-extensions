@@ -15,7 +15,6 @@
 */
 
 use std::{
-    borrow::BorrowMut,
     fmt::Write as fmtwrite,
     fs::{File, OpenOptions},
     io::{self, Write},
@@ -158,11 +157,23 @@ impl log::Log for FifoLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let mut guard = self.file.lock().unwrap();
-
             // collect key_values but don't fail if error parsing
             let mut writer = SimpleWriteVistor::new();
             let _ = record.key_values().visit(&mut writer);
+
+            // Emit the record in a single write so containerd's log relay can't
+            // interleave it with output from other shims. containerd copies raw bytes
+            // from the FIFO straight to its log, so a record split across several
+            // writes can be read partially.
+            let line = format!(
+                "time=\"{}\" level={}{} msg=\"{}\"\n",
+                rfc3339_formated(),
+                record.level().as_str().to_lowercase(),
+                writer.as_str(),
+                record.args()
+            );
+
+            let mut guard = self.file.lock().unwrap();
 
             // The logger server may have temporarily shutdown, ignore the error instead of panic.
             //
@@ -171,14 +182,7 @@ impl log::Log for FifoLogger {
             // a write(2) will cause a SIGPIPE signal to be generated for the calling process.
             // If the calling process is ignoring this signal, then write(2) fails with the error
             // EPIPE.
-            let _ = writeln!(
-                guard.borrow_mut(),
-                "time=\"{}\" level={}{} msg=\"{}\"\n",
-                rfc3339_formated(),
-                record.level().as_str().to_lowercase(),
-                writer.as_str(),
-                record.args()
-            );
+            let _ = guard.write_all(line.as_bytes());
         }
     }
 
@@ -345,6 +349,45 @@ mod tests {
 
         let contents = fs::read_to_string(path).unwrap();
         assert!(contents.contains("level=error key=\"1\" b=\"2\" msg=\"structured!\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_record_is_emitted_in_single_write() {
+        use std::os::{fd::OwnedFd, unix::net::UnixDatagram};
+
+        let (tx, rx) = UnixDatagram::pair().unwrap();
+        rx.set_nonblocking(true).unwrap();
+        let logger = FifoLogger::with_file(File::from(OwnedFd::from(tx)));
+        log::set_max_level(log::LevelFilter::Info);
+
+        let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
+        logger.log(
+            &Record::builder()
+                .level(log::Level::Info)
+                .key_values(&kvs)
+                .args(format_args!("single {}", "write"))
+                .build(),
+        );
+        logger.flush();
+
+        let mut messages = Vec::new();
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = rx.recv(&mut buf) {
+            messages.push(String::from_utf8_lossy(&buf[..n]).into_owned());
+        }
+
+        assert_eq!(
+            messages.len(),
+            1,
+            "record split across writes: {messages:?}"
+        );
+        assert!(messages[0].starts_with("time=\""), "got: {:?}", messages[0]);
+        assert!(
+            messages[0].contains("level=info key=\"1\" b=\"2\" msg=\"single write\"\n"),
+            "got: {:?}",
+            messages[0]
+        );
     }
 }
 
