@@ -225,6 +225,14 @@ mod tests {
     use super::*;
     use crate::Config;
 
+    // `log::max_level` is global and tests run in parallel, so every test that
+    // sets it or depends on it needs to hold this lock.
+    static LOG_LEVEL_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(super) fn lock_log_level() -> std::sync::MutexGuard<'static, ()> {
+        LOG_LEVEL_LOCK.lock().unwrap()
+    }
+
     // Only this test touches `LOG_ENV`, and it does so from a single thread.
     fn set_log_env(value: &str) {
         unsafe { std::env::set_var(LOG_ENV, value) };
@@ -232,6 +240,7 @@ mod tests {
 
     #[test]
     fn test_init_log_level() -> Result<(), Error> {
+        let _guard = lock_log_level();
         let config = Config::default();
 
         configure_logging_level(false, &config.default_log_level);
@@ -305,6 +314,7 @@ mod tests {
 
         let logger = FifoLogger::with_path(&path).unwrap();
         //log::set_boxed_logger(Box::new(logger)).map_err(Error::Setup)?;
+        let _guard = lock_log_level();
         log::set_max_level(log::LevelFilter::Info);
         thread.join().unwrap();
 
@@ -326,6 +336,7 @@ mod tests {
         File::create(path.clone()).unwrap();
 
         let logger = FifoLogger::with_path(&path).unwrap();
+        let _guard = lock_log_level();
         log::set_max_level(log::LevelFilter::Info);
 
         let record = Record::builder()
@@ -359,6 +370,7 @@ mod tests {
         let (tx, rx) = UnixDatagram::pair().unwrap();
         rx.set_nonblocking(true).unwrap();
         let logger = FifoLogger::with_file(File::from(OwnedFd::from(tx)));
+        let _guard = lock_log_level();
         log::set_max_level(log::LevelFilter::Info);
 
         let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
@@ -410,7 +422,7 @@ mod windows_tests {
         Foundation::ERROR_PIPE_NOT_CONNECTED, Storage::FileSystem::FILE_FLAG_OVERLAPPED,
     };
 
-    use super::*;
+    use super::{tests::lock_log_level, *};
 
     #[test]
     fn test_namedpipe_log_can_write_before_client_connected() {
@@ -419,6 +431,7 @@ mod windows_tests {
         let logger = FifoLogger::new(&ns, &id).unwrap();
 
         // test can write before a reader is connected (should succeed but the messages will be dropped)
+        let _guard = lock_log_level();
         log::set_max_level(log::LevelFilter::Info);
         let record = Record::builder()
             .level(log::Level::Info)
@@ -441,6 +454,7 @@ mod windows_tests {
         let logger = FifoLogger::new(&ns, &id).unwrap();
         let mut client = create_client(pipe_name.as_str());
 
+        let _guard = lock_log_level();
         log::set_max_level(log::LevelFilter::Info);
         let kvs: &[(&str, i32)] = &[("key", 1), ("b", 2)];
         let record = Record::builder()
