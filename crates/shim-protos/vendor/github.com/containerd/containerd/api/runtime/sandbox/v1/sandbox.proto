@@ -75,6 +75,8 @@ message CreateSandboxRequest {
   google.protobuf.Any options = 4;
   string netns_path = 5;
   map<string, string> annotations = 6;
+  // Hostname configured inside the sandbox.
+  string hostname = 7;
 }
 
 message CreateSandboxResponse {}
@@ -187,6 +189,8 @@ message RestoreRequest {
   map<string, string> options = 5;
   // Path to the network namespace for the restored sandbox.
   string netns_path = 6;
+  // Hostname configured inside the restored sandbox.
+  string hostname = 7;
 }
 
 message RestoredContainer {
