@@ -843,6 +843,7 @@ mod tests {
             mh: Default::default(),
             metadata: Default::default(),
             timeout_nano: 0,
+            ..Default::default()
         }
     }
 

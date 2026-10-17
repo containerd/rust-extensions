@@ -28,7 +28,6 @@ fn main() {
         "types",
         &[
             "vendor/gogoproto/gogo.proto",
-            "vendor/google/protobuf/empty.proto",
             "vendor/github.com/containerd/containerd/api/types/fieldpath.proto",
             "vendor/github.com/containerd/containerd/api/types/mount.proto",
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
