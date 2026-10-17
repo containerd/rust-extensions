@@ -15,7 +15,7 @@
 */
 
 pub mod empty {
-    include!(concat!(env!("OUT_DIR"), "/types/empty.rs"));
+    pub use protobuf::well_known_types::empty::*;
 }
 
 pub mod gogo {

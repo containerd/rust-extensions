@@ -65,6 +65,7 @@ fn create_ttrpc_context() -> (
         metadata: HashMap::new(),
         timeout_nano: 0,
         cancel_rx,
+        conn_ctx: Default::default(),
     };
 
     (ctx, rx)
