@@ -63,13 +63,14 @@ use util::{read_address, write_address};
 use crate::{
     api::DeleteResponse,
     args::{self, Flags},
+    bootstrap::{encode_start_result, read_start_params},
     logger,
     protos::{
         protobuf::Message,
         shim::shim_ttrpc::{create_task, Task},
         ttrpc::{Client, Server},
     },
-    reap, socket_address, start_listener,
+    reap, start_listener,
     synchronous::publisher::RemotePublisher,
     Config, Error, Result, StartOpts, TTRPC_ADDRESS,
 };
@@ -207,8 +208,6 @@ where
         )));
     }
 
-    let ttrpc_address = env::var(TTRPC_ADDRESS)?;
-
     // Create shim instance
     let mut config = opts.unwrap_or_default();
 
@@ -223,21 +222,16 @@ where
 
     match flags.action.as_str() {
         "start" => {
-            let args = StartOpts {
-                id: flags.id,
-                publish_binary: flags.publish_binary,
-                address: flags.address,
-                ttrpc_address,
-                namespace: flags.namespace,
-                debug: flags.debug,
-            };
+            let (args, protocol) = read_start_params(&flags)?;
 
             let address = shim.start_shim(args)?;
+            let reply = encode_start_result(&address, protocol)?;
 
-            std::io::stdout()
-                .lock()
-                .write_fmt(format_args!("{}", address))
+            let mut stdout = std::io::stdout().lock();
+            stdout
+                .write_all(&reply)
                 .map_err(io_error!(e, "write stdout"))?;
+            stdout.flush().map_err(io_error!(e, "flush stdout"))?;
 
             Ok(())
         }
@@ -269,6 +263,7 @@ where
                 )?;
             }
 
+            let ttrpc_address = env::var(TTRPC_ADDRESS)?;
             let publisher = publisher::RemotePublisher::new(&ttrpc_address)?;
             let task = Box::new(shim.create_task_service(publisher))
                 as Box<dyn containerd_shim_protos::Task + Send + Sync + 'static>;
@@ -490,7 +485,7 @@ fn remove_socket(address: &str) -> Result<()> {
 pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<(u32, String)> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;
-    let address = socket_address(&opts.address, &opts.namespace, grouping);
+    let address = opts.socket_address(grouping);
 
     // Activation pattern comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
     // another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
@@ -503,6 +498,7 @@ pub fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result
         .stdout(Stdio::piped())
         .stdin(Stdio::null())
         .stderr(Stdio::null())
+        .envs(opts.server_env())
         .envs(vars)
         .args([
             "-namespace",

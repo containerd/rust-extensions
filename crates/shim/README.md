@@ -26,6 +26,16 @@ Once implemented, shim's bootstrap code is as easy as:
 shim::run::<Service>("io.containerd.empty.v1")
 ```
 
+## Bootstrap protocol
+
+containerd 2.3 introduced a [bootstrap protocol](https://github.com/containerd/containerd/blob/main/docs/runtime-v2.md#bootstrap-protocol-23)
+for launching shims: the `start` action receives a `BootstrapParams` message on stdin and replies with a
+`BootstrapResult` on stdout. This crate speaks both the bootstrap protocol and the legacy mechanism
+(command line flags, environment variables and runtime options on stdin) used by older daemons, the same
+way containerd's `pkg/shim` does, so a shim built with it works with either. Whatever containerd sent is
+normalized into the `StartOpts` passed to `Shim::start_shim`, which also exposes the extensions containerd
+attached (for example the runtime options) through `StartOpts::extension`.
+
 ## Look and feel
 
 The API is very similar to the one offered by Go version:

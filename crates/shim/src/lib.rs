@@ -45,6 +45,7 @@ mod args;
 pub use args::{parse, Flags};
 #[cfg(feature = "async")]
 pub mod asynchronous;
+pub mod bootstrap;
 pub mod cgroup;
 pub mod event;
 pub mod logger;
@@ -131,7 +132,9 @@ impl Default for Config {
 
 /// Startup options received from containerd to start new shim instance.
 ///
-/// These will be passed via [`Shim::start_shim`] to shim.
+/// These will be passed via [`Shim::start_shim`] to shim. They are populated from
+/// the bootstrap protocol (containerd 2.3+) or from the legacy flags and environment,
+/// see [`bootstrap`].
 #[derive(Debug, Default)]
 pub struct StartOpts {
     /// ID of the container.
@@ -144,8 +147,31 @@ pub struct StartOpts {
     pub ttrpc_address: String,
     /// Namespace for the container.
     pub namespace: String,
-
+    /// Whether debug logging was requested (`-debug` flag or a log level at or below debug).
     pub debug: bool,
+    /// Log level requested by containerd.
+    pub log_level: bootstrap::LogLevel,
+    /// Version of the containerd daemon launching the shim, empty for daemons older than 2.3.
+    pub containerd_version: String,
+    /// Directory containerd asked the shim to place its socket in, if any.
+    pub socket_dir: Option<String>,
+    /// Extensions passed by containerd, such as the runtime options.
+    /// See [`StartOpts::extension`] for a typed lookup.
+    pub extensions: Vec<protos::protobuf::well_known_types::any::Any>,
+}
+
+impl StartOpts {
+    /// Address of the shim socket for `grouping`, placed in [`StartOpts::socket_dir`]
+    /// when containerd requested one and under [`SOCKET_ROOT`] otherwise.
+    ///
+    /// Named pipes have no directory, so `socket_dir` is ignored on Windows.
+    pub fn socket_address(&self, grouping: &str) -> String {
+        #[cfg(unix)]
+        if let Some(dir) = self.socket_dir.as_deref() {
+            return socket_address_in(dir, &self.address, &self.namespace, grouping);
+        }
+        socket_address(&self.address, &self.namespace, grouping)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -158,8 +184,37 @@ pub const SOCKET_ROOT: &str = "/var/run/containerd";
 pub const SOCKET_ROOT: &str = r"\\.\pipe\containerd-containerd";
 
 /// Make socket path from containerd socket path, namespace and id.
+///
+/// On Unix the socket is placed in the `s` directory under [`SOCKET_ROOT`];
+/// [`StartOpts::socket_address`] honors the directory containerd requested instead.
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "Info"))]
 pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
+    let hash = socket_hash(socket_path, namespace, id);
+    #[cfg(unix)]
+    {
+        format!("unix://{SOCKET_ROOT}/s/{hash}")
+    }
+    #[cfg(windows)]
+    {
+        format!(r"\\.\pipe\containerd-shim-{hash}-pipe")
+    }
+}
+
+/// Make socket path from containerd socket path, namespace and id, placing the
+/// socket in `socket_dir`: the directory containerd requested through
+/// [`bootstrap::BootstrapParams::socket_dir`].
+#[cfg(unix)]
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "Info"))]
+fn socket_address_in(socket_dir: &str, socket_path: &str, namespace: &str, id: &str) -> String {
+    format!(
+        "unix://{}/{}",
+        socket_dir.trim_end_matches('/'),
+        socket_hash(socket_path, namespace, id)
+    )
+}
+
+/// Hex encoded sha256 of `<socket_path>/<namespace>/<id>`, the socket name containerd expects.
+fn socket_hash(socket_path: &str, namespace: &str, id: &str) -> String {
     let path = PathBuf::from(socket_path)
         .join(namespace)
         .join(id)
@@ -171,19 +226,12 @@ pub fn socket_address(socket_path: &str, namespace: &str, id: &str) -> String {
         hasher.finalize()
     };
     // Digests no longer implement `LowerHex` as of sha2 0.11, so encode by hand.
-    let hash = digest
+    digest
         .iter()
         .fold(String::with_capacity(digest.len() * 2), |mut hash, byte| {
             let _ = write!(hash, "{byte:02x}");
             hash
-        });
-    if cfg!(unix) {
-        format!("unix://{}/s/{}", SOCKET_ROOT, hash)
-    } else if cfg!(windows) {
-        format!(r"\\.\pipe\containerd-shim-{}-pipe", hash)
-    } else {
-        panic!("unsupported platform")
-    }
+        })
 }
 
 #[cfg(unix)]
@@ -262,6 +310,36 @@ mod tests {
                 "bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35",
                 "-pipe"
             )
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_socket_address_in() {
+        let hash = "0ddfbd72d02b3551e75f3a0ed90b9965b533401be618f43a568bc522764e0ad0";
+        assert_eq!(
+            crate::socket_address_in(
+                "/tmp/sockets/",
+                "/run/containerd/containerd.sock",
+                "default",
+                "123"
+            ),
+            format!("unix:///tmp/sockets/{hash}")
+        );
+
+        let mut opts = crate::StartOpts {
+            address: "/run/containerd/containerd.sock".to_string(),
+            namespace: "default".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            opts.socket_address("123"),
+            format!("unix://{}/s/{hash}", crate::SOCKET_ROOT)
+        );
+        opts.socket_dir = Some("/tmp/sockets".to_string());
+        assert_eq!(
+            opts.socket_address("123"),
+            format!("unix:///tmp/sockets/{hash}")
         );
     }
 
