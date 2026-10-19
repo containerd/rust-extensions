@@ -16,7 +16,6 @@
 
 use std::{
     env,
-    io::Read,
     os::unix::{fs::FileTypeExt, net::UnixListener},
     path::Path,
     process::{self, Command as StdCommand, Stdio},
@@ -56,8 +55,9 @@ const DEFAULT_BINARY_NAME: &str = "runc";
 use crate::{
     args,
     asynchronous::{monitor::monitor_notify_by_pid, publisher::RemotePublisher},
+    bootstrap::{encode_start_result, read_start_params, read_stdin},
     error::{Error, Result},
-    logger, parse_sockaddr, reap, socket_address,
+    logger, parse_sockaddr, reap,
     util::{asyncify, read_file_to_str, write_str_to_file},
     Config, Flags, StartOpts, TTRPC_ADDRESS,
 };
@@ -125,10 +125,7 @@ pub fn run_info() -> Result<RuntimeInfo> {
         ..Default::default()
     };
     let mut binary_name = DEFAULT_BINARY_NAME.to_string();
-    let mut data: Vec<u8> = Vec::new();
-    std::io::stdin()
-        .read_to_end(&mut data)
-        .map_err(io_error!(e, "read stdin"))?;
+    let data = read_stdin()?;
     // get BinaryName from stdin
     if !data.is_empty() {
         let opts =
@@ -168,7 +165,6 @@ where
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
 
-    let ttrpc_address = env::var(TTRPC_ADDRESS)?;
     // Create shim instance
     let mut config = opts.unwrap_or_default();
 
@@ -183,19 +179,13 @@ where
 
     match flags.action.as_str() {
         "start" => {
-            let args = StartOpts {
-                id: flags.id,
-                publish_binary: flags.publish_binary,
-                address: flags.address,
-                ttrpc_address,
-                namespace: flags.namespace,
-                debug: flags.debug,
-            };
+            let (args, protocol) = read_start_params(&flags)?;
 
             let address = shim.start_shim(args).await?;
+            let reply = encode_start_result(&address, protocol)?;
             let mut stdout = tokio::io::stdout();
             stdout
-                .write_all(address.as_bytes())
+                .write_all(&reply)
                 .await
                 .map_err(io_error!(e, "write stdout"))?;
             // containerd occasionally read an empty string without flushing the stdout
@@ -231,6 +221,7 @@ where
                 )?;
             }
 
+            let ttrpc_address = env::var(TTRPC_ADDRESS)?;
             let publisher = RemotePublisher::new(&ttrpc_address).await?;
             let task = Box::new(shim.create_task_service(publisher).await)
                 as Box<dyn containerd_shim_protos::shim_async::Task + Send + Sync>;
@@ -305,7 +296,7 @@ impl ExitSignal {
 pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> Result<String> {
     let cmd = env::current_exe().map_err(io_error!(e, ""))?;
     let cwd = env::current_dir().map_err(io_error!(e, ""))?;
-    let address = socket_address(&opts.address, &opts.namespace, grouping);
+    let address = opts.socket_address(grouping);
 
     // Activation pattern comes from the hcsshim: https://github.com/microsoft/hcsshim/blob/v0.10.0-rc.7/cmd/containerd-shim-runhcs-v1/serve.go#L57-L70
     // another way to do it would to create named pipe and pass it to the child process through handle inheritence but that would require duplicating
@@ -318,6 +309,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
         .stdout(Stdio::piped())
         .stdin(Stdio::null())
         .stderr(Stdio::null())
+        .envs(opts.server_env())
         .envs(vars)
         .args([
             "-namespace",
@@ -335,9 +327,7 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
     }
 
     let mut child = command.spawn().map_err(io_error!(e, "spawn shim"))?;
-
-    #[cfg(target_os = "linux")]
-    crate::cgroup::set_cgroup_and_oom_score(child.id().unwrap())?;
+    confine_shim(&opts, &mut child)?;
 
     let mut reader = child.stdout.take().unwrap();
     tokio::io::copy(&mut reader, &mut tokio::io::stderr())
@@ -345,6 +335,29 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
         .unwrap();
 
     Ok(address)
+}
+
+/// Puts the freshly spawned shim server in the cgroup the runtime options ask for
+/// and raises its OOM score, killing it on failure so a failed start leaves nothing behind.
+#[cfg(target_os = "linux")]
+fn confine_shim(opts: &StartOpts, child: &mut tokio::process::Child) -> Result<()> {
+    let confined = opts.extension::<Options>().and_then(|options| {
+        let shim_cgroup = options
+            .map(|options| options.shim_cgroup)
+            .unwrap_or_default();
+        crate::cgroup::set_cgroup_and_oom_score(child.id().unwrap_or_default(), &shim_cgroup)
+    });
+    if confined.is_err() {
+        child
+            .start_kill()
+            .unwrap_or_else(|e| warn!("failed to kill shim server: {}", e));
+    }
+    confined
+}
+
+#[cfg(not(target_os = "linux"))]
+fn confine_shim(_opts: &StartOpts, _child: &mut tokio::process::Child) -> Result<()> {
+    Ok(())
 }
 
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, level = "info"))]

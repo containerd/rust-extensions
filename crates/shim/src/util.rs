@@ -104,13 +104,16 @@ impl From<JsonOptions> for Options {
     }
 }
 
+/// Connects to the unix socket at `address`, given as a plain path or as a `unix://` URL.
 #[cfg(unix)]
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
     use std::os::fd::IntoRawFd;
 
     use nix::{sys::socket::*, unistd::close};
 
-    let unix_addr = UnixAddr::new(address.as_ref())?;
+    let path = address.as_ref();
+    let path = path.strip_prefix("unix://").unwrap_or(path);
+    let unix_addr = UnixAddr::new(path)?;
 
     // SOCK_CLOEXEC flag is Linux specific
     #[cfg(target_os = "linux")]
@@ -214,5 +217,21 @@ mod tests {
     fn test_timestamp() {
         let ts = timestamp().unwrap();
         assert!(ts.seconds > 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_connect_accepts_unix_url() {
+        use std::os::unix::net::UnixListener;
+
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("socket");
+        let _listener = UnixListener::bind(&path).unwrap();
+        let path = path.to_str().unwrap();
+
+        for address in [path.to_string(), format!("unix://{path}")] {
+            let fd = connect(&address).unwrap();
+            nix::unistd::close(fd).unwrap();
+        }
     }
 }

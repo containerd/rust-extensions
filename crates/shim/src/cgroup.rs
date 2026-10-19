@@ -19,7 +19,6 @@
 use std::{
     error::Error as StdError,
     fs,
-    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -30,10 +29,8 @@ use cgroups_rs::{
     },
     CgroupPid,
 };
-use containerd_shim_protos::{
-    cgroups::metrics::{CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle},
-    protobuf::{well_known_types::any::Any, Message},
-    shim::oci::Options,
+use containerd_shim_protos::cgroups::metrics::{
+    CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle,
 };
 use oci_spec::runtime::LinuxResources;
 
@@ -42,25 +39,16 @@ use crate::error::{Error, Result};
 // OOM_SCORE_ADJ_MAX is from https://github.com/torvalds/linux/blob/master/include/uapi/linux/oom.h#L10
 const OOM_SCORE_ADJ_MAX: i64 = 1000;
 
+/// Adds the shim process to `shim_cgroup` (the runtime option of the same name,
+/// when not empty) and sets its OOM score above its parent's.
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "Info"))]
-pub fn set_cgroup_and_oom_score(pid: u32) -> Result<()> {
+pub fn set_cgroup_and_oom_score(pid: u32, shim_cgroup: &str) -> Result<()> {
     if pid == 0 {
         return Ok(());
     }
 
-    // set cgroup
-    let mut data: Vec<u8> = Vec::new();
-    std::io::stdin()
-        .read_to_end(&mut data)
-        .map_err(io_error!(e, "read stdin"))?;
-
-    if !data.is_empty() {
-        let opts =
-            Any::parse_from_bytes(&data).and_then(|any| Options::parse_from_bytes(&any.value))?;
-
-        if !opts.shim_cgroup.is_empty() {
-            add_task_to_cgroup(opts.shim_cgroup.as_str(), pid)?;
-        }
+    if !shim_cgroup.is_empty() {
+        add_task_to_cgroup(shim_cgroup, pid)?;
     }
 
     // set oom score
