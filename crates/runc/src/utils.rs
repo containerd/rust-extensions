@@ -16,10 +16,13 @@
 
 use std::{
     env,
-    io::Write,
+    fs::{File, OpenOptions},
+    io::{self, Write},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use serde::Serialize;
 use tempfile::{Builder, NamedTempFile};
 
@@ -147,4 +150,41 @@ where
             }
         })
     })
+}
+
+/// Opens the FIFO at `path` for reading without waiting for a writer to show
+/// up, then makes reads on it block again, so that whoever is handed the file
+/// reads data as it comes and EOF once the writer is gone, not EAGAIN.
+pub(crate) fn open_fifo_for_reading(path: &str) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    let flags = OFlag::from_bits_retain(fcntl(&file, FcntlArg::F_GETFL)?);
+    fcntl(&file, FcntlArg::F_SETFL(flags - OFlag::O_NONBLOCK))?;
+    Ok(file)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use nix::{sys::stat::Mode, unistd::mkfifo};
+
+    use super::*;
+
+    // The open must not wait for a writer, and reads must then block rather
+    // than fail with EAGAIN: with no writer ever, a read sees EOF.
+    #[test]
+    fn fifo_opens_without_a_writer_and_reads_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stdin");
+        mkfifo(&path, Mode::S_IRWXU).unwrap();
+
+        let mut fifo = open_fifo_for_reading(path.to_str().unwrap()).unwrap();
+        let flags = OFlag::from_bits_retain(fcntl(&fifo, FcntlArg::F_GETFL).unwrap());
+        assert!(!flags.contains(OFlag::O_NONBLOCK));
+        let mut buf = [0u8; 8];
+        assert_eq!(fifo.read(&mut buf).unwrap(), 0);
+    }
 }

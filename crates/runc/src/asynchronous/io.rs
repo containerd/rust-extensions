@@ -21,7 +21,7 @@ use nix::unistd::{Gid, Uid};
 use tokio::fs::OpenOptions;
 
 pub use crate::Io;
-use crate::{Command, Pipe, PipedIo};
+use crate::{utils::open_fifo_for_reading, Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
 pub struct IOOption {
@@ -168,12 +168,7 @@ pub struct FIFO {
 impl Io for FIFO {
     async fn set(&self, cmd: &mut Command) -> Result<()> {
         if let Some(path) = self.stdin.as_ref() {
-            let stdin = OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(path)
-                .await?;
-            cmd.stdin(stdin.into_std().await);
+            cmd.stdin(open_fifo_for_reading(path)?);
         }
 
         if let Some(path) = self.stdout.as_ref() {
