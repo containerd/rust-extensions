@@ -148,7 +148,7 @@ pub fn check_kill_error(emsg: String) -> Error {
 }
 
 const DEFAULT_RUNC_ROOT: &str = "/run/containerd/runc";
-const DEFAULT_COMMAND: &str = "runc";
+pub(crate) const DEFAULT_COMMAND: &str = "runc";
 
 pub fn create_runc(
     runtime: &str,
