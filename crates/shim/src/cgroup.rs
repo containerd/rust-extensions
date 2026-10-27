@@ -418,6 +418,9 @@ mod tests {
                 .is_some_and(|source| source.kind() == std::io::ErrorKind::PermissionDenied)
     }
 
+    // The subject is a child process rather than the test harness itself, so
+    // that nothing the harness does meanwhile ends up in the cgroup and keeps
+    // it from being deleted afterwards.
     #[test]
     fn test_add_cgroup() {
         let path = "runc_shim_test_cgroup";
@@ -433,20 +436,31 @@ mod tests {
             Err(err) => panic!("failed to create cgroup for test: {err}"),
         };
 
-        let pid = std::process::id();
-        if let Err(err) = add_task_to_cgroup(path, pid) {
-            if crate::error::is_permission_error(&err) {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let added = add_task_to_cgroup(path, child.id());
+        let in_cgroup = cg.tasks().contains(&CgroupPid::from(child.id() as u64));
+        child.kill().unwrap();
+        child.wait().unwrap();
+        match added {
+            Ok(()) => assert!(in_cgroup),
+            Err(err) if crate::error::is_permission_error(&err) => {
+                let _ = cg.delete();
                 eprintln!("skipping test_add_cgroup: {err}");
                 return;
             }
-            panic!("failed to add task to cgroup for test: {err}");
+            Err(err) => panic!("failed to add task to cgroup for test: {err}"),
         }
-        let cg_id = CgroupPid::from(pid as u64);
-        assert!(cg.tasks().contains(&cg_id));
 
-        // remove cgroup as possible
-        cg.remove_task_by_tgid(cg_id).unwrap();
-        cg.delete().unwrap()
+        // The reaped child has left the cgroup, which can take a moment to show.
+        let mut attempts = 0;
+        while let Err(err) = cg.delete() {
+            assert!(attempts < 50, "failed to delete the test cgroup: {err}");
+            attempts += 1;
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     #[test]
