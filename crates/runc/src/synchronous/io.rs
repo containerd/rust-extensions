@@ -18,7 +18,6 @@ use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
     io::Result,
-    os::unix::fs::OpenOptionsExt,
     process::Stdio,
     sync::Mutex,
 };
@@ -26,7 +25,7 @@ use std::{
 use nix::unistd::{Gid, Uid};
 
 use super::Io;
-use crate::{Command, Pipe, PipedIo};
+use crate::{utils::open_fifo_for_reading, Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
 pub struct IOOption {
@@ -171,11 +170,7 @@ pub struct FIFO {
 impl Io for FIFO {
     fn set(&self, cmd: &mut Command) -> Result<()> {
         if let Some(path) = self.stdin.as_ref() {
-            let stdin = OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NONBLOCK)
-                .open(path)?;
-            cmd.stdin(stdin);
+            cmd.stdin(open_fifo_for_reading(path)?);
         }
 
         if let Some(path) = self.stdout.as_ref() {
