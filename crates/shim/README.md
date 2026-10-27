@@ -31,10 +31,13 @@ shim::run::<Service>("io.containerd.empty.v1")
 containerd 2.3 introduced a [bootstrap protocol](https://github.com/containerd/containerd/blob/main/docs/runtime-v2.md#bootstrap-protocol-23)
 for launching shims: the `start` action receives a `BootstrapParams` message on stdin and replies with a
 `BootstrapResult` on stdout. This crate speaks both the bootstrap protocol and the legacy mechanism
-(command line flags, environment variables and runtime options on stdin) used by older daemons, the same
-way containerd's `pkg/shim` does, so a shim built with it works with either. Whatever containerd sent is
+(command line flags, environment variables and runtime options on stdin) used by older daemons, as
+containerd's `pkg/shim` did through 2.3, so a shim built with it works with either. Whatever containerd sent is
 normalized into the `StartOpts` passed to `Shim::start_shim`, which also exposes the extensions containerd
 attached (for example the runtime options) through `StartOpts::extension`.
+
+Shims built with this crate serve the task v3 API (containerd 2.0's renamed copy of v2) and report that
+version in their `start` reply, so they need containerd 2.0 or later; containerd 1.7 only speaks v2.
 
 ## Look and feel
 
@@ -132,7 +135,7 @@ $ sudo cp ./target/debug/examples/skeleton /usr/local/bin/containerd-shim-skelet
 $ sudo ctr run --rm --runtime io.containerd.skeleton.v1 -t docker.io/library/hello-world:latest hello
 ```
 
-Or if on 1.6+
+Or by passing the binary as the runtime
 
 ```bash
 $ cargo build --example skeleton
@@ -152,7 +155,7 @@ $ sudo TTRPC_ADDRESS="/var/run/containerd/containerd.sock.ttrpc" \
     -address /var/run/containerd/containerd.sock \
     -publish-binary ./bin/containerd \
     start
-unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
+{"address":"unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock","protocol":"ttrpc","version":3}
 
 $ cargo build --example shim-proto-connect
 $ sudo ./target/debug/examples/shim-proto-connect unix:///var/run/containerd/eb8e7d1c48c2a1ec.sock
@@ -185,7 +188,7 @@ $ cat log
 $env:TTRPC_ADDRESS="\\.\pipe\containerd-containerd.ttrpc"
 
 $ cargo run --example skeleton -- -namespace default -id 1234 -address "\\.\pipe\containerd-containerd" start
-\\.\pipe\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe
+{"address":"\\\\.\\pipe\\containerd-shim-bc764c65e177434fcefe8257dc440be8b8acf7c96156320d965938f7e9ae1a35-pipe","protocol":"ttrpc","version":3}
 
 # (Optional) Run the log collector in a separate command window
 # note: log reader won't work if containerd is connected to the named pipe, this works when running manually to help debug locally

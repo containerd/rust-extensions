@@ -81,7 +81,7 @@ fn main() {
         "shim",
         &[
             "vendor/github.com/containerd/containerd/api/types/runc/options/oci.proto",
-            "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
+            "vendor/github.com/containerd/containerd/api/runtime/task/v3/shim.proto",
             "vendor/github.com/containerd/containerd/api/types/event.proto",
             "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
         ],
@@ -93,7 +93,7 @@ fn main() {
         genmodule(
             "shim_async",
             &[
-                "vendor/github.com/containerd/containerd/api/runtime/task/v2/shim.proto",
+                "vendor/github.com/containerd/containerd/api/runtime/task/v3/shim.proto",
                 "vendor/github.com/containerd/containerd/api/types/event.proto",
                 "vendor/github.com/containerd/containerd/api/services/ttrpc/events/v1/events.proto",
             ],

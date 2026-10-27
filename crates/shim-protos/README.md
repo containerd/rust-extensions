@@ -17,7 +17,8 @@ To learn how containerd's shim v2 runtime works in details, please refer to the 
 ## Design
 The `containerd-shim-protos` crate provides [Protobuf](https://github.com/protocolbuffers/protobuf.git) message
 and [TTRPC](https://github.com/containerd/ttrpc.git) service definitions for the
-[Containerd shim v2](https://github.com/containerd/containerd/blob/main/api/runtime/task/v2/shim.proto) protocol.
+[Containerd shim v2](https://github.com/containerd/containerd/blob/main/api/runtime/task/v3/shim.proto) protocol.
+The generated task service and client speak the task API v3 (`containerd.task.v3.Task`) of containerd 2.0 and later.
 
 The message and service definitions are auto-generated from protobuf source files under `vendor/`
 by using [ttrpc-codegen](https://github.com/containerd/ttrpc-rust/tree/master/ttrpc-codegen). So please do not
