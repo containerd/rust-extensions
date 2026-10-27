@@ -89,13 +89,15 @@ jobs:
       - run: ./scripts/install-protobuf.sh
         shell: bash
       - run: |
-          # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup
+          # runc-shim::cgroup::test_add_cgroup needs root permission to set cgroup.
+          # sudo resets the environment, so pass what rustup and the tests need explicitly.
           mkdir -p /tmp/dummy-xdr
-          sudo -E $(command -v cargo) test
-          sudo -E $(command -v cargo) test --all-features
+          as_root() { sudo env HOME="$HOME" PATH="$PATH" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$@"; }
+          as_root $(command -v cargo) test
+          as_root $(command -v cargo) test --all-features
 
           # the shim has sync code that is not covered when running with --all-features
-          sudo -E $(command -v cargo) test -p containerd-shim
+          as_root $(command -v cargo) test -p containerd-shim
         if: ${{ !contains(matrix.os, 'windows') }}
         env:
           # runc::tests::test_exec needs $XDG_RUNTIME_DIR to be set
@@ -185,7 +187,10 @@ jobs:
           # Pretend crun for now, remove after https://github.com/containerd/containerd/pull/9829
           RUNC_FLAVOR: "crun"
         run: |
-          sudo -E PATH=$PATH make integration
+          # sudo resets the environment, so pass the test settings explicitly.
+          sudo env HOME="$HOME" PATH="$PATH" TEST_RUNTIME="$TEST_RUNTIME" RUNC_FLAVOR="$RUNC_FLAVOR" \
+            EXTRA_TESTFLAGS="$EXTRA_TESTFLAGS" TESTFLAGS_PARALLEL="$TESTFLAGS_PARALLEL" TESTFLAGS_RACE="$TESTFLAGS_RACE" \
+            make integration
         working-directory: src/github.com/containerd/containerd
 
   windows-integration:

@@ -30,7 +30,9 @@ jobs:
           RUSTFLAGS: "-Cinstrument-coverage"
           LLVM_PROFILE_FILE: "target/coverage/%p-%m.profraw"
         run: |
-          sudo -E $(command -v cargo) test --all-features
+          # sudo resets the environment, so pass what rustup and the coverage run need explicitly.
+          sudo env HOME="$HOME" PATH="$PATH" RUSTFLAGS="$RUSTFLAGS" LLVM_PROFILE_FILE="$LLVM_PROFILE_FILE" \
+            $(command -v cargo) test --all-features
 
           # Fix permissions after sudo.
           sudo chown -R $(whoami) target/coverage/
