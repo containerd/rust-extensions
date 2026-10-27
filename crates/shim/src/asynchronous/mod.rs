@@ -18,7 +18,7 @@ use std::{
     env,
     os::unix::{fs::FileTypeExt, net::UnixListener},
     path::Path,
-    process::{self, Command as StdCommand, Stdio},
+    process::{self, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -29,11 +29,10 @@ use std::{
 use async_trait::async_trait;
 use containerd_shim_protos::{
     api::DeleteResponse,
-    protobuf::{well_known_types::any::Any, Message, MessageField},
-    shim::oci::Options,
+    protobuf::{well_known_types::any::Any, Message},
     shim_async::{create_task, Client, Task},
     ttrpc::r#async::Server,
-    types::introspection::{self, RuntimeInfo},
+    types::introspection::RuntimeInfo,
 };
 use futures::stream::{poll_fn, BoxStream, SelectAll, StreamExt};
 use libc::{SIGCHLD, SIGINT, SIGPIPE, SIGTERM};
@@ -46,16 +45,12 @@ use nix::{
     },
     unistd::Pid,
 };
-use oci_spec::runtime::Features;
 use tokio::{io::AsyncWriteExt, process::Command, sync::Notify};
-use which::which;
-
-const DEFAULT_BINARY_NAME: &str = "runc";
 
 use crate::{
     args,
     asynchronous::{monitor::monitor_notify_by_pid, publisher::RemotePublisher},
-    bootstrap::{encode_start_result, read_start_params, read_stdin},
+    bootstrap::{encode_start_result, read_info_options, read_start_params},
     error::{Error, Result},
     logger, parse_sockaddr, reap,
     util::{asyncify, read_file_to_str, write_str_to_file},
@@ -100,6 +95,18 @@ pub trait Shim {
 
     /// Create the task service object asynchronously.
     async fn create_task_service(&self, publisher: RemotePublisher) -> Self::T;
+
+    /// Describes the runtime to containerd, which asks with the `-info` action
+    /// before any shim instance exists. `options` carries the runtime options
+    /// containerd attached, if any. The default reports `runtime_id` alone,
+    /// without features, so containerd has nothing to validate container
+    /// specs against and accepts them all.
+    fn runtime_info(runtime_id: &str, _options: Option<&Any>) -> Result<RuntimeInfo> {
+        Ok(RuntimeInfo {
+            name: runtime_id.to_string(),
+            ..Default::default()
+        })
+    }
 }
 
 /// Async Shim entry point that must be invoked from tokio `main`.
@@ -113,49 +120,6 @@ where
         process::exit(1);
     }
 }
-/// get runtime info
-pub fn run_info() -> Result<RuntimeInfo> {
-    let mut info = introspection::RuntimeInfo {
-        name: "containerd-shim-runc-v2-rs".to_string(),
-        version: MessageField::some(introspection::RuntimeVersion {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            revision: String::default(),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let mut binary_name = DEFAULT_BINARY_NAME.to_string();
-    let data = read_stdin()?;
-    // get BinaryName from stdin
-    if !data.is_empty() {
-        let opts =
-            Any::parse_from_bytes(&data).and_then(|any| Options::parse_from_bytes(&any.value))?;
-        if !opts.binary_name().is_empty() {
-            binary_name = opts.binary_name().to_string();
-        }
-    }
-    let binary_path = which(binary_name).unwrap();
-
-    // get features
-    let output = StdCommand::new(binary_path)
-        .arg("features")
-        .output()
-        .unwrap();
-
-    let features: Features = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))?;
-
-    // set features
-    let features_any = Any {
-        type_url: "types.containerd.io/opencontainers/runtime-spec/1/features/Features".to_string(),
-        // features to json
-        value: serde_json::to_vec(&features)?,
-        ..Default::default()
-    };
-    info.features = MessageField::some(features_any);
-
-    Ok(info)
-}
-
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 async fn bootstrap<T>(runtime_id: &str, opts: Option<Config>) -> Result<()>
 where
@@ -164,6 +128,20 @@ where
     // Parse command line
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
+
+    if flags.info {
+        let info = T::runtime_info(runtime_id, read_info_options()?.as_ref())?;
+        let mut stdout = tokio::io::stdout();
+        stdout
+            .write_all(&info.write_to_bytes()?)
+            .await
+            .map_err(io_error!(e, "write runtime info"))?;
+        stdout
+            .flush()
+            .await
+            .map_err(io_error!(e, "flush runtime info"))?;
+        return Ok(());
+    }
 
     // Create shim instance
     let mut config = opts.unwrap_or_default();
@@ -341,6 +319,8 @@ pub async fn spawn(opts: StartOpts, grouping: &str, vars: Vec<(&str, &str)>) -> 
 /// and raises its OOM score, killing it on failure so a failed start leaves nothing behind.
 #[cfg(target_os = "linux")]
 fn confine_shim(opts: &StartOpts, child: &mut tokio::process::Child) -> Result<()> {
+    use containerd_shim_protos::shim::oci::Options;
+
     let confined = opts.extension::<Options>().and_then(|options| {
         let shim_cgroup = options
             .map(|options| options.shim_cgroup)

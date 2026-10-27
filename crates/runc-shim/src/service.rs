@@ -28,7 +28,12 @@ use containerd_shim::{
     io_error,
     monitor::{Subject, Topic},
     mount::umount_recursive,
-    protos::{events::task::TaskExit, protobuf::MessageDyn, ttrpc::context::with_duration},
+    protos::{
+        events::task::TaskExit,
+        protobuf::{well_known_types::any::Any, MessageDyn},
+        ttrpc::context::with_duration,
+        types::introspection::RuntimeInfo,
+    },
     util::{
         convert_to_timestamp, read_options, read_pid_from_file, read_runtime, read_spec, timestamp,
         write_str_to_file,
@@ -40,6 +45,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::{
     common::{create_runc, has_shared_pid_namespace, ShimExecutor, GROUP_LABELS, INIT_PID_FILE},
+    info,
     processes::Process,
     task::TaskService,
 };
@@ -62,6 +68,13 @@ impl Shim for Service {
             id: args.id.to_string(),
             namespace: args.namespace.to_string(),
         }
+    }
+
+    fn runtime_info(
+        runtime_id: &str,
+        options: Option<&Any>,
+    ) -> containerd_shim::Result<RuntimeInfo> {
+        info::runtime_info(runtime_id, options)
     }
 
     async fn start_shim(&mut self, opts: StartOpts) -> containerd_shim::Result<String> {

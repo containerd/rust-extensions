@@ -63,12 +63,13 @@ use util::{read_address, write_address};
 use crate::{
     api::DeleteResponse,
     args::{self, Flags},
-    bootstrap::{encode_start_result, read_start_params},
+    bootstrap::{encode_start_result, read_info_options, read_start_params},
     logger,
     protos::{
-        protobuf::Message,
+        protobuf::{well_known_types::any::Any, Message},
         shim::shim_ttrpc::{create_task, Task},
         ttrpc::{Client, Server},
+        types::introspection::RuntimeInfo,
     },
     reap, start_listener,
     synchronous::publisher::RemotePublisher,
@@ -179,6 +180,18 @@ pub trait Shim {
 
     /// Create the task service object.
     fn create_task_service(&self, publisher: RemotePublisher) -> Self::T;
+
+    /// Describes the runtime to containerd, which asks with the `-info` action
+    /// before any shim instance exists. `options` carries the runtime options
+    /// containerd attached, if any. The default reports `runtime_id` alone,
+    /// without features, so containerd has nothing to validate container
+    /// specs against and accepts them all.
+    fn runtime_info(runtime_id: &str, _options: Option<&Any>) -> Result<RuntimeInfo> {
+        Ok(RuntimeInfo {
+            name: runtime_id.to_string(),
+            ..Default::default()
+        })
+    }
 }
 
 /// Shim entry point that must be invoked from `main`.
@@ -201,6 +214,16 @@ where
     // Parse command line
     let os_args: Vec<_> = env::args_os().collect();
     let flags = args::parse(&os_args[1..])?;
+
+    if flags.info {
+        let info = T::runtime_info(runtime_id, read_info_options()?.as_ref())?;
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(&info.write_to_bytes()?)
+            .map_err(io_error!(e, "write runtime info"))?;
+        stdout.flush().map_err(io_error!(e, "flush runtime info"))?;
+        return Ok(());
+    }
 
     if flags.namespace.is_empty() {
         return Err(Error::InvalidArgument(String::from(

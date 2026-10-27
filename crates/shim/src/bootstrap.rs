@@ -190,6 +190,16 @@ fn legacy_params(input: &[u8], flags: &Flags, env: LegacyEnv) -> BootstrapParams
     params
 }
 
+/// Reads the runtime options containerd passes to the `-info` action on stdin,
+/// if it passed any.
+pub(crate) fn read_info_options() -> Result<Option<Any>> {
+    let input = read_stdin()?;
+    if input.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Any::parse_from_bytes(&input)?))
+}
+
 /// Encodes the reply to the `start` action in the format `protocol` expects.
 pub(crate) fn encode_start_result(address: &str, protocol: Protocol) -> Result<Vec<u8>> {
     match protocol {

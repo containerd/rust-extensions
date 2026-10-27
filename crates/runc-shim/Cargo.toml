@@ -35,6 +35,7 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 time = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["v4"] }
+which = { version = "8.0.0", default-features = false, features = ["real-sys"] }
 # Async dependencies
 async-trait.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "net", "time", "signal"] }
