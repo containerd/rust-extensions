@@ -153,17 +153,7 @@ pub fn collect_metrics(cgroup: &Cgroup) -> Result<Metrics> {
             Subsystem::Pid(pid_ctr) => {
                 // ignore cgroup NotFound error
                 let ignore_err = |cr: CgResult<u64>| -> CgResult<u64> {
-                    cr.or_else(|e| {
-                        if e.source()
-                            .and_then(<dyn StdError>::downcast_ref::<std::io::Error>)
-                            .map(std::io::Error::kind)
-                            == Some(std::io::ErrorKind::NotFound)
-                        {
-                            Ok(0)
-                        } else {
-                            Err(e)
-                        }
-                    })
+                    cr.or_else(|e| if is_not_found(&e) { Ok(0) } else { Err(e) })
                 };
 
                 let mut pid_stats = PidsStat::new();
@@ -234,6 +224,30 @@ fn parse_cgroups_v2_path(content: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(format!("/sys/fs/cgroup/{}", path)))
 }
 
+/// Whether a cgroup operation failed because the file is not there.
+fn is_not_found(err: &cgroups_rs::fs::error::Error) -> bool {
+    err.source()
+        .and_then(<dyn StdError>::downcast_ref::<std::io::Error>)
+        .is_some_and(|source| source.kind() == std::io::ErrorKind::NotFound)
+}
+
+/// Converts an OCI swap limit, which counts memory plus swap, into what cgroup
+/// v2's `memory.swap.max` takes, which is swap alone, the way runc does. `None`
+/// means the limit is unset and nothing should be written.
+fn swap_for_v2(swap: i64, limit: Option<i64>) -> Result<Option<i64>> {
+    match (swap, limit.unwrap_or(0)) {
+        (0, -1) => Ok(Some(-1)),
+        (0, _) => Ok(None),
+        (-1, _) | (_, -1) => Ok(Some(swap)),
+        (_, 0) => Err(other!("unable to set swap limit without memory limit")),
+        (_, limit) if limit < 0 => Err(other!("invalid memory limit {limit}")),
+        (_, limit) if swap < limit => Err(other!(
+            "memory+swap limit {swap} should be >= memory limit {limit}"
+        )),
+        (_, limit) => Ok(Some(swap - limit)),
+    }
+}
+
 /// Update process cgroup limits
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info"))]
 pub fn update_resources(cgroup: &Cgroup, resources: &LinuxResources) -> Result<()> {
@@ -249,33 +263,58 @@ pub fn update_resources(cgroup: &Cgroup, resources: &LinuxResources) -> Result<(
             }
             Subsystem::Mem(mem_ctr) => {
                 if let Some(memory) = resources.memory() {
-                    //if swap and limit setting have
-                    if let (Some(limit), Some(swap)) = (memory.limit(), memory.swap()) {
-                        //get current memory_limit
-                        let current = mem_ctr.memory_stat().limit_in_bytes;
-                        // if the updated swap value is larger than the current memory limit set the swap changes first
-                        // then set the memory limit as swap must always be larger than the current limit
-                        if current < swap {
-                            mem_ctr
-                                .set_memswap_limit(swap)
-                                .map_err(other_error!("set memsw limit"))?;
+                    // As in runc, a zero limit means unset.
+                    let limit = memory.limit().filter(|&limit| limit != 0);
+                    let swap = if cgroup.v2() {
+                        // An omitted swap limit is unset too, so that an unlimited memory
+                        // limit lifts the swap limit along with it. A swap limit sent
+                        // without a memory limit is converted against the one in place.
+                        let swap = memory.swap().unwrap_or(0);
+                        let limit = match limit {
+                            None if swap > 0 => Some(mem_ctr.memory_stat().limit_in_bytes),
+                            limit => limit,
+                        };
+                        swap_for_v2(swap, limit)?
+                    } else {
+                        memory.swap().filter(|&swap| swap != 0)
+                    };
+                    let set_limit = || -> Result<()> {
+                        if let Some(limit) = limit {
                             mem_ctr
                                 .set_limit(limit)
                                 .map_err(other_error!("set mem limit"))?;
                         }
-                    }
-                    // set memory limit in bytes
-                    if let Some(limit) = memory.limit() {
-                        mem_ctr
-                            .set_limit(limit)
-                            .map_err(other_error!("set mem limit"))?;
-                    }
-
-                    // set memory swap limit in bytes
-                    if let Some(swap) = memory.swap() {
-                        mem_ctr
-                            .set_memswap_limit(swap)
-                            .map_err(other_error!("set memsw limit"))?;
+                        Ok(())
+                    };
+                    let set_swap = || -> Result<()> {
+                        if let Some(swap) = swap {
+                            let written = mem_ctr.set_memswap_limit(swap);
+                            // A host without swap accounting has no memory.swap.max. Like
+                            // runc, accept that when the request amounts to no swap at all
+                            // or to no limit on it.
+                            if cgroup.v2()
+                                && matches!(swap, 0 | -1)
+                                && written.as_ref().is_err_and(is_not_found)
+                            {
+                                return Ok(());
+                            }
+                            written.map_err(other_error!("set memsw limit"))?;
+                        }
+                        Ok(())
+                    };
+                    // The order matters. On cgroup v2 swap goes first, as in runc, so that
+                    // a tighter memory limit can reclaim into it instead of killing. On v1
+                    // the memsw limit must stay above the memory limit, so it goes first
+                    // only when it is being raised along with the memory limit.
+                    let swap_first = cgroup.v2()
+                        || matches!((limit, swap), (Some(_), Some(swap))
+                            if swap == -1 || mem_ctr.memory_stat().limit_in_bytes < swap);
+                    if swap_first {
+                        set_swap()?;
+                        set_limit()?;
+                    } else {
+                        set_limit()?;
+                        set_swap()?;
                     }
                 }
             }
@@ -345,10 +384,31 @@ mod tests {
         CgroupPid,
     };
 
-    use super::parse_cgroups_v2_path;
+    use super::{parse_cgroups_v2_path, swap_for_v2};
     use crate::cgroup::{
         add_task_to_cgroup, adjust_oom_score, read_process_oom_score, OOM_SCORE_ADJ_MAX,
     };
+
+    // Same table as runc's ConvertMemorySwapToCgroupV2Value.
+    #[test]
+    fn swap_for_v2_takes_swap_alone() {
+        const MB: i64 = 1 << 20;
+        assert_eq!(swap_for_v2(0, Some(128 * MB)).unwrap(), None);
+        assert_eq!(swap_for_v2(0, None).unwrap(), None);
+        assert_eq!(swap_for_v2(0, Some(-1)).unwrap(), Some(-1));
+        assert_eq!(swap_for_v2(-1, Some(128 * MB)).unwrap(), Some(-1));
+        assert_eq!(swap_for_v2(-1, None).unwrap(), Some(-1));
+        assert_eq!(swap_for_v2(-1, Some(-1)).unwrap(), Some(-1));
+        assert_eq!(swap_for_v2(256 * MB, Some(-1)).unwrap(), Some(256 * MB));
+        assert_eq!(
+            swap_for_v2(256 * MB, Some(128 * MB)).unwrap(),
+            Some(128 * MB)
+        );
+        assert_eq!(swap_for_v2(256 * MB, Some(256 * MB)).unwrap(), Some(0));
+        assert!(swap_for_v2(256 * MB, None).is_err());
+        assert!(swap_for_v2(128 * MB, Some(256 * MB)).is_err());
+        assert!(swap_for_v2(128 * MB, Some(-2)).is_err());
+    }
 
     fn is_cgroup_permission_error(err: &cgroups_rs::fs::error::Error) -> bool {
         *err.kind() == ErrorKind::FsError
