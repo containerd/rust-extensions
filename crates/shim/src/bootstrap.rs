@@ -19,8 +19,8 @@
 //! Starting with containerd 2.3 the `start` action receives a protobuf encoded
 //! [`BootstrapParams`] message on stdin and must reply with a [`BootstrapResult`]
 //! on stdout. Older daemons pass the same information through command line flags,
-//! environment variables and (optionally) the runtime options on stdin, and expect
-//! the shim address as a plain string on stdout.
+//! environment variables and (optionally) the runtime options on stdin, and read
+//! the reply as a plain address or as JSON carrying the task API version.
 //!
 //! This module detects which protocol containerd used and normalizes both into
 //! [`BootstrapParams`], mirroring the compatibility layer in containerd's `pkg/shim`.
@@ -34,8 +34,9 @@ use std::{
 pub use containerd_shim_protos::bootstrap_api::{
     BootstrapParams, BootstrapResult, Extension, LogLevel,
 };
-use containerd_shim_protos::protobuf::{
-    well_known_types::any::Any, Enum, EnumOrUnknown, Message, MessageFull,
+use containerd_shim_protos::{
+    protobuf::{well_known_types::any::Any, Enum, EnumOrUnknown, Message, MessageFull},
+    TASK_API_VERSION,
 };
 
 use crate::{
@@ -43,9 +44,6 @@ use crate::{
     error::{Error, Result},
     StartOpts, TTRPC_ADDRESS,
 };
-
-/// Shim API version reported to containerd: this crate serves the task v2 API.
-const SHIM_VERSION: i32 = 2;
 
 /// Protocol the shim serves its task API over.
 const SHIM_PROTOCOL: &str = "ttrpc";
@@ -60,8 +58,8 @@ const GRPC_ADDRESS: &str = "GRPC_ADDRESS";
 pub(crate) enum Protocol {
     /// containerd 2.3+: [`BootstrapParams`] on stdin, [`BootstrapResult`] on stdout.
     Bootstrap,
-    /// containerd up to 2.2: flags, environment and runtime options on stdin,
-    /// the shim address as a plain string on stdout.
+    /// containerd 2.0 to 2.2: flags, environment and runtime options on stdin,
+    /// a JSON reply on stdout. A bare address would be taken for a v2 shim.
     Legacy,
 }
 
@@ -193,10 +191,14 @@ fn legacy_params(input: &[u8], flags: &Flags, env: LegacyEnv) -> BootstrapParams
 /// Encodes the reply to the `start` action in the format `protocol` expects.
 pub(crate) fn encode_start_result(address: &str, protocol: Protocol) -> Result<Vec<u8>> {
     match protocol {
-        Protocol::Legacy => Ok(address.as_bytes().to_vec()),
+        Protocol::Legacy => Ok(serde_json::to_vec(&serde_json::json!({
+            "version": TASK_API_VERSION,
+            "address": address,
+            "protocol": SHIM_PROTOCOL,
+        }))?),
         Protocol::Bootstrap => {
             let result = BootstrapResult {
-                version: SHIM_VERSION,
+                version: TASK_API_VERSION,
                 address: address.to_string(),
                 protocol: SHIM_PROTOCOL.to_string(),
                 ..Default::default()
@@ -553,9 +555,17 @@ mod tests {
     }
 
     #[test]
-    fn legacy_reply_is_the_plain_address() {
+    fn legacy_reply_is_json_with_the_version() {
         let reply = encode_start_result("unix:///run/containerd/s/abc", Protocol::Legacy).unwrap();
-        assert_eq!(reply, b"unix:///run/containerd/s/abc");
+        let result: serde_json::Value = serde_json::from_slice(&reply).unwrap();
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "version": 3,
+                "address": "unix:///run/containerd/s/abc",
+                "protocol": "ttrpc",
+            })
+        );
     }
 
     #[test]
@@ -564,7 +574,7 @@ mod tests {
             encode_start_result("unix:///run/containerd/s/abc", Protocol::Bootstrap).unwrap();
 
         let result = BootstrapResult::parse_from_bytes(&reply).unwrap();
-        assert_eq!(result.version, 2);
+        assert_eq!(result.version, 3);
         assert_eq!(result.address, "unix:///run/containerd/s/abc");
         assert_eq!(result.protocol, "ttrpc");
     }

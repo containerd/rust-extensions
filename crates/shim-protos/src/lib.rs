@@ -33,6 +33,11 @@ pub mod windows;
 /// Includes event names shims can publish to containerd.
 pub mod topics;
 
+/// Version of the task API the generated service and client speak:
+/// `containerd.task.v3.Task`, which containerd 2.0 introduced as a renamed
+/// copy of v2. A shim announces it in its reply to `start`.
+pub const TASK_API_VERSION: i32 = 3;
+
 pub mod shim_sync {
     /// TTRPC client reexport for easier access.
     pub use ttrpc::Client;

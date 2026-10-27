@@ -11,7 +11,7 @@ use std::{
 use containerd_shim_protos::{
     api::{CreateTaskRequest, CreateTaskResponse, DeleteRequest},
     shim::shim_ttrpc::create_task,
-    Task,
+    Task, TASK_API_VERSION,
 };
 use protobuf::{CodedInputStream, CodedOutputStream, Message};
 use ttrpc::{Code, MessageHeader, Request, Response, TtrpcContext};
@@ -91,14 +91,16 @@ fn test_create_task() {
 
     let (ctx, rx) = create_ttrpc_context();
     let mut request = Request::new();
-    request.set_service("containerd.task.v2.Task".to_owned());
+    request.set_service(format!("containerd.task.v{TASK_API_VERSION}.Task"));
     request.set_method("Create".to_owned());
     request.set_payload(buf);
     request.set_timeout_nano(10000);
     request.set_metadata(ttrpc::context::to_pb(ctx.metadata.clone()));
 
     let task = create_task(Arc::new(FakeServer::new()));
-    let create = task.get("/containerd.task.v2.Task/Create").unwrap();
+    let create = task
+        .get(&format!("/containerd.task.v{TASK_API_VERSION}.Task/Create"))
+        .unwrap();
     create.handler(ctx, request).unwrap();
 
     let (header, msg) = rx.recv().unwrap();
@@ -132,14 +134,16 @@ fn test_delete_task() {
 
     let (ctx, rx) = create_ttrpc_context();
     let mut request = Request::new();
-    request.set_service("containerd.task.v2.Task".to_owned());
+    request.set_service(format!("containerd.task.v{TASK_API_VERSION}.Task"));
     request.set_method("Delete".to_owned());
     request.set_payload(buf);
     request.set_timeout_nano(10000);
     request.set_metadata(ttrpc::context::to_pb(ctx.metadata.clone()));
 
     let task = create_task(Arc::new(FakeServer::new()));
-    let delete = task.get("/containerd.task.v2.Task/Delete").unwrap();
+    let delete = task
+        .get(&format!("/containerd.task.v{TASK_API_VERSION}.Task/Delete"))
+        .unwrap();
     delete.handler(ctx, request).unwrap();
 
     let (header, msg) = rx.recv().unwrap();

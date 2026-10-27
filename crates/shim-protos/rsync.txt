@@ -5,4 +5,4 @@
 /api/types/runc/options/oci.proto
 /api/runtime/bootstrap/v1/bootstrap.proto
 /api/runtime/sandbox/v1/sandbox.proto
-/api/runtime/task/v2/shim.proto
+/api/runtime/task/v3/shim.proto
