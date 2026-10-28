@@ -18,7 +18,7 @@ use std::{fmt::Debug, process::ExitStatus};
 
 use async_trait::async_trait;
 
-use crate::{error::Error, Command, Result};
+use crate::{error::Error, utils::output_to_string, Command, Result};
 
 #[async_trait]
 pub trait Spawner: Debug {
@@ -39,8 +39,8 @@ impl Spawner for DefaultExecutor {
             .await
             .map_err(Error::InvalidCommand)?;
         let status = result.status;
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        let stdout = output_to_string(result.stdout);
+        let stderr = output_to_string(result.stderr);
         Ok((status, pid, stdout, stderr))
     }
 }

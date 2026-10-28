@@ -40,6 +40,7 @@
 #[cfg(all(not(feature = "async"), target_os = "linux"))]
 use std::os::unix::process::CommandExt;
 use std::{
+    ffi::OsStr,
     fmt::{self, Debug, Display},
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
@@ -186,9 +187,9 @@ impl Runc {
     ///
     /// The whole execution path lives here, so it applies to every [Spawner],
     /// including custom ones installed via [options::GlobalOpts::custom_spawner].
-    $($maybe_async)? fn launch_io(
+    $($maybe_async)? fn launch_io<S: AsRef<OsStr> + Sync>(
         &self,
-        args: &[String],
+        args: &[S],
         output: Output,
         io: Option<&dyn Io>,
         close: CloseIo,
@@ -202,7 +203,7 @@ impl Runc {
 
         // NOTIFY_SOCKET introduces a special behavior in runc but should only be set
         // if invoked from systemd.
-        cmd.args([&self.args, args].concat())
+        cmd.args(&self.args).args(args)
             .env_remove("NOTIFY_SOCKET");
 
         // Only registered when the knob is actually set: any `pre_exec` costs the
@@ -237,7 +238,7 @@ impl Runc {
     }
 
     /// [Self::launch_io] for the commands that attach no Io driver.
-    $($maybe_async)? fn launch(&self, args: &[String], output: Output) -> Result<Response> {
+    $($maybe_async)? fn launch<S: AsRef<OsStr> + Sync>(&self, args: &[S], output: Output) -> Result<Response> {
         maybe_await!(self.launch_io(args, output, None, CloseIo::Keep))
     }
 
@@ -350,14 +351,14 @@ impl Runc {
 
     /// List all containers associated with this runc instance
     pub $($maybe_async)? fn list(&self) -> Result<Vec<Container>> {
-        let args = ["list".to_string(), "--format=json".to_string()];
+        let args = ["list", "--format=json"];
         let res = maybe_await!(self.launch(&args, Output::Stdout))?;
         parse_json_list(&res.output)
     }
 
     /// Pause a container
     pub $($maybe_async)? fn pause(&self, id: &str) -> Result<()> {
-        let args = ["pause".to_string(), id.to_string()];
+        let args = ["pause", id];
         maybe_await!(self.launch(&args, Output::Combined))?;
         Ok(())
     }
@@ -365,9 +366,9 @@ impl Runc {
     /// List all the processes inside the container, returning their pids
     pub $($maybe_async)? fn ps(&self, id: &str) -> Result<Vec<usize>> {
         let args = [
-            "ps".to_string(),
-            "--format=json".to_string(),
-            id.to_string(),
+            "ps",
+            "--format=json",
+            id,
         ];
         let res = maybe_await!(self.launch(&args, Output::Stdout))?;
         parse_json_list(&res.output)
@@ -375,27 +376,27 @@ impl Runc {
 
     /// Resume a container
     pub $($maybe_async)? fn resume(&self, id: &str) -> Result<()> {
-        let args = ["resume".to_string(), id.to_string()];
+        let args = ["resume", id];
         maybe_await!(self.launch(&args, Output::Combined))?;
         Ok(())
     }
 
     /// Start an already created container
     pub $($maybe_async)? fn start(&self, id: &str) -> Result<Response> {
-        let args = ["start".to_string(), id.to_string()];
+        let args = ["start", id];
         maybe_await!(self.launch(&args, Output::Combined))
     }
 
     /// Return the state of a container
     pub $($maybe_async)? fn state(&self, id: &str) -> Result<Container> {
-        let args = ["state".to_string(), id.to_string()];
+        let args = ["state", id];
         let res = maybe_await!(self.launch(&args, Output::Stdout))?;
         Ok(serde_json::from_str(res.output.trim())?)
     }
 
     /// Return the latest statistics for a container
     pub $($maybe_async)? fn stats(&self, id: &str) -> Result<events::Stats> {
-        let args = ["events".to_string(), "--stats".to_string(), id.to_string()];
+        let args = ["events", "--stats", id];
         let res = maybe_await!(self.launch(&args, Output::Stdout))?;
         let event: events::Event = serde_json::from_str(res.output.trim())?;
         event.stats.ok_or(Error::MissingContainerStats)
@@ -405,10 +406,10 @@ impl Runc {
     pub $($maybe_async)? fn update(&self, id: &str, resources: &LinuxResources) -> Result<()> {
         let (_spec_file, path) = write_value_to_temp_file(resources)?;
         let args = [
-            "update".to_string(),
-            "--resources".to_string(),
-            path,
-            id.to_string(),
+            "update",
+            "--resources",
+            path.as_str(),
+            id,
         ];
         maybe_await!(self.launch(&args, Output::Combined))?;
         Ok(())
@@ -530,6 +531,13 @@ mod tests {
                 assert!(res.status.success());
 
                 assert_command_failed(maybe_await!(fail_client().start("fake-id")));
+            }
+
+            #[$test]
+            $($maybe_async)? fn test_argument_order() {
+                let res = maybe_await!(echo_client().start("id with spaces"))
+                    .expect("/bin/echo failed");
+                assert_eq!(res.output, "--log-format text start id with spaces\n");
             }
 
             #[$test]

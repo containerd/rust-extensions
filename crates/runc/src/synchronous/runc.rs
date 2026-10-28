@@ -16,7 +16,7 @@
 
 use std::{fmt::Debug, process::ExitStatus};
 
-use crate::{error::Error, Command, Result};
+use crate::{error::Error, utils::output_to_string, Command, Result};
 
 pub trait Spawner: Debug {
     fn execute(&self, cmd: Command) -> Result<(ExitStatus, u32, String, String)>;
@@ -32,8 +32,8 @@ impl Spawner for DefaultExecutor {
         let pid = child.id();
         let result = child.wait_with_output().map_err(Error::InvalidCommand)?;
         let status = result.status;
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        let stdout = output_to_string(result.stdout);
+        let stderr = output_to_string(result.stderr);
         Ok((status, pid, stdout, stderr))
     }
 }

@@ -24,7 +24,7 @@ use tokio::{
     sync::oneshot::{channel, Receiver, Sender},
 };
 
-use crate::error::Error;
+use crate::{error::Error, utils::output_to_string};
 
 /// A trait for spawning and waiting for a process.
 ///
@@ -119,8 +119,8 @@ pub async fn execute<T: ProcessMonitor + Send + Sync>(
         },
         exit,
     ) = tokio::try_join!(start, wait).map_err(Error::InvalidCommand)?;
-    let stdout = String::from_utf8_lossy(&stdout).to_string();
-    let stderr = String::from_utf8_lossy(&stderr).to_string();
+    let stdout = output_to_string(stdout);
+    let stderr = output_to_string(stderr);
 
     Ok(ExecuteResult {
         exit,

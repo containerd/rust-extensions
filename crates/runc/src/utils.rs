@@ -28,13 +28,19 @@ use tempfile::{Builder, NamedTempFile};
 
 use crate::error::Error;
 
+/// Reuse the captured buffer for UTF-8 output, allocating only to repair invalid bytes.
+pub(crate) fn output_to_string(output: Vec<u8>) -> String {
+    String::from_utf8(output)
+        .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned())
+}
+
 // helper to resolve path (such as path for runc binary, pid files, etc. )
 pub fn abs_path_buf<P>(path: P) -> Result<PathBuf, Error>
 where
     P: AsRef<Path>,
 {
     let abs = std::path::absolute(path).map_err(Error::InvalidPath)?;
-    let mut normalized = PathBuf::new();
+    let mut normalized = PathBuf::with_capacity(abs.as_os_str().len());
     for component in abs.components() {
         match component {
             std::path::Component::ParentDir => {
@@ -63,7 +69,15 @@ pub fn abs_string<P>(path: P) -> Result<String, Error>
 where
     P: AsRef<Path>,
 {
-    path_to_string(abs_path_buf(path)?)
+    abs_path_buf(path)?
+        .into_os_string()
+        .into_string()
+        .map_err(|path| {
+            Error::InvalidPath(std::io::Error::other(format!(
+                "invalid UTF-8 string: {}",
+                path.to_string_lossy()
+            )))
+        })
 }
 
 /// Returns a temp dir. If the environment variable "XDG_RUNTIME_DIR" is set, return its value.
@@ -172,6 +186,23 @@ mod tests {
     use nix::{sys::stat::Mode, unistd::mkfifo};
 
     use super::*;
+
+    #[test]
+    fn output_conversion_reuses_valid_utf8_buffer() {
+        let bytes = "runc output: \u{2713}".as_bytes().to_vec();
+        let ptr = bytes.as_ptr();
+        let output = output_to_string(bytes);
+        assert_eq!(output, "runc output: \u{2713}");
+        assert_eq!(output.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn output_conversion_preserves_lossy_decoding() {
+        for bytes in [vec![], vec![0xff, b'a', 0xe2, 0x82], vec![0, b'a']] {
+            let expected = String::from_utf8_lossy(&bytes).into_owned();
+            assert_eq!(output_to_string(bytes), expected);
+        }
+    }
 
     // The open must not wait for a writer, and reads must then block rather
     // than fail with EAGAIN: with no writer ever, a read sees EOF.
