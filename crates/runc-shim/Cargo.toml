@@ -25,12 +25,12 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-containerd-shim = { path = "../shim", version = "0.11.0", features = ["async"] }
+containerd-shim = { path = "../shim", version = "0.12.0", features = ["async"] }
 libc.workspace = true
 log.workspace = true
 nix = { workspace = true, features = ["socket", "uio", "term", "signal"] }
 oci-spec = { workspace = true, features = ["runtime"] }
-runc = { path = "../runc", version = "0.3.0", features = ["async"] }
+runc = { path = "../runc", version = "0.4.0", features = ["async"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 time = { workspace = true, features = ["std"] }

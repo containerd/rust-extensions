@@ -34,7 +34,7 @@ Add `containerd-shim-protos` as a dependency in your `Cargo.toml`
 
 ```toml
 [dependencies]
-containerd-shim-protos = "0.11"
+containerd-shim-protos = "0.12"
 ```
 
 Basic client code looks as follows:
