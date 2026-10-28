@@ -22,7 +22,6 @@ use containerd_shim::{
     io::{IoTasks, Stdio},
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
-        cgroups::metrics::Metrics,
         protobuf::{well_known_types::any::Any, EnumOrUnknown, Message, MessageDyn},
         shim::oci::ProcessDetails,
     },
@@ -181,12 +180,12 @@ impl Container {
     }
 
     #[cfg(target_os = "linux")]
-    pub async fn stats(&self) -> Result<Metrics> {
+    pub async fn stats(&self) -> Result<Box<dyn MessageDyn>> {
         self.init.stats().await
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub async fn stats(&self) -> Result<Metrics> {
+    pub async fn stats(&self) -> Result<Box<dyn MessageDyn>> {
         Err(Error::Unimplemented("stats".to_string()))
     }
 

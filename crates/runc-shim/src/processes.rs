@@ -21,8 +21,7 @@ use containerd_shim::{
     io::{IoTasks, Pty, Stdio},
     protos::{
         api::{ProcessInfo, StateResponse, Status},
-        cgroups::metrics::Metrics,
-        protobuf::well_known_types::timestamp::Timestamp,
+        protobuf::{well_known_types::timestamp::Timestamp, MessageDyn},
     },
     Result,
 };
@@ -45,7 +44,7 @@ pub trait Process {
     async fn exited_at(&self) -> Option<OffsetDateTime>;
     async fn resize_pty(&mut self, height: u32, width: u32) -> Result<()>;
     async fn update(&mut self, resources: &LinuxResources) -> Result<()>;
-    async fn stats(&self) -> Result<Metrics>;
+    async fn stats(&self) -> Result<Box<dyn MessageDyn>>;
     async fn ps(&self) -> Result<Vec<ProcessInfo>>;
     async fn close_io(&mut self) -> Result<()>;
     async fn pause(&mut self) -> Result<()>;
@@ -59,7 +58,7 @@ pub trait ProcessLifecycle<P: Process> {
     async fn kill(&self, p: &mut P, signal: u32, all: bool) -> Result<()>;
     async fn delete(&self, p: &mut P) -> Result<()>;
     async fn update(&self, p: &mut P, resources: &LinuxResources) -> Result<()>;
-    async fn stats(&self, p: &P) -> Result<Metrics>;
+    async fn stats(&self, p: &P) -> Result<Box<dyn MessageDyn>>;
     async fn ps(&self, p: &P) -> Result<Vec<ProcessInfo>>;
     async fn pause(&self, p: &mut P) -> Result<()>;
     async fn resume(&self, p: &mut P) -> Result<()>;
@@ -181,7 +180,7 @@ where
         self.lifecycle.clone().update(self, resources).await
     }
 
-    async fn stats(&self) -> Result<Metrics> {
+    async fn stats(&self) -> Result<Box<dyn MessageDyn>> {
         self.lifecycle.stats(self).await
     }
 

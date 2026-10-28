@@ -39,8 +39,7 @@ use containerd_shim::{
     other, other_error,
     protos::{
         api::ProcessInfo,
-        cgroups::metrics::Metrics,
-        protobuf::{CodedInputStream, Message},
+        protobuf::{CodedInputStream, Message, MessageDyn},
     },
     util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
     Error, Result,
@@ -271,7 +270,7 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
     }
 
     #[cfg(target_os = "linux")]
-    async fn stats(&self, p: &InitProcess) -> Result<Metrics> {
+    async fn stats(&self, p: &InitProcess) -> Result<Box<dyn MessageDyn>> {
         if p.pid <= 0 {
             return Err(other!(
                 "failed to collect metrics because init process is {}",
@@ -290,11 +289,17 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
         let cgroup = cgroup_guard
             .as_ref()
             .ok_or_else(|| other!("cgroup cache is empty for process {}", p.pid))?;
-        containerd_shim::cgroup::collect_metrics(cgroup)
+        // containerd reads each metrics type with its own meanings, so send
+        // the one that matches the host, as the Go shim does.
+        Ok(if cgroup.v2() {
+            Box::new(containerd_shim::cgroup::collect_metrics_v2(cgroup)?)
+        } else {
+            Box::new(containerd_shim::cgroup::collect_metrics(cgroup)?)
+        })
     }
 
     #[cfg(not(target_os = "linux"))]
-    async fn stats(&self, _p: &InitProcess) -> Result<Metrics> {
+    async fn stats(&self, _p: &InitProcess) -> Result<Box<dyn MessageDyn>> {
         Err(Error::Unimplemented("process stats".to_string()))
     }
 
@@ -510,7 +515,7 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
         Err(Error::Unimplemented("exec update".to_string()))
     }
 
-    async fn stats(&self, _p: &ExecProcess) -> Result<Metrics> {
+    async fn stats(&self, _p: &ExecProcess) -> Result<Box<dyn MessageDyn>> {
         Err(Error::Unimplemented("exec stats".to_string()))
     }
 

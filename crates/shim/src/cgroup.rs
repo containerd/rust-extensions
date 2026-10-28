@@ -17,6 +17,7 @@
 #![cfg(target_os = "linux")]
 
 use std::{
+    collections::HashMap,
     error::Error as StdError,
     fs,
     path::{Path, PathBuf},
@@ -24,13 +25,19 @@ use std::{
 
 use cgroups_rs::{
     fs::{
-        cgroup::get_cgroups_relative_paths_by_pid, error::Result as CgResult, hierarchies, Cgroup,
-        MaxValue, Subsystem,
+        cgroup::get_cgroups_relative_paths_by_pid, error::Result as CgResult, hierarchies,
+        pid::PidController, Cgroup, Controller, MaxValue, Subsystem,
     },
     CgroupPid,
 };
-use containerd_shim_protos::cgroups::metrics::{
-    CPUStat, CPUUsage, MemoryEntry, MemoryStat, Metrics, PidsStat, Throttle,
+use containerd_shim_protos::{
+    cgroups::metrics::{
+        CPUStat, CPUUsage, MemoryEntry, MemoryOomControl, MemoryStat, Metrics, PidsStat, Throttle,
+    },
+    cgroups_v2::metrics::{
+        CPUStat as CPUStatV2, MemoryEvents, MemoryStat as MemoryStatV2, Metrics as MetricsV2,
+        PidsStat as PidsStatV2,
+    },
 };
 use oci_spec::runtime::LinuxResources;
 
@@ -143,39 +150,207 @@ pub fn collect_metrics(cgroup: &Cgroup) -> Result<Metrics> {
             }
             Subsystem::Mem(mem_ctr) => {
                 let mem = mem_ctr.memory_stat();
-                let mut mem_entry = MemoryEntry::new();
-                mem_entry.set_usage(mem.usage_in_bytes);
                 let mut mem_stat = MemoryStat::new();
-                mem_stat.set_usage(mem_entry);
+                mem_stat.set_usage(memory_entry(mem.usage_in_bytes));
                 mem_stat.set_total_inactive_file(mem.stat.total_inactive_file);
+                // The swap entry is v1's memsw counter: memory and swap together.
+                mem_stat.set_kernel(memory_entry(mem_ctr.kmem_stat().usage_in_bytes));
+                mem_stat.set_swap(memory_entry(mem_ctr.memswap().usage_in_bytes));
                 metrics.set_memory(mem_stat);
+                let mut oom_control = MemoryOomControl::new();
+                oom_control.set_oom_kill(mem.oom_control.oom_kill);
+                metrics.set_memory_oom_control(oom_control);
             }
             Subsystem::Pid(pid_ctr) => {
-                // ignore cgroup NotFound error
-                let ignore_err = |cr: CgResult<u64>| -> CgResult<u64> {
-                    cr.or_else(|e| if is_not_found(&e) { Ok(0) } else { Err(e) })
-                };
-
+                let (current, limit) = pids(pid_ctr)?;
                 let mut pid_stats = PidsStat::new();
-                pid_stats.set_current(
-                    ignore_err(pid_ctr.get_pid_current())
-                        .map_err(other_error!("get current pid"))?,
-                );
-
-                pid_stats.set_limit(
-                    ignore_err(pid_ctr.get_pid_max().map(|val| match val {
-                        // See https://github.com/opencontainers/runc/blob/dbe8434359ca35af1c1e10df42b1f4391c1e1010/libcontainer/cgroups/fs/pids.go#L55
-                        MaxValue::Max => 0,
-                        MaxValue::Value(val) => val as u64,
-                    }))
-                    .map_err(other_error!("get pid limit"))?,
-                );
+                pid_stats.set_current(current);
+                pid_stats.set_limit(limit);
                 metrics.set_pids(pid_stats)
             }
             _ => {}
         }
     }
     Ok(metrics)
+}
+
+/// A proto setter for one cgroup file key.
+type Setter<T> = fn(&mut T, u64);
+
+/// Collects a cgroup v2 cgroup's metrics as containerd's v2 metrics type,
+/// which containerd reads with v2 meanings: swap apart from memory, time in
+/// microseconds.
+///
+/// TODO(cgroups-rs): the parts read by hand here are gaps in cgroups-rs
+/// 0.5.1, to fill upstream so that this stays a mapping onto its stats.
+/// The contribution backlog:
+/// - v2 memory event counters: `memory_stat()` leaves `oom_control` at its
+///   defaults and nothing exposes `memory.events`. Add a typed API for low,
+///   high, max, oom, oom_kill and oom_group_kill.
+/// - unlimited v2 swap limit: `memswap()` parses `memory.swap.max` as an
+///   integer, so `max` becomes 0. Parse it as `MaxValue`, keeping unlimited
+///   apart from zero.
+/// - typed CPU statistics: `cpu().stat` is raw text, leaving parsing and
+///   units to callers. Expose typed v1 and v2 CPU stats with explicit units,
+///   throttling and burst counters included.
+/// - fallible stats collection: several getters replace read and parse
+///   errors with zeros or defaults. Add fallible variants that tell an
+///   unavailable counter from a permission or parse failure, keeping the
+///   existing APIs.
+/// - typed v2 memory statistics, lower priority: the typed memory structure
+///   is v1-shaped and v2 fields live in `stat.raw`, while `memory_stat()`
+///   stores `memory.swap.current` in `swappiness`. Add a v2 structure for
+///   anon, file, kernel_stack, slab and the rest.
+pub fn collect_metrics_v2(cgroup: &Cgroup) -> Result<MetricsV2> {
+    let mut metrics = MetricsV2::new();
+    for sub_system in Cgroup::subsystems(cgroup) {
+        match sub_system {
+            Subsystem::Cpu(cpu_ctr) => {
+                let cpu_stat = cpu_ctr.cpu();
+                let stat = flat_keyed(&cpu_stat.stat);
+                let mut cpu = CPUStatV2::new();
+                let fields: [(&str, Setter<CPUStatV2>); 8] = [
+                    ("usage_usec", CPUStatV2::set_usage_usec),
+                    ("user_usec", CPUStatV2::set_user_usec),
+                    ("system_usec", CPUStatV2::set_system_usec),
+                    ("nr_periods", CPUStatV2::set_nr_periods),
+                    ("nr_throttled", CPUStatV2::set_nr_throttled),
+                    ("throttled_usec", CPUStatV2::set_throttled_usec),
+                    ("nr_bursts", CPUStatV2::set_nr_bursts),
+                    ("burst_usec", CPUStatV2::set_burst_usec),
+                ];
+                for (key, set) in fields {
+                    set(&mut cpu, stat.get(key).copied().unwrap_or(0));
+                }
+                metrics.set_cpu(cpu);
+            }
+            Subsystem::Mem(mem_ctr) => {
+                let mem = mem_ctr.memory_stat();
+                let swap = mem_ctr.memswap();
+                let stat = &mem.stat.raw;
+                let mut memory = MemoryStatV2::new();
+                let fields: [(&str, Setter<MemoryStatV2>); 31] = [
+                    ("anon", MemoryStatV2::set_anon),
+                    ("file", MemoryStatV2::set_file),
+                    ("kernel_stack", MemoryStatV2::set_kernel_stack),
+                    ("slab", MemoryStatV2::set_slab),
+                    ("sock", MemoryStatV2::set_sock),
+                    ("shmem", MemoryStatV2::set_shmem),
+                    ("file_mapped", MemoryStatV2::set_file_mapped),
+                    ("file_dirty", MemoryStatV2::set_file_dirty),
+                    ("file_writeback", MemoryStatV2::set_file_writeback),
+                    ("anon_thp", MemoryStatV2::set_anon_thp),
+                    ("inactive_anon", MemoryStatV2::set_inactive_anon),
+                    ("active_anon", MemoryStatV2::set_active_anon),
+                    ("inactive_file", MemoryStatV2::set_inactive_file),
+                    ("active_file", MemoryStatV2::set_active_file),
+                    ("unevictable", MemoryStatV2::set_unevictable),
+                    ("slab_reclaimable", MemoryStatV2::set_slab_reclaimable),
+                    ("slab_unreclaimable", MemoryStatV2::set_slab_unreclaimable),
+                    ("pgfault", MemoryStatV2::set_pgfault),
+                    ("pgmajfault", MemoryStatV2::set_pgmajfault),
+                    ("workingset_refault", MemoryStatV2::set_workingset_refault),
+                    ("workingset_activate", MemoryStatV2::set_workingset_activate),
+                    (
+                        "workingset_nodereclaim",
+                        MemoryStatV2::set_workingset_nodereclaim,
+                    ),
+                    ("pgrefill", MemoryStatV2::set_pgrefill),
+                    ("pgscan", MemoryStatV2::set_pgscan),
+                    ("pgsteal", MemoryStatV2::set_pgsteal),
+                    ("pgactivate", MemoryStatV2::set_pgactivate),
+                    ("pgdeactivate", MemoryStatV2::set_pgdeactivate),
+                    ("pglazyfree", MemoryStatV2::set_pglazyfree),
+                    ("pglazyfreed", MemoryStatV2::set_pglazyfreed),
+                    ("thp_fault_alloc", MemoryStatV2::set_thp_fault_alloc),
+                    ("thp_collapse_alloc", MemoryStatV2::set_thp_collapse_alloc),
+                ];
+                for (key, set) in fields {
+                    set(&mut memory, stat.get(key).copied().unwrap_or(0));
+                }
+                memory.set_usage(mem.usage_in_bytes);
+                memory.set_usage_limit(limit(mem.limit_in_bytes));
+                memory.set_max_usage(mem.max_usage_in_bytes);
+                memory.set_swap_usage(swap.usage_in_bytes);
+                // TODO(cgroups-rs): memswap() reads an unlimited memory.swap.max
+                // as 0, so until it parses `max` the file is read here.
+                let swap_limit = match fs::read_to_string(mem_ctr.path().join("memory.swap.max")) {
+                    Ok(value) if value.trim() == "max" => u64::MAX,
+                    Ok(value) => value.trim().parse().unwrap_or(0),
+                    Err(_) => 0,
+                };
+                memory.set_swap_limit(swap_limit);
+                memory.set_swap_max_usage(swap.max_usage_in_bytes);
+                metrics.set_memory(memory);
+
+                let events = match fs::read_to_string(mem_ctr.path().join("memory.events")) {
+                    Ok(events) => events,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(e) => return Err(e).map_err(io_error!(e, "read memory.events")),
+                };
+                let events = flat_keyed(&events);
+                let mut memory_events = MemoryEvents::new();
+                let fields: [(&str, Setter<MemoryEvents>); 6] = [
+                    ("low", MemoryEvents::set_low),
+                    ("high", MemoryEvents::set_high),
+                    ("max", MemoryEvents::set_max),
+                    ("oom", MemoryEvents::set_oom),
+                    ("oom_kill", MemoryEvents::set_oom_kill),
+                    ("oom_group_kill", MemoryEvents::set_oom_group_kill),
+                ];
+                for (key, set) in fields {
+                    set(&mut memory_events, events.get(key).copied().unwrap_or(0));
+                }
+                metrics.set_memory_events(memory_events);
+            }
+            Subsystem::Pid(pid_ctr) => {
+                let (current, limit) = pids(pid_ctr)?;
+                let mut pid_stats = PidsStatV2::new();
+                pid_stats.set_current(current);
+                pid_stats.set_limit(limit);
+                metrics.set_pids(pid_stats)
+            }
+            _ => {}
+        }
+    }
+    Ok(metrics)
+}
+
+fn memory_entry(usage: u64) -> MemoryEntry {
+    let mut entry = MemoryEntry::new();
+    entry.set_usage(usage);
+    entry
+}
+
+/// The `key value` lines of a flat-keyed cgroup file.
+fn flat_keyed(content: &str) -> HashMap<&str, u64> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once(' ')?;
+            Some((key, value.trim().parse().ok()?))
+        })
+        .collect()
+}
+
+/// A limit as cgroups-rs reports it, where a negative value means none.
+fn limit(value: i64) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+/// The current and maximum pid counts, 0 for either when the cgroup has gone.
+fn pids(pid_ctr: &PidController) -> Result<(u64, u64)> {
+    let ignore_not_found =
+        |cr: CgResult<u64>| cr.or_else(|e| if is_not_found(&e) { Ok(0) } else { Err(e) });
+    let current =
+        ignore_not_found(pid_ctr.get_pid_current()).map_err(other_error!("get current pid"))?;
+    let limit = ignore_not_found(pid_ctr.get_pid_max().map(|val| match val {
+        // See https://github.com/opencontainers/runc/blob/dbe8434359ca35af1c1e10df42b1f4391c1e1010/libcontainer/cgroups/fs/pids.go#L55
+        MaxValue::Max => 0,
+        MaxValue::Value(val) => val as u64,
+    }))
+    .map_err(other_error!("get pid limit"))?;
+    Ok((current, limit))
 }
 
 // get_cgroup will return either cgroup v1 or v2 depending on system configuration
@@ -384,7 +559,7 @@ mod tests {
         CgroupPid,
     };
 
-    use super::{parse_cgroups_v2_path, swap_for_v2};
+    use super::{collect_metrics_v2, parse_cgroups_v2_path, swap_for_v2};
     use crate::cgroup::{
         add_task_to_cgroup, adjust_oom_score, read_process_oom_score, OOM_SCORE_ADJ_MAX,
     };
@@ -474,6 +649,62 @@ mod tests {
             assert_eq!(new, score + 1)
         } else {
             assert_eq!(new, OOM_SCORE_ADJ_MAX)
+        }
+    }
+
+    /// On cgroup v2 the metrics come as containerd's v2 type, read from the
+    /// cgroup's own files. Needs root and a v2 host, like test_add_cgroup.
+    #[test]
+    fn collect_metrics_v2_reads_the_cgroup() {
+        let h = hierarchies::auto();
+        if !h.v2() {
+            eprintln!("skipping collect_metrics_v2_reads_the_cgroup: not cgroup v2");
+            return;
+        }
+        let path = "runc_shim_test_metrics";
+        let cg = match Cgroup::new(h, path) {
+            Ok(cg) => cg,
+            Err(err) if is_cgroup_permission_error(&err) => {
+                eprintln!("skipping collect_metrics_v2_reads_the_cgroup: {err}");
+                return;
+            }
+            Err(err) => panic!("failed to create cgroup for test: {err}"),
+        };
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let added = add_task_to_cgroup(path, child.id());
+        let metrics = collect_metrics_v2(&cg);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        match added {
+            Ok(()) => {}
+            Err(err) if crate::error::is_permission_error(&err) => {
+                let _ = cg.delete();
+                eprintln!("skipping collect_metrics_v2_reads_the_cgroup: {err}");
+                return;
+            }
+            Err(err) => panic!("failed to add task to cgroup for test: {err}"),
+        }
+        let metrics = metrics.unwrap();
+        assert_eq!(metrics.pids().current(), 1, "{metrics:?}");
+        // A fresh cgroup has no limit; its usage stays charged to the cgroup
+        // the child was born in, so it is not something to assert on.
+        assert_eq!(metrics.memory().usage_limit(), u64::MAX, "{metrics:?}");
+        let any = crate::util::convert_to_any(Box::new(metrics)).unwrap();
+        assert!(
+            any.type_url.ends_with("cgroups.v2.Metrics"),
+            "{}",
+            any.type_url
+        );
+
+        let mut attempts = 0;
+        while let Err(err) = cg.delete() {
+            assert!(attempts < 50, "failed to delete the test cgroup: {err}");
+            attempts += 1;
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 

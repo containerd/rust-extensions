@@ -471,7 +471,7 @@ impl Task for TaskService {
         debug!("Stats request for {:?}", req);
         let stats = self.container(req.id()).await?.stats().await?;
         let mut resp = StatsResponse::new();
-        resp.set_stats(convert_to_any(Box::new(stats))?);
+        resp.set_stats(convert_to_any(stats)?);
         Ok(resp)
     }
 
