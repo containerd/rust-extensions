@@ -16,9 +16,10 @@
 
 //! A process's stdio, copied between the runtime and containerd's fifos.
 
-use std::{io::ErrorKind, os::unix::fs::OpenOptionsExt, time::Duration};
+use std::{fs::File, io::ErrorKind, os::unix::fs::OpenOptionsExt, time::Duration};
 
 use log::{debug, error, warn};
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::unix::pipe,
@@ -192,6 +193,32 @@ impl IoTasks {
     }
 }
 
+/// Reads the master side of a process's terminal through the reactor rather
+/// than the blocking pool: the copy parks no thread, and cancelling it ends
+/// it at once instead of waiting for the terminal to hang up.
+///
+/// tokio's pipe types suit any descriptor the reactor can poll; they just
+/// skip their pipe checks here.
+pub fn pty_reader(master: File) -> Result<impl AsyncRead + Send + Unpin + 'static> {
+    set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
+    pipe::Receiver::from_file_unchecked(master).map_err(io_error!(e, "register the console"))
+}
+
+/// Writes the master side of a process's terminal through the reactor, see
+/// [`pty_reader`].
+pub fn pty_writer(master: File) -> Result<impl AsyncWrite + Send + Unpin + 'static> {
+    set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
+    pipe::Sender::from_file_unchecked(master).map_err(io_error!(e, "register the console"))
+}
+
+fn set_nonblocking(file: &File) -> std::io::Result<()> {
+    let flags = OFlag::from_bits_retain(fcntl(file, FcntlArg::F_GETFL)?);
+    if !flags.contains(OFlag::O_NONBLOCK) {
+        fcntl(file, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,6 +365,34 @@ mod tests {
             assert_eq!(&buf[..n], b"hi\n");
             assert_eq!(reader.read(&mut buf).await.unwrap(), 0, "cat exits on EOF");
             assert!(child.wait().await.unwrap().success());
+        }
+
+        /// A console copy delivers what the terminal produces and ends at once
+        /// when cancelled, with no thread left parked on the terminal: that
+        /// would hang the runtime's shutdown at the end of the test.
+        #[tokio::test]
+        async fn pty_copy_ends_on_cancel() {
+            let dir = tempfile::tempdir().unwrap();
+            let stdout = mkfifo(dir.path(), "stdout");
+            let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
+            let pty = nix::pty::openpty(None, None).unwrap();
+            let io_tasks = IoTasks::default();
+            io_tasks
+                .copy_to_fifo(
+                    pty_reader(File::from(pty.master)).unwrap(),
+                    stdout.to_str().unwrap(),
+                )
+                .unwrap();
+
+            let mut slave = File::from(pty.slave);
+            slave.write_all(b"hi").unwrap();
+            let mut buf = [0u8; 16];
+            let n = reader.read(&mut buf).await.unwrap();
+            assert_eq!(&buf[..n], b"hi");
+
+            // The terminal is still open, so only the cancel ends the copy.
+            io_tasks.abort().await;
+            assert!(io_tasks.outputs.is_empty());
         }
 
         /// CloseIO must reach the process as EOF on stdin even while containerd
