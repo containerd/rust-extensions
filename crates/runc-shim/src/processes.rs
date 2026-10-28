@@ -14,10 +14,11 @@
    limitations under the License.
 */
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use containerd_shim::{
+    io::{IoTasks, Stdio},
     protos::{
         api::{ProcessInfo, StateResponse, Status},
         cgroups::metrics::Metrics,
@@ -28,12 +29,7 @@ use containerd_shim::{
 use oci_spec::runtime::LinuxResources;
 use rustix::termios::{tcsetwinsize, Winsize};
 use time::OffsetDateTime;
-use tokio::{
-    fs::File,
-    sync::oneshot::{channel, Receiver, Sender},
-};
-
-use crate::io::Stdio;
+use tokio::sync::oneshot::{channel, Receiver, Sender};
 
 #[allow(dead_code)]
 #[async_trait]
@@ -79,7 +75,7 @@ pub struct ProcessTemplate<S> {
     pub wait_chan_tx: Vec<Sender<()>>,
     pub console: Option<Console>,
     pub lifecycle: Arc<S>,
-    pub stdin: Arc<Mutex<Option<File>>>,
+    pub io_tasks: IoTasks,
 }
 
 impl<S> ProcessTemplate<S> {
@@ -94,7 +90,7 @@ impl<S> ProcessTemplate<S> {
             wait_chan_tx: vec![],
             console: None,
             lifecycle: Arc::new(lifecycle),
-            stdin: Arc::new(Mutex::new(None)),
+            io_tasks: IoTasks::default(),
         }
     }
 }
@@ -195,10 +191,7 @@ where
     }
 
     async fn close_io(&mut self) -> Result<()> {
-        let mut lock_guard = self.stdin.lock().unwrap();
-        if let Some(stdin_w_file) = lock_guard.take() {
-            drop(stdin_w_file);
-        }
+        self.io_tasks.close_input().await;
         Ok(())
     }
 

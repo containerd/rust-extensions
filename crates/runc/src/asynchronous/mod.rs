@@ -16,12 +16,15 @@
 pub mod io;
 mod pipe;
 mod runc;
-use std::{fmt::Debug, io::Result, os::fd::AsRawFd};
+use std::{fmt::Debug, io::Result};
 
 use async_trait::async_trait;
 pub use pipe::Pipe;
 pub use runc::{DefaultExecutor, Spawner};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::unix::pipe::{Receiver, Sender},
+};
 
 use crate::Command;
 #[async_trait]
@@ -52,34 +55,24 @@ pub struct PipedIo {
     pub stdout: Option<Pipe>,
     pub stderr: Option<Pipe>,
 }
+// tokio's pipe types take ownership of the descriptor they wrap, so the
+// accessors never hand out the pipe's own fd, which the reader and the pipe
+// would both close. The stdin writer is given away outright, so that dropping
+// it reaches the child as EOF while the driver is still alive; the read ends
+// are duplicated.
 #[async_trait]
 impl Io for PipedIo {
     fn stdin(&self) -> Option<Box<dyn AsyncWrite + Send + Sync + Unpin>> {
-        self.stdin.as_ref().and_then(|pipe| {
-            pipe.wr_as_raw_fd().and_then(|fd| {
-                tokio_pipe::PipeWrite::from_raw_fd_checked(fd)
-                    .map(|x| Box::new(x) as Box<dyn AsyncWrite + Send + Sync + Unpin>)
-                    .ok()
-            })
-        })
+        let fd = self.stdin.as_ref()?.take_wr()?;
+        Some(Box::new(Sender::from_owned_fd(fd).ok()?))
     }
 
     fn stdout(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
-        self.stdout.as_ref().and_then(|pipe| {
-            let fd = pipe.rd.as_raw_fd();
-            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
-                .ok()
-        })
+        self.stdout.as_ref().and_then(read_end)
     }
 
     fn stderr(&self) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
-        self.stderr.as_ref().and_then(|pipe| {
-            let fd = pipe.rd.as_raw_fd();
-            tokio_pipe::PipeRead::from_raw_fd_checked(fd)
-                .map(|x| Box::new(x) as Box<dyn AsyncRead + Send + Sync + Unpin>)
-                .ok()
-        })
+        self.stderr.as_ref().and_then(read_end)
     }
 
     // Note that this internally use [`std::fs::File`]'s `try_clone()`.
@@ -101,7 +94,7 @@ impl Io for PipedIo {
             let pw = p
                 .try_clone_wr()
                 .ok_or_else(|| std::io::Error::other("write end closed"))?;
-            cmd.stdout(pw);
+            cmd.stderr(pw);
         }
 
         Ok(())
@@ -116,4 +109,9 @@ impl Io for PipedIo {
             p.close_wr();
         }
     }
+}
+
+fn read_end(pipe: &Pipe) -> Option<Box<dyn AsyncRead + Send + Sync + Unpin>> {
+    let fd = pipe.rd.try_clone().ok()?;
+    Some(Box::new(Receiver::from_owned_fd(fd).ok()?))
 }

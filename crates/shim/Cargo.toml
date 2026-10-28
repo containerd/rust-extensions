@@ -54,7 +54,7 @@ tracing = { version = "0.1", default-features = false, optional = true }
 tokio-util = { workspace = true, features = ["rt"], optional = true }
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, features = ["std", "alloc"], optional = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "time", "signal", "io-std"], optional = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "net", "time", "signal", "io-std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs.workspace = true

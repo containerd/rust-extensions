@@ -19,6 +19,7 @@ use std::{collections::HashMap, sync::Arc};
 use containerd_shim::{
     api::Status,
     error::Result,
+    io::{IoTasks, Stdio},
     protos::{
         api::{CreateTaskRequest, ExecProcessRequest, ProcessInfo, StateResponse},
         cgroups::metrics::Metrics,
@@ -35,7 +36,6 @@ use tokio::sync::oneshot::Receiver;
 
 use crate::{
     common::get_spec_from_request,
-    io::Stdio,
     processes::Process,
     runc::{prepare_bundle, ExecProcess, InitProcess, RuncInitLifecycle},
 };
@@ -134,6 +134,19 @@ impl Container {
         Ok((pid, code, exited_at))
     }
 
+    /// The io to shut down once a process is deleted. Deleting the init
+    /// process takes the remaining execs' io with it, as they go unregistered.
+    pub fn io_tasks(&self, exec_id: Option<&str>) -> Result<Vec<IoTasks>> {
+        Ok(match exec_id {
+            Some(exec_id) => vec![self.exec_process(exec_id)?.io_tasks.clone()],
+            None => [&self.init.io_tasks]
+                .into_iter()
+                .chain(self.processes.values().map(|p| &p.io_tasks))
+                .cloned()
+                .collect(),
+        })
+    }
+
     pub fn exec(&mut self, req: ExecProcessRequest) -> Result<()> {
         let spec = get_spec_from_request(&req)?;
         let stdio = Stdio::new(&req.stdin, &req.stdout, &req.stderr, req.terminal);
@@ -214,14 +227,15 @@ impl Container {
 
     pub fn get_process(&self, exec_id: Option<&str>) -> Result<&(dyn Process + Send + Sync)> {
         match exec_id {
-            Some(exec_id) => {
-                let p = self.processes.get(exec_id).ok_or_else(|| {
-                    Error::NotFoundError("can not find the exec by id".to_string())
-                })?;
-                Ok(p)
-            }
+            Some(exec_id) => Ok(self.exec_process(exec_id)?),
             None => Ok(&self.init),
         }
+    }
+
+    fn exec_process(&self, exec_id: &str) -> Result<&ExecProcess> {
+        self.processes
+            .get(exec_id)
+            .ok_or_else(|| Error::NotFoundError("can not find the exec by id".to_string()))
     }
 
     pub fn get_mut_process(

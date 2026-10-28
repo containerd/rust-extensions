@@ -47,4 +47,9 @@ impl Pipe {
     pub fn close_wr(&self) {
         let _ = self.wr.lock().unwrap().take();
     }
+
+    /// Take ownership of the write end. Returns `None` if already closed.
+    pub fn take_wr(&self) -> Option<PipeWriter> {
+        self.wr.lock().unwrap().take()
+    }
 }

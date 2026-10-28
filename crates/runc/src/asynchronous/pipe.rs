@@ -14,10 +14,7 @@
    limitations under the License.
 */
 
-use std::{
-    os::unix::io::{AsRawFd, OwnedFd, RawFd},
-    sync::Mutex,
-};
+use std::{os::unix::io::OwnedFd, sync::Mutex};
 
 /// Struct to represent a pipe that can be used to transfer stdio inputs and outputs.
 ///
@@ -36,11 +33,6 @@ impl Pipe {
             rd: OwnedFd::from(rd),
             wr: Mutex::new(Some(OwnedFd::from(wr))),
         })
-    }
-
-    /// Return the raw fd of the write end. Returns `None` if closed.
-    pub fn wr_as_raw_fd(&self) -> Option<RawFd> {
-        self.wr.lock().unwrap().as_ref().map(|w| w.as_raw_fd())
     }
 
     /// Clone the write end. Returns `None` if closed.

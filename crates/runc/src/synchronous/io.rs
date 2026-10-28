@@ -22,13 +22,13 @@ use super::Io;
 use crate::{utils::open_fifo_for_reading, Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
-pub struct IOOption {
+pub struct IoOption {
     pub open_stdin: bool,
     pub open_stdout: bool,
     pub open_stderr: bool,
 }
 
-impl Default for IOOption {
+impl Default for IoOption {
     fn default() -> Self {
         Self {
             open_stdin: true,
@@ -39,7 +39,7 @@ impl Default for IOOption {
 }
 
 impl PipedIo {
-    pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
+    pub fn new(uid: u32, gid: u32, opts: &IoOption) -> std::io::Result<Self> {
         Ok(Self {
             stdin: if opts.open_stdin {
                 Self::create_pipe(uid, gid, true)?
@@ -180,7 +180,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn test_io_option() {
-        let opts = IOOption {
+        let opts = IoOption {
             open_stdin: false,
             open_stdout: false,
             open_stderr: false,
@@ -197,7 +197,7 @@ mod tests {
     fn test_create_piped_io() {
         use std::io::{Read, Write};
 
-        let opts = IOOption::default();
+        let opts = IoOption::default();
         let uid = nix::unistd::getuid();
         let gid = nix::unistd::getgid();
         let io = PipedIo::new(uid.as_raw(), gid.as_raw(), &opts).unwrap();

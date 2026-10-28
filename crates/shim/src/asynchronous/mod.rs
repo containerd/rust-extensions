@@ -55,6 +55,8 @@ use crate::{
     Config, Flags, StartOpts, TTRPC_ADDRESS,
 };
 
+#[cfg(unix)]
+pub mod io;
 pub mod monitor;
 pub mod publisher;
 pub mod util;

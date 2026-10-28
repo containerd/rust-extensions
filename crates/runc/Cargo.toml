@@ -12,7 +12,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-async = ["tokio", "async-trait", "tokio-pipe"]
+async = ["tokio", "async-trait"]
 
 [dependencies]
 libc.workspace = true
@@ -28,4 +28,3 @@ time = { workspace = true, features = ["serde", "std"] }
 # Async dependencies
 async-trait = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "net", "time"], optional = true }
-tokio-pipe = { version = "0.2.12", default-features = false, optional = true }

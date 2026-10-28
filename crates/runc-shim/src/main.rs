@@ -23,7 +23,6 @@ mod common;
 mod console;
 mod container;
 mod info;
-mod io;
 mod processes;
 mod runc;
 mod service;
