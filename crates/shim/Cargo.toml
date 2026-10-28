@@ -15,7 +15,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [features]
-async = ["async-trait", "containerd-shim-protos/async", "futures", "tokio"]
+async = ["async-trait", "containerd-shim-protos/async", "futures", "tokio", "tokio-util"]
 tracing = ["dep:tracing"]
 
 [[example]]
@@ -51,6 +51,7 @@ time = { workspace = true, features = ["std", "formatting"] }
 tracing = { version = "0.1", default-features = false, optional = true }
 
 # Async dependencies
+tokio-util = { workspace = true, features = ["rt"], optional = true }
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, features = ["std", "alloc"], optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "sync", "fs", "io-util", "time", "signal", "io-std"], optional = true }

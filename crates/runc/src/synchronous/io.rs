@@ -14,13 +14,7 @@
    limitations under the License.
 */
 
-use std::{
-    fmt::Debug,
-    fs::{File, OpenOptions},
-    io::Result,
-    process::Stdio,
-    sync::Mutex,
-};
+use std::{fmt::Debug, fs::OpenOptions, io::Result, process::Stdio};
 
 use nix::unistd::{Gid, Uid};
 
@@ -86,31 +80,21 @@ impl PipedIo {
 ///
 /// With this Io driver, all methods of [crate::Runc] can't capture the output/error messages.
 #[derive(Debug)]
-pub struct NullIo {
-    dev_null: Mutex<Option<File>>,
-}
+pub struct NullIo {}
 
 impl NullIo {
     pub fn new() -> std::io::Result<Self> {
-        let f = OpenOptions::new().read(true).open("/dev/null")?;
-        let dev_null = Mutex::new(Some(f));
-        Ok(Self { dev_null })
+        Ok(Self {})
     }
 }
 
 impl Io for NullIo {
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
-        if let Some(null) = self.dev_null.lock().unwrap().as_ref() {
-            cmd.stdout(null.try_clone()?);
-            cmd.stderr(null.try_clone()?);
-        }
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
         Ok(())
     }
 
-    fn close_after_start(&self) {
-        let mut m = self.dev_null.lock().unwrap();
-        let _ = m.take();
-    }
+    fn close_after_start(&self) {}
 }
 
 /// Io driver based on Stdio::inherited(), to direct outputs/errors to stdio.
@@ -249,6 +233,17 @@ mod tests {
         io.close_after_start();
         stdout.read_exact(&mut buf).unwrap_err();
         stderr.read_exact(&mut buf).unwrap_err();
+    }
+
+    #[test]
+    fn null_io_accepts_child_output() {
+        let io = NullIo::new().unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf stdout && printf stderr >&2"]);
+        io.set(&mut command).unwrap();
+        let mut child = command.spawn().unwrap();
+        io.close_after_start();
+        assert!(child.wait().unwrap().success());
     }
 
     #[test]

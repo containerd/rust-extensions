@@ -27,7 +27,7 @@ pub use crate::asynchronous::util::*;
 pub use crate::synchronous::util::*;
 use crate::{
     api::Options,
-    error::Result,
+    error::{Error, Result},
     protos::protobuf::{
         well_known_types::{any::Any, timestamp::Timestamp},
         MessageDyn,
@@ -107,42 +107,52 @@ impl From<JsonOptions> for Options {
 /// Connects to the unix socket at `address`, given as a plain path or as a `unix://` URL.
 #[cfg(unix)]
 pub fn connect(address: impl AsRef<str>) -> Result<RawFd> {
-    use std::os::fd::IntoRawFd;
-
-    use nix::{sys::socket::*, unistd::close};
+    use std::os::{fd::IntoRawFd, unix::net::UnixStream};
 
     let path = address.as_ref();
     let path = path.strip_prefix("unix://").unwrap_or(path);
-    let unix_addr = UnixAddr::new(path)?;
+    UnixStream::connect(path)
+        .map(IntoRawFd::into_raw_fd)
+        .map_err(io_error!(e, "connect {}", path))
+}
 
-    // SOCK_CLOEXEC flag is Linux specific
-    #[cfg(target_os = "linux")]
-    const SOCK_CLOEXEC: SockFlag = SockFlag::SOCK_CLOEXEC;
+/// Replace a file atomically, cleaning up the temporary file on failure.
+/// Like OpenOptions::create_new, creation uses mode 0o666 filtered by umask.
+pub(crate) fn write_str_atomic(filename: &std::path::Path, contents: &str) -> Result<()> {
+    use std::io::Write;
 
-    #[cfg(not(target_os = "linux"))]
-    const SOCK_CLOEXEC: SockFlag = SockFlag::empty();
-
-    let fd = socket(AddressFamily::Unix, SockType::Stream, SOCK_CLOEXEC, None)?.into_raw_fd();
-
-    // MacOS doesn't support atomic creation of a socket descriptor with `SOCK_CLOEXEC` flag,
-    // so there is a chance of leak if fork + exec happens in between of these calls.
-    #[cfg(not(target_os = "linux"))]
-    {
-        use std::os::fd::BorrowedFd;
-
-        use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-        // SAFETY: fd is a valid file descriptor that we just created
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-        fcntl(borrowed_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).inspect_err(|_| {
-            let _ = close(fd);
-        })?;
+    if filename.file_name().is_none() {
+        return Err(crate::Error::InvalidArgument(format!(
+            "invalid file path {}",
+            filename.display()
+        )));
     }
-
-    connect(fd, &unix_addr).inspect_err(|_| {
-        let _ = close(fd);
+    let parent = filename
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".shim-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let mut file = builder.tempfile_in(parent).map_err(io_error!(
+        e,
+        "create temporary file for {}",
+        filename.display()
+    ))?;
+    file.write_all(contents.as_bytes()).map_err(io_error!(
+        e,
+        "write temporary file for {}",
+        filename.display()
+    ))?;
+    file.persist(filename).map_err(|e| crate::Error::IoError {
+        context: format!("replace {}", filename.display()),
+        err: e.error,
     })?;
-
-    Ok(fd)
+    Ok(())
 }
 
 pub fn timestamp() -> Result<Timestamp> {
@@ -177,6 +187,7 @@ pub fn convert_to_any(obj: Box<dyn MessageDyn>) -> Result<Any> {
     Ok(any)
 }
 
+#[deprecated(note = "use Option::filter or bool::then instead")]
 pub trait IntoOption
 where
     Self: Sized,
@@ -185,33 +196,74 @@ where
     where
         F: Fn(&Self) -> bool,
     {
-        if callback(&self) {
-            None
-        } else {
-            Some(self)
-        }
+        Some(self).filter(|value| !callback(value))
     }
 }
 
+#[allow(deprecated)]
 impl<T> IntoOption for T {}
 
+#[deprecated(note = "use Option::filter or bool::then_some instead")]
 pub trait AsOption {
     fn as_option(&self) -> Option<&Self>;
 }
 
+#[allow(deprecated)]
 impl AsOption for str {
     fn as_option(&self) -> Option<&Self> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(self)
-        }
+        Some(self).filter(|value| !value.is_empty())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atomic_write_replaces_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state");
+        // A stale file from the old naming scheme must not prevent writes.
+        std::fs::write(dir.path().join(".state"), "stale").unwrap();
+        write_str_atomic(&path, "old").unwrap();
+        write_str_atomic(&path, "new").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        let target_dir = dir.path().join("directory");
+        std::fs::create_dir(&target_dir).unwrap();
+        assert!(write_str_atomic(&target_dir, "invalid").is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_preserves_creation_mode_and_non_utf8_paths() {
+        use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let reference = dir.path().join("reference");
+        std::fs::write(&reference, "reference").unwrap();
+        let path = dir.path().join(std::ffi::OsStr::from_bytes(b"state-\xff"));
+        write_str_atomic(&path, "contents").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "contents");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode(),
+            std::fs::metadata(&reference).unwrap().permissions().mode()
+        );
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_leave_one_complete_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state");
+        std::thread::scope(|scope| {
+            for value in ["a".repeat(8192), "b".repeat(8192)] {
+                let path = &path;
+                scope.spawn(move || write_str_atomic(path, &value).unwrap());
+            }
+        });
+        let value = std::fs::read_to_string(&path).unwrap();
+        assert!(value == "a".repeat(8192) || value == "b".repeat(8192));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     #[test]
     fn test_timestamp() {
