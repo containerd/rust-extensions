@@ -166,7 +166,6 @@ impl Io for FIFO {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_create_piped_io() {
         let opts = crate::io::IoOption::default();

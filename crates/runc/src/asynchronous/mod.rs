@@ -175,14 +175,12 @@ impl Io for FIFO {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "linux")]
     fn piped_io() -> PipedIo {
         let uid = nix::unistd::getuid().as_raw();
         let gid = nix::unistd::getgid().as_raw();
         PipedIo::new(uid, gid, &crate::io::IoOption::default()).unwrap()
     }
 
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn piped_io_keeps_stdout_and_stderr_apart() {
         use tokio::io::AsyncReadExt;
@@ -208,7 +206,6 @@ mod tests {
 
     /// Dropping the stdin writer must reach the child as EOF while the driver
     /// is still alive, as `Runc::run` keeps it until the child exits.
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn piped_io_stdin_closes_with_its_writer() {
         use std::time::Duration;

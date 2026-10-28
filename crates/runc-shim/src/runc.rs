@@ -33,7 +33,7 @@ use cgroups_rs::fs::Cgroup;
 use containerd_shim::{
     api::{CreateTaskRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
-    io::{IoTasks, Stdio},
+    io::{pty_reader, pty_writer, IoTasks, Stdio},
     io_error,
     monitor::{ExitEvent, Subject, Topic},
     mount::umount_recursive,
@@ -541,21 +541,20 @@ async fn copy_console(
     };
     // Each copy owns a descriptor of its own, so the copies and the console
     // close independently.
-    let console_fd = || {
+    let master = || {
         console
             .file
             .try_clone()
-            .map(File::from_std)
             .map_err(io_error!(e, "clone console"))
     };
     if !stdio.stdin.is_empty() {
         debug!("copy_console: pipe stdin to console");
-        io_tasks.copy_from_fifo(&stdio.stdin, console_fd()?)?;
+        io_tasks.copy_from_fifo(&stdio.stdin, pty_writer(master()?)?)?;
     }
 
     if !stdio.stdout.is_empty() {
         debug!("copy_console: pipe stdout from console");
-        io_tasks.copy_to_fifo(console_fd()?, &stdio.stdout)?;
+        io_tasks.copy_to_fifo(pty_reader(master()?)?, &stdio.stdout)?;
     }
     Ok(console)
 }

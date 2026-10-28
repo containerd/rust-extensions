@@ -71,4 +71,5 @@ windows-sys = { version = "0.52.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["term"] }
 tempfile.workspace = true

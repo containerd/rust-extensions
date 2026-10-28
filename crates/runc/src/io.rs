@@ -17,6 +17,7 @@
 //! The stdio drivers a process can be given. [`Io`], which wires a driver
 //! into a command, is synchronous or asynchronous with the crate.
 
+#[cfg(target_os = "linux")]
 use nix::unistd::{Gid, Uid};
 
 pub use crate::Io;
@@ -49,19 +50,21 @@ pub struct PipedIo {
 
 impl PipedIo {
     pub fn new(uid: u32, gid: u32, opts: &IoOption) -> std::io::Result<Self> {
-        let pipe = |wanted: bool| -> std::io::Result<Option<Pipe>> {
-            if !wanted {
-                return Ok(None);
-            }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (uid, gid);
+        let pipe = || -> std::io::Result<Pipe> {
             let pipe = Pipe::new()?;
-            // Both ends share the pipe, so chowning one covers the other.
+            // The pipe belongs to the io's user, as in go-runc, which skips
+            // this off Linux as well. Both ends share the pipe, so chowning
+            // one covers the other.
+            #[cfg(target_os = "linux")]
             nix::unistd::fchown(&pipe.rd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))?;
-            Ok(Some(pipe))
+            Ok(pipe)
         };
         Ok(Self {
-            stdin: pipe(opts.open_stdin)?,
-            stdout: pipe(opts.open_stdout)?,
-            stderr: pipe(opts.open_stderr)?,
+            stdin: opts.open_stdin.then(pipe).transpose()?,
+            stdout: opts.open_stdout.then(pipe).transpose()?,
+            stderr: opts.open_stderr.then(pipe).transpose()?,
         })
     }
 }
