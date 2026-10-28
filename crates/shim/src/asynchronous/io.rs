@@ -235,13 +235,16 @@ mod tests {
     #[cfg(target_os = "linux")]
     mod copies {
         use std::{
-            io::Write,
+            io::{Read, Write},
             os::fd::OwnedFd,
             path::{Path, PathBuf},
             time::Instant,
         };
 
-        use nix::sys::stat::Mode;
+        use nix::sys::{
+            stat::Mode,
+            termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg},
+        };
         use tokio::{
             io::AsyncReadExt,
             process::{Child, Command},
@@ -367,32 +370,77 @@ mod tests {
             assert!(child.wait().await.unwrap().success());
         }
 
-        /// A console copy delivers what the terminal produces and ends at once
-        /// when cancelled, with no thread left parked on the terminal: that
-        /// would hang the runtime's shutdown at the end of the test.
-        #[tokio::test]
-        async fn pty_copy_ends_on_cancel() {
+        /// Console copies work both ways, and with the terminal still open,
+        /// shutting the runtime down waits on no thread parked on it: the
+        /// copies ran on the reactor.
+        #[test]
+        fn pty_copies_run_on_the_reactor() {
             let dir = tempfile::tempdir().unwrap();
+            let stdin = mkfifo(dir.path(), "stdin");
             let stdout = mkfifo(dir.path(), "stdout");
-            let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
             let pty = nix::pty::openpty(None, None).unwrap();
-            let io_tasks = IoTasks::default();
-            io_tasks
-                .copy_to_fifo(
-                    pty_reader(File::from(pty.master)).unwrap(),
-                    stdout.to_str().unwrap(),
-                )
-                .unwrap();
-
+            // Raw mode: no echo, no line buffering, no newline translation.
+            let mut termios = tcgetattr(&pty.slave).unwrap();
+            cfmakeraw(&mut termios);
+            tcsetattr(&pty.slave, SetArg::TCSANOW, &termios).unwrap();
             let mut slave = File::from(pty.slave);
-            slave.write_all(b"hi").unwrap();
-            let mut buf = [0u8; 16];
-            let n = reader.read(&mut buf).await.unwrap();
-            assert_eq!(&buf[..n], b"hi");
+            let master = File::from(pty.master);
 
-            // The terminal is still open, so only the cancel ends the copy.
-            io_tasks.abort().await;
-            assert!(io_tasks.outputs.is_empty());
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let io_tasks = IoTasks::default();
+            rt.block_on(async {
+                let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
+                let out = pty_reader(master.try_clone().unwrap()).unwrap();
+                io_tasks
+                    .copy_to_fifo(out, stdout.to_str().unwrap())
+                    .unwrap();
+                io_tasks
+                    .copy_from_fifo(stdin.to_str().unwrap(), pty_writer(master).unwrap())
+                    .unwrap();
+
+                slave.write_all(b"out").unwrap();
+                let mut buf = [0u8; 16];
+                let n = timeout(Duration::from_secs(5), reader.read(&mut buf))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(&buf[..n], b"out");
+
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&stdin)
+                    .unwrap()
+                    .write_all(b"in")
+                    .unwrap();
+                let mut slave_reader = slave.try_clone().unwrap();
+                let read = tokio::task::spawn_blocking(move || {
+                    let mut buf = [0u8; 16];
+                    let n = slave_reader.read(&mut buf).unwrap();
+                    buf[..n].to_vec()
+                });
+                let got = timeout(Duration::from_secs(5), read)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(got, b"in");
+
+                timeout(Duration::from_secs(5), io_tasks.abort())
+                    .await
+                    .unwrap();
+            });
+
+            // The slave is still open, so a read parked on the master would
+            // keep the blocking pool, and this shutdown, waiting.
+            let started = Instant::now();
+            rt.shutdown_timeout(Duration::from_secs(2));
+            assert!(
+                started.elapsed() < Duration::from_secs(1),
+                "a thread stayed parked on the terminal"
+            );
+            drop(slave);
         }
 
         /// CloseIO must reach the process as EOF on stdin even while containerd

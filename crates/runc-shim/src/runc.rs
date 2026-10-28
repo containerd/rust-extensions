@@ -539,8 +539,9 @@ async fn copy_console(
     let console = Console {
         file: std::fs::File::from(fd),
     };
-    // Each copy owns a descriptor of its own, so the copies and the console
-    // close independently.
+    // Each copy gets a descriptor of its own, closed independently of the
+    // console's. The description's flags, non-blocking among them, stay
+    // shared, which the console's ioctls do not mind.
     let master = || {
         console
             .file
