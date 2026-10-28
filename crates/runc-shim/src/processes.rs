@@ -189,7 +189,7 @@ where
     }
 
     async fn close_io(&mut self) -> Result<()> {
-        self.io_tasks.close_input().await;
+        self.io_tasks.close_input();
         Ok(())
     }
 

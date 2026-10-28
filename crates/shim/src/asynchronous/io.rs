@@ -17,14 +17,14 @@
 //! A process's stdio, copied between the runtime and containerd's fifos.
 
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{ErrorKind, Read, Write},
     os::{
         fd::{AsFd, BorrowedFd},
         unix::fs::OpenOptionsExt,
     },
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{ready, Context, Poll},
     time::Duration,
 };
@@ -73,44 +73,59 @@ impl Stdio {
 
 /// The tasks copying a process's stdio between the runtime and containerd's
 /// fifos, which a shim shuts down once the process is deleted.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct IoTasks {
     outputs: TaskTracker,
     inputs: TaskTracker,
     cancel: CancellationToken,
-    /// Cancelled with `cancel`, or alone to close the process's stdin.
-    cancel_inputs: CancellationToken,
+    /// The shim's hold on the stdin fifo, see [`IoTasks::copy_from_fifo`].
+    stdin: Arc<Mutex<Hold>>,
 }
 
-impl Default for IoTasks {
-    fn default() -> Self {
-        let cancel = CancellationToken::new();
-        Self {
-            outputs: TaskTracker::new(),
-            inputs: TaskTracker::new(),
-            cancel_inputs: cancel.child_token(),
-            cancel,
-        }
-    }
+/// The shim's own writer on a process's stdin fifo.
+#[derive(Default)]
+enum Hold {
+    /// No copy has started yet.
+    #[default]
+    Pending,
+    /// Kept only to be dropped, never read.
+    Open(#[allow(dead_code)] File),
+    /// CloseIO let go of it, or came before there was anything to hold.
+    Released,
 }
 
 impl IoTasks {
     /// Copies the process's input from the fifo at `path` `to` the runtime.
     ///
-    /// The fifo is opened without waiting for a writer, as the Go shim does:
-    /// the reactor delivers nothing until one connects, and EOF once the last
-    /// one leaves, so the process does not see a premature EOF either.
-    /// Shutdown cancels the copy without draining it, as containerd commonly
-    /// keeps a stdin fifo open past delete.
+    /// Neither open waits for containerd, and the shim holds the fifo open for
+    /// writing itself from before its reader opens, as the Go shim does, so
+    /// that containerd's writers coming and going never end the copy: it
+    /// ends, and with it the pipe into the process, only once CloseIO has let
+    /// go of that hold and containerd's writer is gone, having delivered
+    /// whatever was written first. A CloseIO that came before the copy counts
+    /// as well: the hold is then dropped as soon as it is taken, which is also
+    /// what makes a fifo nobody has written to report EOF. Shutdown cancels
+    /// the copy without draining it, as containerd commonly keeps a stdin
+    /// fifo open past delete.
     pub fn copy_from_fifo<W>(&self, path: &str, to: W) -> Result<()>
     where
         W: AsyncWrite + Send + Unpin + 'static,
     {
+        // Opened for reading as well, so that it cannot fail for want of a
+        // reader; it bridges the time until the hold proper is in place.
+        let bridge = hold_fifo(path, OpenOptions::new().read(true).write(true))?;
         let fifo = pipe::OpenOptions::new()
             .open_receiver(path)
             .map_err(io_error!(e, "open {}", path))?;
-        self.inputs
-            .spawn(Self::copy(self.cancel_inputs.clone(), fifo, to));
+        let hold = hold_fifo(path, OpenOptions::new().write(true))?;
+        drop(bridge);
+        let mut stdin = self.stdin.lock().unwrap();
+        match *stdin {
+            Hold::Released => drop(hold),
+            _ => *stdin = Hold::Open(hold),
+        }
+        drop(stdin);
+        self.inputs.spawn(Self::copy(self.cancel.clone(), fifo, to));
         Ok(())
     }
 
@@ -125,11 +140,7 @@ impl IoTasks {
     where
         R: AsyncRead + Send + Unpin + 'static,
     {
-        let keep = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-            .map_err(io_error!(e, "open {} for read", path))?;
+        let hold = hold_fifo(path, OpenOptions::new().read(true))?;
         // Driven by the reactor rather than the blocking pool: a parked write
         // costs no thread, and dropping the writer releases the fifo at once.
         let fifo = pipe::OpenOptions::new()
@@ -137,18 +148,16 @@ impl IoTasks {
             .map_err(io_error!(e, "open {}", path))?;
         let copy = Self::copy(self.cancel.clone(), from, fifo);
         self.outputs.spawn(async move {
-            let _keep = keep;
+            let _hold = hold;
             copy.await;
         });
         Ok(())
     }
 
-    /// Closes the process's stdin, as CloseIO asks, by ending the input
-    /// copies: dropping their end of the pipe is what the process sees as EOF.
-    pub async fn close_input(&self) {
-        self.cancel_inputs.cancel();
-        self.inputs.close();
-        self.inputs.wait().await;
+    /// Lets go of the shim's hold on stdin, as CloseIO asks; what the process
+    /// sees then is on [`IoTasks::copy_from_fifo`].
+    pub fn close_input(&self) {
+        *self.stdin.lock().unwrap() = Hold::Released;
     }
 
     /// Lets the output copies finish for up to the drain timeout, then cancels
@@ -173,9 +182,24 @@ impl IoTasks {
         self.abort().await;
     }
 
-    /// Cancels the copies at once, for a process that failed to start.
+    /// Fresh tasks to start the process again with after a failed start,
+    /// which still count a CloseIO that came already.
+    pub fn renew(&self) -> Self {
+        let stdin = match *self.stdin.lock().unwrap() {
+            Hold::Released => Hold::Released,
+            _ => Hold::Pending,
+        };
+        Self {
+            stdin: Arc::new(Mutex::new(stdin)),
+            ..Default::default()
+        }
+    }
+
+    /// Cancels the copies and lets go of stdin at once: the end of every
+    /// shutdown, and all of it for a process that failed to start.
     pub async fn abort(&self) {
         self.cancel.cancel();
+        self.close_input();
         self.outputs.close();
         self.inputs.close();
         tokio::join!(self.outputs.wait(), self.inputs.wait());
@@ -202,6 +226,15 @@ impl IoTasks {
             }
         }
     }
+}
+
+/// Opens the fifo at `path` as `options` say, for the shim to hold it open
+/// without waiting for the other end.
+fn hold_fifo(path: &str, options: &mut OpenOptions) -> Result<File> {
+    options
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .map_err(io_error!(e, "hold {} open", path))
 }
 
 /// The master side of a process's terminal, shared by its copies and its
@@ -343,8 +376,9 @@ mod tests {
         }
 
         /// Starts `command` with the stdin and stdout `stdio` asks for routed
-        /// through the fifos the way a shim does for a container process.
-        async fn spawn_copied(stdio: &Stdio, mut command: Command) -> (Child, IoTasks) {
+        /// through the fifos by `io_tasks`, the way a shim does for a container
+        /// process.
+        async fn spawn_copied(stdio: &Stdio, mut command: Command, io_tasks: &IoTasks) -> Child {
             let stdin = (!stdio.stdin.is_empty()).then(|| std::io::pipe().unwrap());
             let stdout = (!stdio.stdout.is_empty()).then(|| std::io::pipe().unwrap());
             if let Some((rd, _)) = &stdin {
@@ -357,7 +391,6 @@ mod tests {
             // The command keeps its copies of the child's pipe ends until dropped.
             drop(command);
 
-            let io_tasks = IoTasks::default();
             if let Some((_, wr)) = stdin {
                 let to = pipe::Sender::from_owned_fd(OwnedFd::from(wr)).unwrap();
                 io_tasks.copy_from_fifo(&stdio.stdin, to).unwrap();
@@ -366,7 +399,46 @@ mod tests {
                 let from = pipe::Receiver::from_owned_fd(OwnedFd::from(rd)).unwrap();
                 io_tasks.copy_to_fifo(from, &stdio.stdout).unwrap();
             }
-            (child, io_tasks)
+            child
+        }
+
+        /// A `cat` with its stdin and stdout routed through fifos by
+        /// `io_tasks`, and containerd's end of its stdout.
+        struct Cat {
+            stdin: PathBuf,
+            stdout: pipe::Receiver,
+            child: Child,
+            io_tasks: IoTasks,
+        }
+
+        async fn spawn_cat(dir: &Path, io_tasks: IoTasks) -> Cat {
+            let stdin = mkfifo(dir, "stdin");
+            let stdout = mkfifo(dir, "stdout");
+            let stdio = Stdio::new(stdin.to_str().unwrap(), stdout.to_str().unwrap(), "", false);
+            // containerd opens its end before the process starts.
+            let stdout = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
+            let mut command = Command::new("cat");
+            command.kill_on_drop(true);
+            let child = spawn_copied(&stdio, command, &io_tasks).await;
+            Cat {
+                stdin,
+                stdout,
+                child,
+                io_tasks,
+            }
+        }
+
+        /// containerd's end of a stdin fifo.
+        fn writer(path: &Path) -> File {
+            OpenOptions::new().write(true).open(path).unwrap()
+        }
+
+        /// Asserts that nothing arrives on `stdout` for a while.
+        async fn assert_no_output(stdout: &mut pipe::Receiver) {
+            let mut buf = [0u8; 16];
+            assert!(timeout(Duration::from_millis(200), stdout.read(&mut buf))
+                .await
+                .is_err());
         }
 
         /// A deleted process's fifos must be released even while a child it
@@ -382,15 +454,14 @@ mod tests {
             command
                 .args(["-c", "echo hello; exec sleep 30"])
                 .kill_on_drop(true);
-            let (_child, io_tasks) = spawn_copied(&stdio, command).await;
+            let io_tasks = IoTasks::default();
+            let _child = spawn_copied(&stdio, command, &io_tasks).await;
 
             let mut buf = [0u8; 16];
             let n = reader.read(&mut buf).await.unwrap();
             assert_eq!(&buf[..n], b"hello\n");
             // sleep keeps the pipe open, so the copy keeps the fifo open too.
-            assert!(timeout(Duration::from_millis(200), reader.read(&mut buf))
-                .await
-                .is_err());
+            assert_no_output(&mut reader).await;
 
             let drain = Duration::from_millis(100);
             let started = Instant::now();
@@ -414,7 +485,8 @@ mod tests {
                 .unwrap();
             let mut command = Command::new("sleep");
             command.arg("30").kill_on_drop(true);
-            let (_child, io_tasks) = spawn_copied(&stdio, command).await;
+            let io_tasks = IoTasks::default();
+            let _child = spawn_copied(&stdio, command, &io_tasks).await;
 
             let drain = Duration::from_secs(1);
             let started = Instant::now();
@@ -424,33 +496,30 @@ mod tests {
         }
 
         /// Setting up stdin must not wait for containerd to attach a writer,
-        /// and the process must not see EOF before one has.
+        /// and the process must not see EOF before CloseIO, however often
+        /// containerd's writers come and go.
         #[tokio::test]
-        async fn stdin_waits_for_a_writer() {
+        async fn stdin_waits_for_close_io() {
             let dir = tempfile::tempdir().unwrap();
-            let stdin = mkfifo(dir.path(), "stdin");
-            let stdout = mkfifo(dir.path(), "stdout");
-            let stdio = Stdio::new(stdin.to_str().unwrap(), stdout.to_str().unwrap(), "", false);
-            let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
-            let mut command = Command::new("cat");
-            command.kill_on_drop(true);
-            let (mut child, _io_tasks) = spawn_copied(&stdio, command).await;
+            let mut cat = spawn_cat(dir.path(), IoTasks::default()).await;
 
             // Nobody has stdin open for writing yet, so cat keeps waiting.
+            assert_no_output(&mut cat.stdout).await;
             let mut buf = [0u8; 16];
-            assert!(timeout(Duration::from_millis(200), reader.read(&mut buf))
-                .await
-                .is_err());
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open(&stdin)
-                .unwrap()
-                .write_all(b"hi\n")
-                .unwrap();
-            let n = reader.read(&mut buf).await.unwrap();
-            assert_eq!(&buf[..n], b"hi\n");
-            assert_eq!(reader.read(&mut buf).await.unwrap(), 0, "cat exits on EOF");
-            assert!(child.wait().await.unwrap().success());
+            for line in [&b"hi\n"[..], b"again\n"] {
+                writer(&cat.stdin).write_all(line).unwrap();
+                let n = cat.stdout.read(&mut buf).await.unwrap();
+                assert_eq!(&buf[..n], line);
+            }
+            // The writer is gone, but containerd has not asked to close stdin.
+            assert_no_output(&mut cat.stdout).await;
+            cat.io_tasks.close_input();
+            assert_eq!(
+                cat.stdout.read(&mut buf).await.unwrap(),
+                0,
+                "cat exits on EOF"
+            );
+            assert!(cat.child.wait().await.unwrap().success());
         }
 
         /// Console copies work both ways through one descriptor, and with the
@@ -498,12 +567,7 @@ mod tests {
                     .unwrap();
                 assert_eq!(&buf[..n], b"out");
 
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&stdin)
-                    .unwrap()
-                    .write_all(b"in")
-                    .unwrap();
+                writer(&stdin).write_all(b"in").unwrap();
                 let mut slave_reader = slave.try_clone().unwrap();
                 let read = tokio::task::spawn_blocking(move || {
                     let mut buf = [0u8; 16];
@@ -538,28 +602,85 @@ mod tests {
             drop(slave);
         }
 
-        /// CloseIO must reach the process as EOF on stdin even while containerd
-        /// still holds the fifo open.
-        #[tokio::test]
-        async fn close_input_ends_stdin() {
+        /// CloseIO sent right after containerd's last write, the way its
+        /// client does, must still deliver that write before the process sees
+        /// EOF.
+        #[tokio::test(flavor = "current_thread")]
+        async fn close_input_delivers_what_was_written() {
             let dir = tempfile::tempdir().unwrap();
-            let stdin = mkfifo(dir.path(), "stdin");
-            let stdout = mkfifo(dir.path(), "stdout");
-            let stdio = Stdio::new(stdin.to_str().unwrap(), stdout.to_str().unwrap(), "", false);
-            let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
-            let _writer = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&stdin)
-                .unwrap();
-            let mut command = Command::new("cat");
-            command.kill_on_drop(true);
-            let (mut child, io_tasks) = spawn_copied(&stdio, command).await;
+            let mut cat = spawn_cat(dir.path(), IoTasks::default()).await;
 
-            io_tasks.close_input().await;
+            // No await between the write and CloseIO, and only this thread
+            // runs tasks, so the copy has not had a chance to run in between.
+            writer(&cat.stdin).write_all(b"hello\n").unwrap();
+            cat.io_tasks.close_input();
+
+            let mut output = Vec::new();
+            cat.stdout.read_to_end(&mut output).await.unwrap();
+            assert_eq!(output, b"hello\n");
+            assert!(cat.child.wait().await.unwrap().success());
+        }
+
+        /// After CloseIO the copy carries on until containerd's writer is gone
+        /// too, as the Go shim's does.
+        #[tokio::test]
+        async fn close_input_waits_for_containerd() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut cat = spawn_cat(dir.path(), IoTasks::default()).await;
+
+            let mut late = writer(&cat.stdin);
+            cat.io_tasks.close_input();
+            late.write_all(b"late\n").unwrap();
             let mut buf = [0u8; 16];
-            assert_eq!(reader.read(&mut buf).await.unwrap(), 0, "cat exits on EOF");
-            assert!(child.wait().await.unwrap().success());
+            let n = cat.stdout.read(&mut buf).await.unwrap();
+            assert_eq!(&buf[..n], b"late\n");
+            assert_no_output(&mut cat.stdout).await;
+            drop(late);
+            assert_eq!(
+                cat.stdout.read(&mut buf).await.unwrap(),
+                0,
+                "cat exits on EOF"
+            );
+            assert!(cat.child.wait().await.unwrap().success());
+        }
+
+        /// CloseIO can come before the copy starts, between an exec and its
+        /// start; it must not be forgotten: the process sees EOF at once, even
+        /// though containerd never connects a writer.
+        #[tokio::test]
+        async fn close_input_before_the_copy_ends_stdin() {
+            let dir = tempfile::tempdir().unwrap();
+            let io_tasks = IoTasks::default();
+            io_tasks.close_input();
+            let mut cat = spawn_cat(dir.path(), io_tasks).await;
+
+            let mut output = Vec::new();
+            timeout(Duration::from_secs(5), cat.stdout.read_to_end(&mut output))
+                .await
+                .expect("stdin is not held open")
+                .unwrap();
+            assert!(output.is_empty());
+            assert!(cat.child.wait().await.unwrap().success());
+        }
+
+        /// A process started again after a failed start gets fresh tasks that
+        /// still count the CloseIO that came before.
+        #[tokio::test]
+        async fn renewed_tasks_keep_an_early_close_input() {
+            let dir = tempfile::tempdir().unwrap();
+            let io_tasks = IoTasks::default();
+            io_tasks.close_input();
+            let renewed = io_tasks.renew();
+            io_tasks.abort().await;
+            let mut cat = spawn_cat(dir.path(), renewed).await;
+
+            let mut output = Vec::new();
+            timeout(Duration::from_secs(5), cat.stdout.read_to_end(&mut output))
+                .await
+                .expect("stdin is not held open")
+                .unwrap();
+            assert!(output.is_empty());
+            assert!(cat.child.wait().await.unwrap().success());
         }
     }
 }

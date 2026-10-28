@@ -456,7 +456,8 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
         if let Err(e) = self.start_exec(p).await {
             // Fresh io tasks, as the exec stays registered and may be started again.
-            std::mem::take(&mut p.io_tasks).abort().await;
+            let fresh = p.io_tasks.renew();
+            std::mem::replace(&mut p.io_tasks, fresh).abort().await;
             return Err(e);
         }
         Ok(())
