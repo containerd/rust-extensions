@@ -236,18 +236,30 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn atomic_write_preserves_creation_mode_and_non_utf8_paths() {
-        use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+    fn atomic_write_preserves_creation_mode() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let reference = dir.path().join("reference");
         std::fs::write(&reference, "reference").unwrap();
-        let path = dir.path().join(std::ffi::OsStr::from_bytes(b"state-\xff"));
+        let path = dir.path().join("state");
         write_str_atomic(&path, "contents").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "contents");
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode(),
             std::fs::metadata(&reference).unwrap().permissions().mode()
         );
+    }
+
+    // macOS filesystems can reject invalid UTF-8 filenames with EILSEQ.
+    // Keep this separate from the permission test, which runs on all Unix targets.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn atomic_write_accepts_non_utf8_paths() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(std::ffi::OsStr::from_bytes(b"state-\xff"));
+        write_str_atomic(&path, "contents").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "contents");
     }
 
     #[test]
