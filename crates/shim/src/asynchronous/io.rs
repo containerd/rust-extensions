@@ -16,12 +16,23 @@
 
 //! A process's stdio, copied between the runtime and containerd's fifos.
 
-use std::{fs::File, io::ErrorKind, os::unix::fs::OpenOptionsExt, time::Duration};
+use std::{
+    fs::File,
+    io::{ErrorKind, Read, Write},
+    os::{
+        fd::{AsFd, BorrowedFd},
+        unix::fs::OpenOptionsExt,
+    },
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
+    time::Duration,
+};
 
 use log::{debug, error, warn};
 use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{unix::AsyncFd, AsyncRead, AsyncWrite, ReadBuf},
     net::unix::pipe,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -193,22 +204,73 @@ impl IoTasks {
     }
 }
 
-/// Reads the master side of a process's terminal through the reactor rather
-/// than the blocking pool: the copy parks no thread, and cancelling it ends
-/// it at once instead of waiting for the terminal to hang up.
-///
-/// tokio's pipe types suit any descriptor the reactor can poll; they just
-/// skip their pipe checks here.
-pub fn pty_reader(master: File) -> Result<impl AsyncRead + Send + Unpin + 'static> {
-    set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
-    pipe::Receiver::from_file_unchecked(master).map_err(io_error!(e, "register the console"))
+/// The master side of a process's terminal, shared by its copies and its
+/// resize handle so that the shim holds the terminal once, and driven by the
+/// reactor rather than the blocking pool: a copy parks no thread, and
+/// cancelling it ends it at once instead of waiting for the terminal to hang
+/// up.
+#[derive(Clone)]
+pub struct Pty(Arc<AsyncFd<File>>);
+
+impl Pty {
+    pub fn new(master: File) -> Result<Self> {
+        set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
+        let master = AsyncFd::new(master).map_err(io_error!(e, "register the console"))?;
+        Ok(Self(Arc::new(master)))
+    }
 }
 
-/// Writes the master side of a process's terminal through the reactor, see
-/// [`pty_reader`].
-pub fn pty_writer(master: File) -> Result<impl AsyncWrite + Send + Unpin + 'static> {
-    set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
-    pipe::Sender::from_file_unchecked(master).map_err(io_error!(e, "register the console"))
+impl AsFd for Pty {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.get_ref().as_fd()
+    }
+}
+
+impl AsyncRead for Pty {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        loop {
+            let mut guard = ready!(self.0.poll_read_ready(cx))?;
+            let unfilled = buf.initialize_unfilled();
+            match guard.try_io(|master| {
+                let mut file = master.get_ref();
+                file.read(unfilled)
+            }) {
+                Ok(read) => return Poll::Ready(read.map(|n| buf.advance(n))),
+                Err(_would_block) => continue,
+            }
+        }
+    }
+}
+
+impl AsyncWrite for Pty {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        loop {
+            let mut guard = ready!(self.0.poll_write_ready(cx))?;
+            match guard.try_io(|master| {
+                let mut file = master.get_ref();
+                file.write(buf)
+            }) {
+                Ok(written) => return Poll::Ready(written),
+                Err(_would_block) => continue,
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
 }
 
 fn set_nonblocking(file: &File) -> std::io::Result<()> {
@@ -257,6 +319,18 @@ mod tests {
             let path = dir.join(name);
             nix::unistd::mkfifo(&path, Mode::S_IRWXU).unwrap();
             path
+        }
+
+        /// How many of this process's descriptors refer to a terminal master,
+        /// `/dev/ptmx` or `/dev/pts/ptmx` depending on the devpts layout.
+        fn ptmx_fds() -> usize {
+            std::fs::read_dir("/proc/self/fd")
+                .unwrap()
+                .filter(|entry| {
+                    let target = std::fs::read_link(entry.as_ref().unwrap().path());
+                    target.is_ok_and(|target| target.file_name().is_some_and(|name| name == "ptmx"))
+                })
+                .count()
         }
 
         /// Starts `command` with the stdin and stdout `stdio` asks for routed
@@ -370,9 +444,9 @@ mod tests {
             assert!(child.wait().await.unwrap().success());
         }
 
-        /// Console copies work both ways, and with the terminal still open,
-        /// shutting the runtime down waits on no thread parked on it: the
-        /// copies ran on the reactor.
+        /// Console copies work both ways through one descriptor, and with the
+        /// terminal still open, shutting the runtime down waits on no thread
+        /// parked on it: the copies ran on the reactor.
         #[test]
         fn pty_copies_run_on_the_reactor() {
             let dir = tempfile::tempdir().unwrap();
@@ -393,13 +467,14 @@ mod tests {
             let io_tasks = IoTasks::default();
             rt.block_on(async {
                 let mut reader = pipe::OpenOptions::new().open_receiver(&stdout).unwrap();
-                let out = pty_reader(master.try_clone().unwrap()).unwrap();
+                let pty = Pty::new(master).unwrap();
                 io_tasks
-                    .copy_to_fifo(out, stdout.to_str().unwrap())
+                    .copy_to_fifo(pty.clone(), stdout.to_str().unwrap())
                     .unwrap();
                 io_tasks
-                    .copy_from_fifo(stdin.to_str().unwrap(), pty_writer(master).unwrap())
+                    .copy_from_fifo(stdin.to_str().unwrap(), pty.clone())
                     .unwrap();
+                assert_eq!(ptmx_fds(), 1, "the copies share the handle's descriptor");
 
                 slave.write_all(b"out").unwrap();
                 let mut buf = [0u8; 16];
@@ -431,6 +506,7 @@ mod tests {
                     .await
                     .unwrap();
             });
+            assert_eq!(ptmx_fds(), 0, "the terminal is released with its handles");
 
             // The slave is still open, so a read parked on the master would
             // keep the blocking pool, and this shutdown, waiting.

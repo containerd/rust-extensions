@@ -18,13 +18,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use containerd_shim::{
-    io::{IoTasks, Stdio},
+    io::{IoTasks, Pty, Stdio},
     protos::{
         api::{ProcessInfo, StateResponse, Status},
         cgroups::metrics::Metrics,
         protobuf::well_known_types::timestamp::Timestamp,
     },
-    Console, Result,
+    Result,
 };
 use oci_spec::runtime::LinuxResources;
 use rustix::termios::{tcsetwinsize, Winsize};
@@ -73,7 +73,7 @@ pub struct ProcessTemplate<S> {
     pub exit_code: i32,
     pub exited_at: Option<OffsetDateTime>,
     pub wait_chan_tx: Vec<Sender<()>>,
-    pub console: Option<Console>,
+    pub console: Option<Pty>,
     pub lifecycle: Arc<S>,
     pub io_tasks: IoTasks,
 }
@@ -172,8 +172,7 @@ where
                 ws_xpixel: 0,
                 ws_ypixel: 0,
             };
-            tcsetwinsize(&console.file, w)
-                .map_err(|e| containerd_shim::Error::Other(e.to_string()))?;
+            tcsetwinsize(console, w).map_err(|e| containerd_shim::Error::Other(e.to_string()))?;
         }
         Ok(())
     }

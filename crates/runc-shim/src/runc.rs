@@ -33,8 +33,7 @@ use cgroups_rs::fs::Cgroup;
 use containerd_shim::{
     api::{CreateTaskRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
-    io::{pty_reader, pty_writer, IoTasks, Stdio},
-    io_error,
+    io::{IoTasks, Pty, Stdio},
     monitor::{ExitEvent, Subject, Topic},
     mount::umount_recursive,
     other, other_error,
@@ -44,7 +43,7 @@ use containerd_shim::{
         protobuf::{CodedInputStream, Message},
     },
     util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
-    Console, Error, Result,
+    Error, Result,
 };
 use log::{debug, error};
 use nix::{sys::signal::kill, unistd::Pid};
@@ -532,30 +531,20 @@ async fn copy_console(
     console_socket: &ConsoleSocket,
     stdio: &Stdio,
     io_tasks: &IoTasks,
-) -> Result<Console> {
+) -> Result<Pty> {
     debug!("copy_console: waiting for runtime to send console fd");
     let stream = console_socket.accept().await?;
     let fd = asyncify(move || -> Result<OwnedFd> { receive_socket(stream.as_raw_fd()) }).await?;
-    let console = Console {
-        file: std::fs::File::from(fd),
-    };
-    // Each copy gets a descriptor of its own, closed independently of the
-    // console's. The description's flags, non-blocking among them, stay
-    // shared, which the console's ioctls do not mind.
-    let master = || {
-        console
-            .file
-            .try_clone()
-            .map_err(io_error!(e, "clone console"))
-    };
+    // The copies and the resize handle share the one descriptor.
+    let console = Pty::new(std::fs::File::from(fd))?;
     if !stdio.stdin.is_empty() {
         debug!("copy_console: pipe stdin to console");
-        io_tasks.copy_from_fifo(&stdio.stdin, pty_writer(master()?)?)?;
+        io_tasks.copy_from_fifo(&stdio.stdin, console.clone())?;
     }
 
     if !stdio.stdout.is_empty() {
         debug!("copy_console: pipe stdout from console");
-        io_tasks.copy_to_fifo(pty_reader(master()?)?, &stdio.stdout)?;
+        io_tasks.copy_to_fifo(console.clone(), &stdio.stdout)?;
     }
     Ok(console)
 }
