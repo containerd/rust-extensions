@@ -406,7 +406,9 @@ pub(crate) mod tests {
         assert!(pio.io.is_some(), "null stdio still needs a driver");
     }
 
-    // The pipe ends register with the tokio reactor, hence the runtime.
+    // The pipe ends register with the tokio reactor, hence the runtime. The
+    // pipes are chowned, which macOS refuses for a pipe, hence Linux only.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn io_fifo() {
         let stdio = Stdio::new("/run/in", "/run/out", "/run/err", false);
