@@ -60,12 +60,15 @@ use crate::{
     options::*,
     utils::{abs_string, write_value_to_temp_file},
 };
+pub use crate::{io::PipedIo, pipe::Pipe};
 
 #[cfg(feature = "async")]
 pub mod asynchronous;
 pub mod container;
 pub mod error;
 pub mod events;
+pub mod io;
+mod pipe;
 #[cfg(not(feature = "async"))]
 pub mod synchronous;
 

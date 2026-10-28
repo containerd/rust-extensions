@@ -13,18 +13,22 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-pub mod io;
-mod pipe;
+
 mod runc;
 use std::{
     fmt::Debug,
+    fs::{File, OpenOptions},
     io::{Read, Result, Write},
+    process::Stdio,
 };
 
-pub use pipe::Pipe;
 pub use runc::{DefaultExecutor, Spawner};
 
-use crate::Command;
+use crate::{
+    io::{InheritedStdIo, NullIo, PipedStdIo, FIFO},
+    utils::open_fifo_for_reading,
+    Command, Pipe, PipedIo,
+};
 
 pub trait Io: Debug + Send + Sync {
     /// Return write side of stdin
@@ -50,40 +54,21 @@ pub trait Io: Debug + Send + Sync {
     fn close_after_start(&self);
 }
 
-#[derive(Debug)]
-pub struct PipedIo {
-    pub stdin: Option<Pipe>,
-    pub stdout: Option<Pipe>,
-    pub stderr: Option<Pipe>,
-}
-
+// The stdin writer is given away outright, so that dropping it reaches the
+// child as EOF while the driver is still alive; the read ends are duplicated.
 impl Io for PipedIo {
-    // The stdin writer is given away outright, so that dropping it reaches the
-    // child as EOF while the driver is still alive.
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
-        self.stdin
-            .as_ref()
-            .and_then(|pipe| pipe.take_wr())
-            .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
+        Some(Box::new(File::from(self.stdin.as_ref()?.take_wr()?)))
     }
 
     fn stdout(&self) -> Option<Box<dyn Read + Send>> {
-        self.stdout.as_ref().and_then(|pipe| {
-            pipe.rd
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Read + Send>)
-                .ok()
-        })
+        self.stdout.as_ref().and_then(read_end)
     }
 
     fn stderr(&self) -> Option<Box<dyn Read + Send>> {
-        self.stderr.as_ref().and_then(|pipe| {
-            pipe.rd
-                .try_clone()
-                .map(|x| Box::new(x) as Box<dyn Read + Send>)
-                .ok()
-        })
+        self.stderr.as_ref().and_then(read_end)
     }
+
     // Note that this internally use [`std::fs::File`]'s `try_clone()`.
     // Thus, the files passed to commands will be not closed after command exit.
     fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
@@ -117,5 +102,121 @@ impl Io for PipedIo {
         if let Some(p) = self.stderr.as_ref() {
             p.close_wr();
         }
+    }
+}
+
+fn read_end(pipe: &Pipe) -> Option<Box<dyn Read + Send>> {
+    Some(Box::new(File::from(pipe.rd.try_clone().ok()?)))
+}
+
+impl Io for NullIo {
+    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
+impl Io for InheritedStdIo {
+    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
+impl Io for PipedStdIo {
+    fn set(&self, cmd: &mut Command) -> std::io::Result<()> {
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
+impl Io for FIFO {
+    fn set(&self, cmd: &mut Command) -> Result<()> {
+        if let Some(path) = self.stdin.as_ref() {
+            cmd.stdin(open_fifo_for_reading(path)?);
+        }
+
+        if let Some(path) = self.stdout.as_ref() {
+            let stdout = OpenOptions::new().write(true).open(path)?;
+            cmd.stdout(stdout);
+        }
+
+        if let Some(path) = self.stderr.as_ref() {
+            let stderr = OpenOptions::new().write(true).open(path)?;
+            cmd.stderr(stderr);
+        }
+
+        Ok(())
+    }
+
+    fn close_after_start(&self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_create_piped_io() {
+        let opts = crate::io::IoOption::default();
+        let uid = nix::unistd::getuid();
+        let gid = nix::unistd::getgid();
+        let io = PipedIo::new(uid.as_raw(), gid.as_raw(), &opts).unwrap();
+        let mut buf = [0xfau8];
+
+        let mut stdin = io.stdin().unwrap();
+        stdin.write_all(&buf).unwrap();
+        buf[0] = 0x0;
+
+        io.stdin.as_ref().map(|v| {
+            File::from(v.rd.try_clone().unwrap())
+                .read(&mut buf)
+                .unwrap()
+        });
+        assert_eq!(&buf, &[0xfau8]);
+
+        let mut stdout = io.stdout().unwrap();
+        buf[0] = 0xce;
+        io.stdout
+            .as_ref()
+            .map(|v| File::from(v.try_clone_wr().unwrap()).write(&buf).unwrap());
+        buf[0] = 0x0;
+        stdout.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xceu8]);
+
+        let mut stderr = io.stderr().unwrap();
+        buf[0] = 0xa5;
+        io.stderr
+            .as_ref()
+            .map(|v| File::from(v.try_clone_wr().unwrap()).write(&buf).unwrap());
+        buf[0] = 0x0;
+        stderr.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, &[0xa5u8]);
+
+        io.close_after_start();
+        stdout.read_exact(&mut buf).unwrap_err();
+        stderr.read_exact(&mut buf).unwrap_err();
+    }
+
+    #[test]
+    fn null_io_accepts_child_output() {
+        let io = NullIo::new().unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf stdout && printf stderr >&2"]);
+        io.set(&mut command).unwrap();
+        let mut child = command.spawn().unwrap();
+        io.close_after_start();
+        assert!(child.wait().unwrap().success());
     }
 }
