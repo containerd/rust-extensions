@@ -215,7 +215,11 @@ pub struct Pty(Arc<AsyncFd<File>>);
 impl Pty {
     pub fn new(master: File) -> Result<Self> {
         set_nonblocking(&master).map_err(io_error!(e, "set the console non-blocking"))?;
-        let master = AsyncFd::new(master).map_err(io_error!(e, "register the console"))?;
+        // SAFETY: the AsyncFd owns the file, so its descriptor stays open and
+        // the same for as long as the registration lives.
+        let master = unsafe { AsyncFd::register(master) }
+            .map_err(std::io::Error::from)
+            .map_err(io_error!(e, "register the console"))?;
         Ok(Self(Arc::new(master)))
     }
 }
@@ -321,15 +325,20 @@ mod tests {
             path
         }
 
+        /// What this process's descriptors refer to.
+        fn fd_targets() -> Vec<PathBuf> {
+            std::fs::read_dir("/proc/self/fd")
+                .unwrap()
+                .filter_map(|entry| std::fs::read_link(entry.unwrap().path()).ok())
+                .collect()
+        }
+
         /// How many of this process's descriptors refer to a terminal master,
         /// `/dev/ptmx` or `/dev/pts/ptmx` depending on the devpts layout.
         fn ptmx_fds() -> usize {
-            std::fs::read_dir("/proc/self/fd")
-                .unwrap()
-                .filter(|entry| {
-                    let target = std::fs::read_link(entry.as_ref().unwrap().path());
-                    target.is_ok_and(|target| target.file_name().is_some_and(|name| name == "ptmx"))
-                })
+            fd_targets()
+                .iter()
+                .filter(|target| target.file_name().is_some_and(|name| name == "ptmx"))
                 .count()
         }
 
@@ -474,7 +483,12 @@ mod tests {
                 io_tasks
                     .copy_from_fifo(stdin.to_str().unwrap(), pty.clone())
                     .unwrap();
-                assert_eq!(ptmx_fds(), 1, "the copies share the handle's descriptor");
+                assert_eq!(
+                    ptmx_fds(),
+                    1,
+                    "the copies share the handle's descriptor: {:?}",
+                    fd_targets()
+                );
 
                 slave.write_all(b"out").unwrap();
                 let mut buf = [0u8; 16];
@@ -506,7 +520,12 @@ mod tests {
                     .await
                     .unwrap();
             });
-            assert_eq!(ptmx_fds(), 0, "the terminal is released with its handles");
+            assert_eq!(
+                ptmx_fds(),
+                0,
+                "the terminal is released with its handles: {:?}",
+                fd_targets()
+            );
 
             // The slave is still open, so a read parked on the master would
             // keep the blocking pool, and this shutdown, waiting.
