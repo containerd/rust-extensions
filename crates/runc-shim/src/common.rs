@@ -16,7 +16,6 @@
 
 use std::{
     env,
-    future::Future,
     io::IoSliceMut,
     ops::Deref,
     os::{
@@ -25,11 +24,11 @@ use std::{
     },
     path::Path,
     sync::Arc,
-    time::Duration,
 };
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
+    io::Stdio,
     io_error, other, other_error, Error,
 };
 use log::{debug, warn};
@@ -42,13 +41,11 @@ use nix::{
 };
 use oci_spec::runtime::{LinuxNamespaceType, Spec};
 use runc::{
-    io::{Io, NullIo, FIFO},
+    io::{Io, IoOption, NullIo},
     options::GlobalOpts,
-    Runc, Spawner,
+    PipedIo, Runc, Spawner,
 };
 use serde::Deserialize;
-
-use super::io::Stdio;
 
 pub const GROUP_LABELS: [&str; 2] = [
     "io.containerd.runc.v2.group",
@@ -58,8 +55,6 @@ pub const INIT_PID_FILE: &str = "init.pid";
 pub const LOG_JSON_FILE: &str = "log.json";
 pub const FIFO_SCHEME: &str = "fifo";
 
-const TIMEOUT_DURATION: std::time::Duration = Duration::from_secs(3);
-
 #[derive(Deserialize)]
 pub struct Log {
     pub level: String,
@@ -68,15 +63,13 @@ pub struct Log {
 
 #[derive(Default)]
 pub struct ProcessIO {
-    pub uri: Option<String>,
     pub io: Option<Arc<dyn Io>>,
-    pub copy: bool,
 }
 
 pub fn create_io(
     id: &str,
-    _io_uid: u32,
-    _io_gid: u32,
+    io_uid: u32,
+    io_gid: u32,
     stdio: &Stdio,
 ) -> containerd_shim::Result<ProcessIO> {
     let mut pio = ProcessIO::default();
@@ -85,33 +78,32 @@ pub fn create_io(
         pio.io = Some(Arc::new(nio));
         return Ok(pio);
     }
-    let stdout = stdio.stdout.as_str();
-    let scheme_path = stdout.trim().split("://").collect::<Vec<&str>>();
-    let scheme: &str;
-    if scheme_path.len() <= 1 {
-        // no scheme specified, default schema to fifo
-        scheme = FIFO_SCHEME;
-        pio.uri = Some(format!("{}://{}", scheme, stdout));
-    } else {
-        scheme = scheme_path[0];
-        pio.uri = Some(stdout.to_string());
-    }
+    // No scheme means a fifo.
+    let scheme = stdio
+        .stdout
+        .trim()
+        .split_once("://")
+        .map_or(FIFO_SCHEME, |(scheme, _)| scheme);
 
     if scheme == FIFO_SCHEME {
         debug!(
-            "create named pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
+            "create pipe io for container {}, stdin: {}, stdout: {}, stderr: {}",
             id,
             stdio.stdin.as_str(),
             stdio.stdout.as_str(),
             stdio.stderr.as_str()
         );
-        let io = FIFO {
-            stdin: (!stdio.stdin.is_empty()).then(|| stdio.stdin.clone()),
-            stdout: (!stdio.stdout.is_empty()).then(|| stdio.stdout.clone()),
-            stderr: (!stdio.stderr.is_empty()).then(|| stdio.stderr.clone()),
+        // The process writes to pipes the shim owns and the shim copies into
+        // containerd's fifos. Handing the fifos to the process directly would
+        // leave the shim nothing to close on delete, so a child that outlived
+        // the process would keep containerd waiting on them.
+        let opts = IoOption {
+            open_stdin: !stdio.stdin.is_empty(),
+            open_stdout: !stdio.stdout.is_empty(),
+            open_stderr: !stdio.stderr.is_empty(),
         };
+        let io = PipedIo::new(io_uid, io_gid, &opts).map_err(io_error!(e, "create pipes"))?;
         pio.io = Some(Arc::new(io));
-        pio.copy = false;
     }
     Ok(pio)
 }
@@ -243,22 +235,8 @@ pub(crate) fn xdg_runtime_dir() -> String {
         .unwrap_or_else(|_| env::temp_dir().to_str().unwrap_or(".").to_string())
 }
 
-pub async fn handle_file_open<F, Fut>(file_op: F) -> Result<tokio::fs::File, tokio::io::Error>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<tokio::fs::File, tokio::io::Error>> + Send,
-{
-    match tokio::time::timeout(TIMEOUT_DURATION, file_op()).await {
-        Ok(result) => result,
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "File operation timed out",
-        )),
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::path::PathBuf;
 
     use containerd_shim::{
@@ -271,7 +249,16 @@ mod tests {
     };
 
     use super::{check_kill_error, create_io, get_spec_from_request, has_shared_pid_namespace};
-    use crate::io::Stdio;
+
+    /// The pipes are chowned to the io owner, which an unprivileged test can
+    /// only do for itself.
+    pub(crate) fn io_owner() -> (u32, u32) {
+        (
+            nix::unistd::getuid().as_raw(),
+            nix::unistd::getgid().as_raw(),
+        )
+    }
+    use containerd_shim::io::Stdio;
 
     // -----------------------------------------------------------------------
     // check_kill_error: turning runc stderr into a shim error
@@ -414,37 +401,33 @@ mod tests {
         let stdio = Stdio::default();
         assert!(stdio.is_null());
 
-        let pio = create_io("id", 0, 0, &stdio).expect("create io");
+        let (uid, gid) = io_owner();
+        let pio = create_io("id", uid, gid, &stdio).expect("create io");
         assert!(pio.io.is_some(), "null stdio still needs a driver");
-        assert!(pio.uri.is_none());
-        assert!(!pio.copy);
     }
 
-    #[test]
-    fn io_fifo() {
+    // The pipe ends register with the tokio reactor, hence the runtime.
+    #[tokio::test]
+    async fn io_fifo() {
         let stdio = Stdio::new("/run/in", "/run/out", "/run/err", false);
         assert!(!stdio.is_null());
 
-        let pio = create_io("id", 0, 0, &stdio).expect("create io");
-        assert_eq!(pio.uri.as_deref(), Some("fifo:///run/out"));
-        assert!(pio.io.is_some());
-        assert!(
-            !pio.copy,
-            "runc writes to the fifos directly, so the shim does not copy"
-        );
+        let (uid, gid) = io_owner();
+        let pio = create_io("id", uid, gid, &stdio).expect("create io");
+        let io = pio.io.as_ref().expect("piped io");
+        assert!(io.stdin().is_some() && io.stdout().is_some() && io.stderr().is_some());
     }
 
     /// Documents current behaviour, which is not obviously the intended one: a
-    /// non-fifo scheme yields no io driver and leaves `copy` false, so nothing
-    /// is wired up and the container's output goes nowhere. Recorded so a fix
-    /// shows up here as a deliberate change.
+    /// non-fifo scheme yields no io driver, so nothing is wired up and the
+    /// container's output goes nowhere. Recorded so a fix shows up here as a
+    /// deliberate change.
     #[test]
     fn io_scheme() {
         let stdio = Stdio::new("", "binary:///usr/bin/log", "", false);
 
-        let pio = create_io("id", 0, 0, &stdio).expect("create io");
-        assert_eq!(pio.uri.as_deref(), Some("binary:///usr/bin/log"));
+        let (uid, gid) = io_owner();
+        let pio = create_io("id", uid, gid, &stdio).expect("create io");
         assert!(pio.io.is_none());
-        assert!(!pio.copy);
     }
 }

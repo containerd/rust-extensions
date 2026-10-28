@@ -19,11 +19,8 @@ use std::sync::RwLock;
 use std::{
     convert::TryFrom,
     os::{
-        fd::{IntoRawFd, OwnedFd},
-        unix::{
-            io::{AsRawFd, FromRawFd},
-            prelude::ExitStatusExt,
-        },
+        fd::OwnedFd,
+        unix::{io::AsRawFd, prelude::ExitStatusExt},
     },
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -36,6 +33,7 @@ use cgroups_rs::fs::Cgroup;
 use containerd_shim::{
     api::{CreateTaskRequest, Options, Status},
     asynchronous::monitor::{monitor_subscribe, monitor_unsubscribe, Subscription},
+    io::{IoTasks, Stdio},
     io_error,
     monitor::{ExitEvent, Subject, Topic},
     mount::umount_recursive,
@@ -46,27 +44,24 @@ use containerd_shim::{
         protobuf::{CodedInputStream, Message},
     },
     util::{asyncify, mkdir, mount_rootfs, read_file_to_str, write_options, write_runtime},
-    Console, Error, ExitSignal, Result,
+    Console, Error, Result,
 };
 use log::{debug, error};
 use nix::{sys::signal::kill, unistd::Pid};
 use oci_spec::runtime::{LinuxResources, Process};
 use runc::{Command, Runc, Spawner};
 use tokio::{
-    fs::{remove_file, File, OpenOptions},
-    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufReader},
+    fs::{remove_file, File},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader},
 };
 
 use super::{
     console::ConsoleSocket,
     processes::{ProcessLifecycle, ProcessTemplate},
 };
-use crate::{
-    common::{
-        check_kill_error, create_io, create_runc, handle_file_open, receive_socket, Log, ProcessIO,
-        ShimExecutor, INIT_PID_FILE, LOG_JSON_FILE,
-    },
-    io::Stdio,
+use crate::common::{
+    check_kill_error, create_io, create_runc, receive_socket, Log, ProcessIO, ShimExecutor,
+    INIT_PID_FILE, LOG_JSON_FILE,
 };
 
 pub type ExecProcess = ProcessTemplate<RuncExecLifecycle>;
@@ -115,48 +110,58 @@ impl InitProcess {
     /// Creates a container's init process through the OCI runtime.
     pub async fn create(id: &str, stdio: Stdio, lifecycle: RuncInitLifecycle) -> Result<Self> {
         let mut init = Self::new(id, stdio, lifecycle);
+        if let Err(e) = init.create_container().await {
+            init.io_tasks.abort().await;
+            return Err(e);
+        }
+        Ok(init)
+    }
 
-        let stdio = &init.stdio;
-        let opts = &init.lifecycle.opts;
-        let bundle = &init.lifecycle.bundle;
-        let pid_path = Path::new(bundle).join(INIT_PID_FILE);
+    async fn create_container(&mut self) -> Result<()> {
+        let opts = &self.lifecycle.opts;
+        let bundle = self.lifecycle.bundle.clone();
+        let pid_path = Path::new(&bundle).join(INIT_PID_FILE);
         let mut create_opts = runc::options::CreateOpts::new()
             .pid_file(&pid_path)
             .no_pivot(opts.no_pivot_root)
             .no_new_keyring(opts.no_new_keyring)
             .detach(false);
-        let (socket, pio) = if stdio.terminal {
+        let socket = if self.stdio.terminal {
             let s = ConsoleSocket::new().await?;
             create_opts.console_socket = Some(s.path.to_owned());
-            (Some(s), None)
+            Some(s)
         } else {
-            let pio = create_io(id, opts.io_uid, opts.io_gid, stdio)?;
+            let pio = create_io(&self.id, opts.io_uid, opts.io_gid, &self.stdio)?;
             create_opts.io = pio.io.as_ref().cloned();
-            (None, Some(pio))
+            // Open the fifos before creating the container, so a bad fifo
+            // fails without leaving a container behind.
+            copy_io(&pio, &self.stdio, &self.io_tasks).await?;
+            None
         };
 
-        let resp = init
+        let resp = self
             .lifecycle
             .runtime
-            .create(id, bundle, Some(&create_opts))
+            .create(&self.id, &bundle, Some(&create_opts))
             .await;
         if let Err(e) = resp {
             if let Some(s) = socket {
                 s.clean().await;
             }
-            return Err(runtime_error(bundle, e, "OCI runtime create failed").await);
+            return Err(runtime_error(&bundle, e, "OCI runtime create failed").await);
         }
-        let exit_signal = init.lifecycle.exit_signal.clone();
-        copy_io_or_console(&mut init, socket, pio, exit_signal).await?;
-        init.pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
+        if let Some(socket) = socket {
+            attach_console(self, socket).await?;
+        }
+        self.pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
 
         #[cfg(target_os = "linux")]
         {
-            *init.lifecycle.cgroup_cache.write().unwrap() =
-                containerd_shim::cgroup::get_cgroup(init.pid as u32).ok();
+            *self.lifecycle.cgroup_cache.write().unwrap() =
+                containerd_shim::cgroup::get_cgroup(self.pid as u32).ok();
         }
 
-        Ok(init)
+        Ok(())
     }
 }
 
@@ -191,7 +196,6 @@ pub struct RuncInitLifecycle {
     runtime: Runc,
     opts: Options,
     bundle: String,
-    exit_signal: Arc<ExitSignal>,
     /// Cache for cgroup paths to avoid repeated `/proc/<pid>/cgroup` parsing
     #[cfg(target_os = "linux")]
     cgroup_cache: RwLock<Option<Cgroup>>,
@@ -236,7 +240,6 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
             return Err(runtime_error(&p.lifecycle.bundle, e, "OCI runtime delete failed").await);
         }
         umount_recursive(Path::new(&self.bundle).join("rootfs").to_str(), 0)?;
-        self.exit_signal.signal();
         Ok(())
     }
 
@@ -358,7 +361,6 @@ impl RuncInitLifecycle {
             runtime,
             opts,
             bundle: bundle.to_string(),
-            exit_signal: Default::default(),
             #[cfg(target_os = "linux")]
             cgroup_cache: RwLock::new(None),
         }
@@ -378,7 +380,6 @@ impl RuncInitLifecycle {
             io_uid: self.opts.io_uid,
             io_gid: self.opts.io_gid,
             spec,
-            exit_signal: Default::default(),
         }
     }
 
@@ -402,12 +403,10 @@ pub struct RuncExecLifecycle {
     io_uid: u32,
     io_gid: u32,
     spec: Process,
-    exit_signal: Arc<ExitSignal>,
 }
 
-#[async_trait]
-impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
-    async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
+impl RuncExecLifecycle {
+    async fn start_exec(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
         let bundle = self.bundle.to_string();
         let pid_path = Path::new(&bundle).join(format!("{}.pid", &p.id));
         let mut exec_opts = runc::options::ExecOpts {
@@ -416,14 +415,17 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             console_socket: None,
             detach: true,
         };
-        let (socket, pio) = if p.stdio.terminal {
+        let socket = if p.stdio.terminal {
             let s = ConsoleSocket::new().await?;
             exec_opts.console_socket = Some(s.path.to_owned());
-            (Some(s), None)
+            Some(s)
         } else {
             let pio = create_io(&p.id, self.io_uid, self.io_gid, &p.stdio)?;
             exec_opts.io = pio.io.as_ref().cloned();
-            (None, Some(pio))
+            // Open the fifos before starting the process, so a bad fifo fails
+            // without leaving a process behind.
+            copy_io(&pio, &p.stdio, &p.io_tasks).await?;
+            None
         };
         //TODO  checkpoint support
         let exec_result = self
@@ -436,28 +438,23 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
             }
             return Err(runtime_error(&bundle, e, "OCI runtime exec failed").await);
         }
-
-        if !p.stdio.stdin.is_empty() {
-            let stdin_clone = p.stdio.stdin.clone();
-            let stdin_w = p.stdin.clone();
-            // Open the write side in advance to make sure read side will not block,
-            // open it in another thread otherwise it will block too.
-            tokio::spawn(async move {
-                if let Ok(stdin_w_file) = OpenOptions::new()
-                    .write(true)
-                    .open(stdin_clone.as_str())
-                    .await
-                {
-                    let mut lock_guard = stdin_w.lock().unwrap();
-                    *lock_guard = Some(stdin_w_file);
-                }
-            });
+        if let Some(socket) = socket {
+            attach_console(p, socket).await?;
         }
-
-        copy_io_or_console(p, socket, pio, p.lifecycle.exit_signal.clone()).await?;
-        let pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
-        p.pid = pid;
+        p.pid = read_file_to_str(pid_path).await?.parse::<i32>()?;
         p.state = Status::RUNNING;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
+    async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
+        if let Err(e) = self.start_exec(p).await {
+            // Fresh io tasks, as the exec stays registered and may be started again.
+            std::mem::take(&mut p.io_tasks).abort().await;
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -505,7 +502,6 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     }
 
     async fn delete(&self, p: &mut ExecProcess) -> Result<()> {
-        self.exit_signal.signal();
         let exec_pid_path = Path::new(self.bundle.as_str()).join(format!("{}.pid", p.id));
         remove_file(exec_pid_path).await.unwrap_or_default();
         Ok(())
@@ -535,191 +531,66 @@ impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
 async fn copy_console(
     console_socket: &ConsoleSocket,
     stdio: &Stdio,
-    exit_signal: Arc<ExitSignal>,
+    io_tasks: &IoTasks,
 ) -> Result<Console> {
     debug!("copy_console: waiting for runtime to send console fd");
     let stream = console_socket.accept().await?;
     let fd = asyncify(move || -> Result<OwnedFd> { receive_socket(stream.as_raw_fd()) }).await?;
-    let f = unsafe { File::from_raw_fd(fd.into_raw_fd()) };
+    let console = Console {
+        file: std::fs::File::from(fd),
+    };
+    // Each copy owns a descriptor of its own, so the copies and the console
+    // close independently.
+    let console_fd = || {
+        console
+            .file
+            .try_clone()
+            .map(File::from_std)
+            .map_err(io_error!(e, "clone console"))
+    };
     if !stdio.stdin.is_empty() {
         debug!("copy_console: pipe stdin to console");
-        let console_stdin = unsafe { tokio::fs::File::from_raw_fd(f.as_raw_fd()) };
-        let stdin = handle_file_open(|| async {
-            OpenOptions::new()
-                .read(true)
-                .open(stdio.stdin.as_str())
-                .await
-        })
-        .await
-        .map_err(io_error!(e, "failed to open stdin"))?;
-        spawn_copy(stdin, console_stdin, exit_signal.clone(), None::<fn()>);
+        io_tasks.copy_from_fifo(&stdio.stdin, console_fd()?)?;
     }
 
     if !stdio.stdout.is_empty() {
-        let console_stdout = unsafe { tokio::fs::File::from_raw_fd(f.as_raw_fd()) };
         debug!("copy_console: pipe stdout from console");
-        let stdout = OpenOptions::new()
-            .write(true)
-            .open(stdio.stdout.as_str())
-            .await
-            .map_err(io_error!(e, "open stdout"))?;
-        // open a read to make sure even if the read end of containerd shutdown,
-        // copy still continue until the restart of containerd succeed
-        let stdout_r = OpenOptions::new()
-            .read(true)
-            .open(stdio.stdout.as_str())
-            .await
-            .map_err(io_error!(e, "open stdout for read"))?;
-        spawn_copy(
-            console_stdout,
-            stdout,
-            exit_signal,
-            Some(move || {
-                drop(stdout_r);
-            }),
-        );
+        io_tasks.copy_to_fifo(console_fd()?, &stdio.stdout)?;
     }
-    let console = Console {
-        file: f.into_std().await,
-    };
     Ok(console)
 }
 
-pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, exit_signal: Arc<ExitSignal>) -> Result<()> {
-    if !pio.copy {
+pub async fn copy_io(pio: &ProcessIO, stdio: &Stdio, io_tasks: &IoTasks) -> Result<()> {
+    let Some(io) = &pio.io else {
         return Ok(());
     };
-    if let Some(io) = &pio.io {
-        if let Some(w) = io.stdin() {
-            debug!("copy_io: pipe stdin from {}", stdio.stdin.as_str());
-            if !stdio.stdin.is_empty() {
-                let stdin = handle_file_open(|| async {
-                    OpenOptions::new()
-                        .read(true)
-                        .open(stdio.stdin.as_str())
-                        .await
-                })
-                .await
-                .map_err(io_error!(e, "open stdin"))?;
-                spawn_copy(stdin, w, exit_signal.clone(), None::<fn()>);
-            }
-        }
+    if !stdio.stdin.is_empty() {
+        debug!("copy_io: pipe stdin from {}", stdio.stdin.as_str());
+        let w = io.stdin().ok_or_else(|| other!("no pipe for stdin"))?;
+        io_tasks.copy_from_fifo(&stdio.stdin, w)?;
+    }
 
-        if let Some(r) = io.stdout() {
-            debug!("copy_io: pipe stdout from to {}", stdio.stdout.as_str());
-            if !stdio.stdout.is_empty() {
-                let stdout = handle_file_open(|| async {
-                    OpenOptions::new()
-                        .write(true)
-                        .open(stdio.stdout.as_str())
-                        .await
-                })
-                .await
-                .map_err(io_error!(e, "open stdout"))?;
-                // open a read to make sure even if the read end of containerd shutdown,
-                // copy still continue until the restart of containerd succeed
-                let stdout_r = handle_file_open(|| async {
-                    OpenOptions::new()
-                        .read(true)
-                        .open(stdio.stdout.as_str())
-                        .await
-                })
-                .await
-                .map_err(io_error!(e, "open stdout for read"))?;
-                spawn_copy(
-                    r,
-                    stdout,
-                    exit_signal.clone(),
-                    Some(move || {
-                        drop(stdout_r);
-                    }),
-                );
-            }
-        }
+    if !stdio.stdout.is_empty() {
+        debug!("copy_io: pipe stdout to {}", stdio.stdout.as_str());
+        let r = io.stdout().ok_or_else(|| other!("no pipe for stdout"))?;
+        io_tasks.copy_to_fifo(r, &stdio.stdout)?;
+    }
 
-        if let Some(r) = io.stderr()
-            && !stdio.stderr.is_empty()
-        {
-            debug!("copy_io: pipe stderr from to {}", stdio.stderr.as_str());
-            let stderr = handle_file_open(|| async {
-                OpenOptions::new()
-                    .write(true)
-                    .open(stdio.stderr.as_str())
-                    .await
-            })
-            .await
-            .map_err(io_error!(e, "open stderr"))?;
-            // open a read to make sure even if the read end of containerd shutdown,
-            // copy still continue until the restart of containerd succeed
-            let stderr_r = handle_file_open(|| async {
-                OpenOptions::new()
-                    .read(true)
-                    .open(stdio.stderr.as_str())
-                    .await
-            })
-            .await
-            .map_err(io_error!(e, "open stderr for read"))?;
-            spawn_copy(
-                r,
-                stderr,
-                exit_signal,
-                Some(move || {
-                    drop(stderr_r);
-                }),
-            );
-        }
+    if !stdio.stderr.is_empty() {
+        debug!("copy_io: pipe stderr to {}", stdio.stderr.as_str());
+        let r = io.stderr().ok_or_else(|| other!("no pipe for stderr"))?;
+        io_tasks.copy_to_fifo(r, &stdio.stderr)?;
     }
 
     Ok(())
 }
 
-fn spawn_copy<R, W, F>(from: R, to: W, exit_signal: Arc<ExitSignal>, on_close: Option<F>)
-where
-    R: AsyncRead + Send + Unpin + 'static,
-    W: AsyncWrite + Send + Unpin + 'static,
-    F: FnOnce() + Send + 'static,
-{
-    let mut src = from;
-    let mut dst = to;
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = exit_signal.wait() => {
-                debug!("container exit, copy task should exit too");
-            },
-            res = tokio::io::copy(&mut src, &mut dst) => {
-               if let Err(e) = res {
-                    error!("copy io failed {}", e);
-                }
-            }
-        }
-        if let Some(f) = on_close {
-            f();
-        }
-    });
-}
-
-async fn copy_io_or_console<P>(
-    p: &mut ProcessTemplate<P>,
-    socket: Option<ConsoleSocket>,
-    pio: Option<ProcessIO>,
-    exit_signal: Arc<ExitSignal>,
-) -> Result<()> {
-    if p.stdio.terminal {
-        if let Some(console_socket) = socket {
-            let console_result = copy_console(&console_socket, &p.stdio, exit_signal).await;
-            console_socket.clean().await;
-            match console_result {
-                Ok(c) => {
-                    p.console = Some(c);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-        }
-    } else if let Some(pio) = pio {
-        copy_io(&pio, &p.stdio, exit_signal).await?;
-    }
+/// Receives the process's console from the runtime and copies it to and from
+/// containerd's fifos.
+async fn attach_console<P>(p: &mut ProcessTemplate<P>, socket: ConsoleSocket) -> Result<()> {
+    let console = copy_console(&socket, &p.stdio, &p.io_tasks).await;
+    socket.clean().await;
+    p.console = Some(console?);
     Ok(())
 }
 

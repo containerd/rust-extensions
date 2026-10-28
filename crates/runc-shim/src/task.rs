@@ -268,17 +268,34 @@ impl Task for TaskService {
 
     async fn delete(&self, _ctx: &TtrpcContext, req: DeleteRequest) -> TtrpcResult<DeleteResponse> {
         info!("Delete request for {:?}", &req);
-        let (id, pid, exit_status, exited_at) = {
+        let exec_id_opt = Some(req.exec_id()).filter(|id| !id.is_empty());
+        let (id, io_tasks, exited, deleted) = {
             let mut container = self.container_mut(req.id()).await?;
             let id = container.id().to_string();
-            let exec_id_opt = Some(req.exec_id()).filter(|id| !id.is_empty());
-            let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
-            (id, pid, exit_status, exited_at)
+            let exited = container
+                .get_process(exec_id_opt)?
+                .exited_at()
+                .await
+                .is_some();
+            let io_tasks = container.io_tasks(exec_id_opt)?;
+            (id, io_tasks, exited, container.delete(exec_id_opt).await)
         };
-
-        if req.exec_id().is_empty() {
+        if deleted.is_ok() && exec_id_opt.is_none() {
             self.containers.write().await.remove(req.id());
         }
+        // Release the fifos once the process is gone, as containerd waits on
+        // them after a successful Delete. This runs outside the containers
+        // lock, as the drains can take a while, and together, so they overlap.
+        if deleted.is_ok() || exited {
+            let shutdowns: Vec<_> = io_tasks
+                .into_iter()
+                .map(|io| tokio::spawn(async move { io.shutdown().await }))
+                .collect();
+            for shutdown in shutdowns {
+                let _ = shutdown.await;
+            }
+        }
+        let (pid, exit_status, exited_at) = deleted?;
 
         let ts = convert_to_timestamp(exited_at);
         self.send_event(TaskDelete {

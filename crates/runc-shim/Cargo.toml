@@ -42,6 +42,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", 
 rustix = { version = "1.1", default-features = false, features = ["std", "termios"] }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["user"] }
 tempfile.workspace = true
 
 [package.metadata.cargo-machete]

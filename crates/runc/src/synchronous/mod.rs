@@ -58,10 +58,12 @@ pub struct PipedIo {
 }
 
 impl Io for PipedIo {
+    // The stdin writer is given away outright, so that dropping it reaches the
+    // child as EOF while the driver is still alive.
     fn stdin(&self) -> Option<Box<dyn Write + Send + Sync>> {
         self.stdin
             .as_ref()
-            .and_then(|pipe| pipe.try_clone_wr())
+            .and_then(|pipe| pipe.take_wr())
             .map(|x| Box::new(x) as Box<dyn Write + Send + Sync>)
     }
 
@@ -101,7 +103,7 @@ impl Io for PipedIo {
             let pw = p
                 .try_clone_wr()
                 .ok_or_else(|| std::io::Error::other("write end closed"))?;
-            cmd.stdout(pw);
+            cmd.stderr(pw);
         }
 
         Ok(())

@@ -24,13 +24,13 @@ pub use crate::Io;
 use crate::{utils::open_fifo_for_reading, Command, Pipe, PipedIo};
 
 #[derive(Debug, Clone)]
-pub struct IOOption {
+pub struct IoOption {
     pub open_stdin: bool,
     pub open_stdout: bool,
     pub open_stderr: bool,
 }
 
-impl Default for IOOption {
+impl Default for IoOption {
     fn default() -> Self {
         Self {
             open_stdin: true,
@@ -41,7 +41,7 @@ impl Default for IOOption {
 }
 
 impl PipedIo {
-    pub fn new(uid: u32, gid: u32, opts: &IOOption) -> std::io::Result<Self> {
+    pub fn new(uid: u32, gid: u32, opts: &IoOption) -> std::io::Result<Self> {
         Ok(Self {
             stdin: if opts.open_stdin {
                 Self::create_pipe(uid, gid, true)?
@@ -184,7 +184,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn test_io_option() {
-        let opts = IOOption {
+        let opts = IoOption {
             open_stdin: false,
             open_stdout: false,
             open_stderr: false,
@@ -194,6 +194,63 @@ mod tests {
         assert!(io.stdin().is_none());
         assert!(io.stdout().is_none());
         assert!(io.stderr().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn piped_io_keeps_stdout_and_stderr_apart() {
+        use tokio::io::AsyncReadExt;
+
+        let uid = nix::unistd::getuid().as_raw();
+        let gid = nix::unistd::getgid().as_raw();
+        let io = PipedIo::new(uid, gid, &IoOption::default()).unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf out && printf err >&2"]);
+        io.set(&mut command).await.unwrap();
+        let mut child = command.spawn().unwrap();
+        // The command keeps its copies of the child's pipe ends until dropped.
+        drop(command);
+        io.close_after_start().await;
+        let (mut stdout, mut stderr) = (io.stdout().unwrap(), io.stderr().unwrap());
+        // The readers own their descriptors and outlive the pipes they came from.
+        drop(io);
+
+        let (mut out, mut err) = (String::new(), String::new());
+        stdout.read_to_string(&mut out).await.unwrap();
+        stderr.read_to_string(&mut err).await.unwrap();
+        assert_eq!((out.as_str(), err.as_str()), ("out", "err"));
+        assert!(child.wait().await.unwrap().success());
+    }
+
+    /// Dropping the stdin writer must reach the child as EOF while the driver
+    /// is still alive, as `Runc::run` keeps it until the child exits.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn piped_io_stdin_closes_with_its_writer() {
+        use std::time::Duration;
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let uid = nix::unistd::getuid().as_raw();
+        let gid = nix::unistd::getgid().as_raw();
+        let io = PipedIo::new(uid, gid, &IoOption::default()).unwrap();
+        let mut command = Command::new("cat");
+        io.set(&mut command).await.unwrap();
+        let mut child = command.spawn().unwrap();
+        drop(command);
+        io.close_after_start().await;
+        let mut stdin = io.stdin().unwrap();
+        stdin.write_all(b"hi").await.unwrap();
+        drop(stdin);
+
+        let mut out = String::new();
+        let mut stdout = io.stdout().unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stdout.read_to_string(&mut out))
+            .await
+            .expect("cat saw EOF on stdin")
+            .unwrap();
+        assert_eq!(out, "hi");
+        assert!(child.wait().await.unwrap().success());
     }
 
     #[tokio::test]
