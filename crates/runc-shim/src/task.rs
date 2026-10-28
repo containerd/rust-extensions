@@ -34,7 +34,7 @@ use containerd_shim::{
         shim_async::Task,
         ttrpc::{self, r#async::TtrpcContext},
     },
-    util::{convert_to_any, convert_to_timestamp, AsOption},
+    util::{convert_to_any, convert_to_timestamp},
     TtrpcResult,
 };
 use log::{debug, info, warn};
@@ -174,7 +174,7 @@ async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
 impl Task for TaskService {
     async fn state(&self, _ctx: &TtrpcContext, req: StateRequest) -> TtrpcResult<StateResponse> {
         let container = self.container(req.id()).await?;
-        let exec_id = req.exec_id().as_option();
+        let exec_id = Some(req.exec_id()).filter(|id| !id.is_empty());
         let resp = container.state(exec_id).await?;
         Ok(resp)
     }
@@ -233,7 +233,9 @@ impl Task for TaskService {
                     format!("container init process has exited {}", container.id()),
                 )));
             }
-            container.start(req.exec_id.as_str().as_option()).await?
+            container
+                .start(Some(req.exec_id.as_str()).filter(|id| !id.is_empty()))
+                .await?
         };
 
         let mut resp = StartResponse::new();
@@ -269,7 +271,7 @@ impl Task for TaskService {
         let (id, pid, exit_status, exited_at) = {
             let mut container = self.container_mut(req.id()).await?;
             let id = container.id().to_string();
-            let exec_id_opt = req.exec_id().as_option();
+            let exec_id_opt = Some(req.exec_id()).filter(|id| !id.is_empty());
             let (pid, exit_status, exited_at) = container.delete(exec_id_opt).await?;
             (id, pid, exit_status, exited_at)
         };
@@ -339,7 +341,11 @@ impl Task for TaskService {
         info!("Kill request for {:?}", req);
         self.container_mut(req.id())
             .await?
-            .kill(req.exec_id().as_option(), req.signal, req.all)
+            .kill(
+                Some(req.exec_id()).filter(|id| !id.is_empty()),
+                req.signal,
+                req.all,
+            )
             .await?;
         info!("Kill request for {:?} returns successfully", req);
         Ok(Empty::new())
@@ -372,7 +378,11 @@ impl Task for TaskService {
         );
         self.container_mut(req.id())
             .await?
-            .resize_pty(req.exec_id().as_option(), req.height, req.width)
+            .resize_pty(
+                Some(req.exec_id()).filter(|id| !id.is_empty()),
+                req.height,
+                req.width,
+            )
             .await?;
         Ok(Empty::new())
     }
@@ -380,7 +390,7 @@ impl Task for TaskService {
     async fn close_io(&self, _ctx: &TtrpcContext, req: CloseIORequest) -> TtrpcResult<Empty> {
         self.container_mut(req.id())
             .await?
-            .close_io(req.exec_id().as_option())
+            .close_io(Some(req.exec_id()).filter(|id| !id.is_empty()))
             .await?;
         Ok(Empty::new())
     }
@@ -409,7 +419,7 @@ impl Task for TaskService {
 
     async fn wait(&self, _ctx: &TtrpcContext, req: WaitRequest) -> TtrpcResult<WaitResponse> {
         info!("Wait request for {:?}", req);
-        let exec_id = req.exec_id.as_str().as_option();
+        let exec_id = Some(req.exec_id.as_str()).filter(|id| !id.is_empty());
         let wait_rx = {
             let mut container = self.container_mut(req.id()).await?;
             let state = container.state(exec_id).await?;
@@ -420,7 +430,9 @@ impl Task for TaskService {
                 info!("Wait request for {:?} returns {:?}", req, &resp);
                 return Ok(resp);
             }
-            container.wait_channel(req.exec_id().as_option()).await?
+            container
+                .wait_channel(Some(req.exec_id()).filter(|id| !id.is_empty()))
+                .await?
         };
 
         wait_rx.await.unwrap_or_default();

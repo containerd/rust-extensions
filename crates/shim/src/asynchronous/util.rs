@@ -18,17 +18,12 @@ use std::path::Path;
 
 use containerd_shim_protos::{api::Mount, shim::oci::Options};
 use libc::mode_t;
-use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
-use tokio::{
-    fs::OpenOptions,
-    io::{AsyncReadExt, AsyncWriteExt},
-    task::spawn_blocking,
-};
+use tokio::task::spawn_blocking;
 
 use crate::{
     error::{Error, Result},
-    util::{AsOption, JsonOptions, CONFIG_FILE_NAME, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME},
+    util::{JsonOptions, CONFIG_FILE_NAME, OPTIONS_FILE_NAME, RUNTIME_FILE_NAME},
 };
 
 pub async fn asyncify<F, T>(f: F) -> Result<T>
@@ -42,49 +37,15 @@ where
 }
 
 pub async fn read_file_to_str(path: impl AsRef<Path>) -> Result<String> {
-    let mut file = tokio::fs::File::open(&path).await.map_err(io_error!(
-        e,
-        "failed to open file {}",
-        path.as_ref().display()
-    ))?;
-
-    let mut content = String::new();
-    file.read_to_string(&mut content).await.map_err(io_error!(
-        e,
-        "failed to read {}",
-        path.as_ref().display()
-    ))?;
-    Ok(content)
+    tokio::fs::read_to_string(&path)
+        .await
+        .map_err(io_error!(e, "read {}", path.as_ref().display()))
 }
 
 pub async fn write_str_to_file(filename: impl AsRef<Path>, s: impl AsRef<str>) -> Result<()> {
-    let file = filename.as_ref().file_name().ok_or_else(|| {
-        Error::InvalidArgument(format!("pid path illegal {}", filename.as_ref().display()))
-    })?;
-    let tmp_path = filename
-        .as_ref()
-        .parent()
-        .map(|x| x.join(format!(".{}", file.to_str().unwrap_or(""))))
-        .ok_or_else(|| Error::InvalidArgument(String::from("failed to create tmp path")))?;
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp_path)
-        .await
-        .map_err(io_error!(e, "open {}", tmp_path.display()))?;
-    f.write_all(s.as_ref().as_bytes()).await.map_err(io_error!(
-        e,
-        "write tmp file {}",
-        tmp_path.display()
-    ))?;
-    tokio::fs::rename(&tmp_path, &filename)
-        .await
-        .map_err(io_error!(
-            e,
-            "rename tmp file to {}",
-            filename.as_ref().display()
-        ))?;
-    Ok(())
+    let filename = filename.as_ref().to_owned();
+    let contents = s.as_ref().to_owned();
+    asyncify(move || crate::util::write_str_atomic(&filename, &contents)).await
 }
 
 pub async fn read_pid_from_file(pid_path: &Path) -> Result<i32> {
@@ -133,28 +94,54 @@ pub async fn mount_rootfs(m: &Mount, target: impl AsRef<Path>) -> Result<()> {
     let options = m.options.to_vec();
     let rootfs = target.as_ref().to_owned();
     asyncify(move || -> Result<()> {
-        let mount_type = mount_type.as_option();
-        let source = source.as_option();
+        let mount_type = Some(mount_type.as_str()).filter(|s| !s.is_empty());
+        let source = Some(source.as_str()).filter(|s| !s.is_empty());
         crate::mount::mount_rootfs(mount_type, source, options.as_slice(), &rootfs)
     })
     .await
 }
 
 pub async fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> Result<()> {
-    let path_buf = path.as_ref().to_path_buf();
-    asyncify(move || -> Result<()> {
-        if !path_buf.as_path().exists() {
-            let mode = Mode::from_bits(mode).ok_or_else(|| other!("invalid dir mode {}", mode))?;
-            nix::unistd::mkdir(path_buf.as_path(), mode)?;
+    // mode_t is u16 on macOS, while DirBuilder takes u32.
+    #[allow(clippy::unnecessary_cast)]
+    let mode = mode as u32;
+    let path = path.as_ref();
+    match tokio::fs::DirBuilder::new().mode(mode).create(path).await {
+        Ok(()) => Ok(()),
+        Err(e)
+            if e.kind() == std::io::ErrorKind::AlreadyExists
+                && tokio::fs::metadata(path).await.is_ok_and(|m| m.is_dir()) =>
+        {
+            Ok(())
         }
-        Ok(())
-    })
-    .await
+        Err(e) => Err(Error::IoError {
+            context: format!("mkdir {}", path.display()),
+            err: e,
+        }),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::util::{read_file_to_str, write_str_to_file};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mkdir_accepts_directories_but_rejects_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("child");
+        super::mkdir(&path, 0o700).await.unwrap();
+        super::mkdir(&path, 0o755).await.unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let file = dir.path().join("file");
+        std::fs::write(&file, "untouched").unwrap();
+        assert!(super::mkdir(&file, 0o700).await.is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "untouched");
+    }
 
     #[tokio::test]
     async fn test_read_write_str() {

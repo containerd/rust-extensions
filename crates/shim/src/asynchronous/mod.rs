@@ -19,10 +19,7 @@ use std::{
     os::unix::{fs::FileTypeExt, net::UnixListener},
     path::Path,
     process::{self, Stdio},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::Arc,
     task::{ready, Poll},
 };
 
@@ -45,7 +42,8 @@ use nix::{
     },
     unistd::Pid,
 };
-use tokio::{io::AsyncWriteExt, process::Command, sync::Notify};
+use tokio::{io::AsyncWriteExt, process::Command};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     args,
@@ -232,39 +230,21 @@ where
     }
 }
 
-/// Helper structure that wraps atomic bool to signal shim server when to shutdown the TTRPC server.
+/// Persistent shutdown signal shared by the shim server and its tasks.
 ///
 /// Shim implementations are responsible for calling [`Self::signal`].
-pub struct ExitSignal {
-    notifier: Notify,
-    exited: AtomicBool,
-}
-
-impl Default for ExitSignal {
-    fn default() -> Self {
-        ExitSignal {
-            notifier: Notify::new(),
-            exited: AtomicBool::new(false),
-        }
-    }
-}
+#[derive(Default)]
+pub struct ExitSignal(CancellationToken);
 
 impl ExitSignal {
     /// Set exit signal to shutdown shim server.
     pub fn signal(&self) {
-        self.exited.store(true, Ordering::SeqCst);
-        self.notifier.notify_waiters();
+        self.0.cancel();
     }
 
     /// Wait for the exit signal to be set.
     pub async fn wait(&self) {
-        loop {
-            let notified = self.notifier.notified();
-            if self.exited.load(Ordering::SeqCst) {
-                return;
-            }
-            notified.await;
-        }
+        self.0.cancelled().await;
     }
 }
 
@@ -552,6 +532,28 @@ mod tests {
     use std::sync::Arc;
 
     use crate::asynchronous::{start_listener, ExitSignal};
+
+    #[tokio::test]
+    async fn exit_signal_wakes_all_waiters_and_stays_signaled() {
+        use std::time::Duration;
+        let signal = Arc::new(ExitSignal::default());
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let signal = signal.clone();
+            tasks.push(tokio::spawn(async move { signal.wait().await }));
+        }
+        tokio::task::yield_now().await;
+        signal.signal();
+        signal.signal();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            for task in tasks {
+                task.await.unwrap();
+            }
+            signal.wait().await;
+        })
+        .await
+        .expect("all current and future waiters must observe shutdown");
+    }
 
     #[tokio::test]
     async fn test_exit_signal() {

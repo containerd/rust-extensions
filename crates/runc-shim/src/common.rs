@@ -30,9 +30,7 @@ use std::{
 
 use containerd_shim::{
     api::{ExecProcessRequest, Options},
-    io_error, other, other_error,
-    util::IntoOption,
-    Error,
+    io_error, other, other_error, Error,
 };
 use log::{debug, warn};
 use nix::{
@@ -108,9 +106,9 @@ pub fn create_io(
             stdio.stderr.as_str()
         );
         let io = FIFO {
-            stdin: stdio.stdin.to_string().none_if(|x| x.is_empty()),
-            stdout: stdio.stdout.to_string().none_if(|x| x.is_empty()),
-            stderr: stdio.stderr.to_string().none_if(|x| x.is_empty()),
+            stdin: (!stdio.stdin.is_empty()).then(|| stdio.stdin.clone()),
+            stdout: (!stdio.stdout.is_empty()).then(|| stdio.stdout.clone()),
+            stderr: (!stdio.stderr.is_empty()).then(|| stdio.stderr.clone()),
         };
         pio.io = Some(Arc::new(io));
         pio.copy = false;

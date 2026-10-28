@@ -14,18 +14,12 @@
    limitations under the License.
 */
 
-use std::{
-    fs::{rename, File, OpenOptions},
-    io::{Read, Write},
-    path::Path,
-};
+use std::path::Path;
 
 use containerd_shim_protos::shim::oci::Options;
 #[cfg(unix)]
 use libc::mode_t;
 use log::warn;
-#[cfg(unix)]
-use nix::sys::stat::Mode;
 use oci_spec::runtime::Spec;
 
 use crate::{
@@ -34,18 +28,7 @@ use crate::{
 };
 
 pub fn read_file_to_str<P: AsRef<Path>>(filename: P) -> crate::Result<String> {
-    let mut file = File::open(&filename).map_err(io_error!(
-        e,
-        "open {}",
-        filename.as_ref().to_string_lossy()
-    ))?;
-    let mut content: String = String::new();
-    file.read_to_string(&mut content).map_err(io_error!(
-        e,
-        "read {}",
-        filename.as_ref().to_string_lossy()
-    ))?;
-    Ok(content)
+    std::fs::read_to_string(&filename).map_err(io_error!(e, "read {}", filename.as_ref().display()))
 }
 
 pub fn read_options(bundle: impl AsRef<Path>) -> crate::Result<Options> {
@@ -72,29 +55,7 @@ pub fn read_pid_from_file(pid_path: &Path) -> crate::Result<i32> {
 }
 
 pub fn write_str_to_path(filename: &Path, s: &str) -> crate::Result<()> {
-    let file = filename
-        .file_name()
-        .ok_or_else(|| Error::InvalidArgument(String::from("pid path illegal")))?;
-    let tmp_path = filename
-        .parent()
-        .map(|x| x.join(format!(".{}", file.to_str().unwrap_or(""))))
-        .ok_or_else(|| Error::InvalidArgument(String::from("failed to create tmp path")))?;
-    let tmp_path = tmp_path
-        .to_str()
-        .ok_or_else(|| Error::InvalidArgument(String::from("failed to get path")))?;
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(tmp_path)
-        .map_err(io_error!(e, "open {}", filename.to_str().unwrap()))?;
-    f.write_all(s.as_bytes())
-        .map_err(io_error!(e, "write tmp file"))?;
-    rename(tmp_path, filename).map_err(io_error!(
-        e,
-        "rename tmp file to {}",
-        filename.to_str().unwrap()
-    ))?;
-    Ok(())
+    crate::util::write_str_atomic(filename, s)
 }
 
 pub fn write_options(bundle: &str, opt: &Options) -> crate::Result<()> {
@@ -121,12 +82,19 @@ pub fn read_spec_from_file(bundle: &str) -> crate::Result<Spec> {
 
 #[cfg(unix)]
 pub fn mkdir(path: impl AsRef<Path>, mode: mode_t) -> crate::Result<()> {
-    let path_buf = path.as_ref().to_path_buf();
-    if !path_buf.as_path().exists() {
-        let mode = Mode::from_bits(mode).ok_or_else(|| other!("invalid dir mode {}", mode))?;
-        nix::unistd::mkdir(path_buf.as_path(), mode)?;
+    use std::os::unix::fs::DirBuilderExt;
+    // mode_t is u16 on macOS, while DirBuilder takes u32.
+    #[allow(clippy::unnecessary_cast)]
+    let mode = mode as u32;
+    let path = path.as_ref();
+    match std::fs::DirBuilder::new().mode(mode).create(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        Err(e) => Err(Error::IoError {
+            context: format!("mkdir {}", path.display()),
+            err: e,
+        }),
     }
-    Ok(())
 }
 
 /// A helper to help remove temperate file or dir when it became useless
@@ -198,5 +166,26 @@ fn create_event(name: String) -> crate::Result<isize> {
     match result {
         0 => Err(Error::Other(io::Error::last_os_error().to_string())),
         _ => Ok(result),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn mkdir_accepts_directories_but_rejects_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("child");
+        super::mkdir(&path, 0o700).unwrap();
+        super::mkdir(&path, 0o755).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let file = dir.path().join("file");
+        std::fs::write(&file, "untouched").unwrap();
+        assert!(super::mkdir(&file, 0o700).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "untouched");
     }
 }
