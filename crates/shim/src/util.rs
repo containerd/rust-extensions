@@ -262,6 +262,9 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "contents");
     }
 
+    // Windows refuses to replace a file while another replace of it is in
+    // flight, so two writers racing is only well-defined on Unix.
+    #[cfg(unix)]
     #[test]
     fn concurrent_atomic_writes_leave_one_complete_value() {
         let dir = tempfile::tempdir().unwrap();
