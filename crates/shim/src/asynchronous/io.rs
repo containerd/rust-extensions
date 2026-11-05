@@ -217,8 +217,9 @@ impl IoTasks {
             },
             res = tokio::io::copy(&mut src, &mut dst) => match res {
                 Ok(_) => {}
-                // A console hanging up (EIO) or a pipe losing its reader
-                // (EPIPE) is how a copy normally ends.
+                // Writing to a console that hung up (EIO) or to a pipe that
+                // lost its reader (EPIPE) is how a copy normally ends; reading
+                // a hung-up console is EOF, see `Pty`.
                 Err(e) if e.kind() == ErrorKind::BrokenPipe || e.raw_os_error() == Some(libc::EIO) => {
                     debug!("copy io ended: {}", e);
                 }
@@ -274,7 +275,16 @@ impl AsyncRead for Pty {
             let unfilled = buf.initialize_unfilled();
             match guard.try_io(|master| {
                 let mut file = master.get_ref();
-                file.read(unfilled)
+                // Once the slave is gone the master reads EIO: the terminal's
+                // EOF. As an error it would make `tokio::io::copy` give up at
+                // once, dropping output read but not yet written.
+                file.read(unfilled).or_else(|e| match e.raw_os_error() {
+                    Some(libc::EIO) => {
+                        debug!("console hung up");
+                        Ok(0)
+                    }
+                    _ => Err(e),
+                })
             }) {
                 Ok(read) => return Poll::Ready(read.map(|n| buf.advance(n))),
                 Err(_would_block) => continue,
@@ -337,6 +347,7 @@ mod tests {
             io::{Read, Write},
             os::fd::OwnedFd,
             path::{Path, PathBuf},
+            sync::MutexGuard,
             time::Instant,
         };
 
@@ -522,21 +533,31 @@ mod tests {
             assert!(cat.child.wait().await.unwrap().success());
         }
 
+        /// Held by the tests that open a terminal, as `ptmx_fds` counts every
+        /// master in the process.
+        static PTY: Mutex<()> = Mutex::new(());
+
+        /// A terminal in raw mode, no echo, line buffering or newline
+        /// translation, as its master and slave, held apart from the other
+        /// tests that open one for as long as the guard lives.
+        fn raw_pty() -> (MutexGuard<'static, ()>, File, File) {
+            let held = PTY.lock().unwrap_or_else(|e| e.into_inner());
+            let pty = nix::pty::openpty(None, None).unwrap();
+            let mut termios = tcgetattr(&pty.slave).unwrap();
+            cfmakeraw(&mut termios);
+            tcsetattr(&pty.slave, SetArg::TCSANOW, &termios).unwrap();
+            (held, File::from(pty.master), File::from(pty.slave))
+        }
+
         /// Console copies work both ways through one descriptor, and with the
         /// terminal still open, shutting the runtime down waits on no thread
         /// parked on it: the copies ran on the reactor.
         #[test]
         fn pty_copies_run_on_the_reactor() {
+            let (_pty, master, mut slave) = raw_pty();
             let dir = tempfile::tempdir().unwrap();
             let stdin = mkfifo(dir.path(), "stdin");
             let stdout = mkfifo(dir.path(), "stdout");
-            let pty = nix::pty::openpty(None, None).unwrap();
-            // Raw mode: no echo, no line buffering, no newline translation.
-            let mut termios = tcgetattr(&pty.slave).unwrap();
-            cfmakeraw(&mut termios);
-            tcsetattr(&pty.slave, SetArg::TCSANOW, &termios).unwrap();
-            let mut slave = File::from(pty.slave);
-            let master = File::from(pty.master);
 
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -600,6 +621,71 @@ mod tests {
                 "a thread stayed parked on the terminal"
             );
             drop(slave);
+        }
+
+        /// A writer that is not ready the first time, as a fifo just handed to
+        /// the reactor is not until its first readiness arrives.
+        struct NotReadyOnce {
+            written: Arc<Mutex<Vec<u8>>>,
+            stalled: bool,
+        }
+
+        impl AsyncWrite for NotReadyOnce {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                if !self.stalled {
+                    self.stalled = true;
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                self.written.lock().unwrap().extend_from_slice(buf);
+                Poll::Ready(Ok(buf.len()))
+            }
+
+            fn poll_flush(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn poll_shutdown(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+
+        /// Output a process wrote before exiting must reach containerd even
+        /// when the copy first finds the fifo not ready and so reads on to the
+        /// terminal's hangup, which must therefore read as EOF, not an error.
+        #[test]
+        fn hung_up_console_output_is_still_copied() {
+            let (_pty, master, mut slave) = raw_pty();
+            slave.write_all(b"hello").unwrap();
+            drop(slave);
+
+            let written = Arc::new(Mutex::new(Vec::new()));
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let console = Pty::new(master).unwrap();
+                let out = NotReadyOnce {
+                    written: written.clone(),
+                    stalled: false,
+                };
+                let copy = IoTasks::copy(CancellationToken::new(), console, out);
+                timeout(Duration::from_secs(5), copy)
+                    .await
+                    .expect("the copy ends at the hangup");
+            });
+            assert_eq!(*written.lock().unwrap(), b"hello");
         }
 
         /// CloseIO sent right after containerd's last write, the way its
