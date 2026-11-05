@@ -77,6 +77,9 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant was merged into zbus 6; waiting for cgroups-rs to upgrade" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names was merged into zbus 6; waiting for cgroups-rs to upgrade" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive was merged into zbus 6; waiting for cgroups-rs to upgrade" },
+    # pin-utils is archived. It is pulled in through ttrpc -> nix 0.26, so drop
+    # this once ttrpc moves to a newer nix.
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils is unmaintained; waiting for ttrpc to move off nix 0.26" },
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
