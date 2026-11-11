@@ -2,6 +2,7 @@
 members = [
     "crates/client",
     "crates/logging",
+    "crates/pause",
     "crates/runc",
     "crates/runc-shim",
     "crates/shim",
@@ -14,6 +15,13 @@ resolver = "2"
 # Keep binary as small as possible
 # https://doc.rust-lang.org/book/ch09-01-unrecoverable-errors-with-panic.html
 panic = 'abort'
+
+# containerd-pause is exec'd once per PID namespace it anchors, so optimize for
+# a small binary and cheap startup rather than throughput.
+[profile.release.package.containerd-pause]
+opt-level = "z"
+codegen-units = 1
+strip = true
 
 # Common for all crates
 # See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#inheriting-a-dependency-from-a-workspace
