@@ -18,6 +18,7 @@ This repository contains the following crates:
 | [containerd-snapshots](crates/snapshots) | Remote snapshotter for containerd | [![Crates.io](https://img.shields.io/crates/v/containerd-snapshots)](https://crates.io/crates/containerd-snapshots) [![docs.rs](https://img.shields.io/docsrs/containerd-snapshots)](https://docs.rs/containerd-snapshots/latest/containerd_snapshots/) |
 | [runc](crates/runc) | Rust wrapper for runc CLI | [![Crates.io](https://img.shields.io/crates/v/runc)](https://crates.io/crates/runc) [![docs.rs](https://img.shields.io/docsrs/runc)](https://docs.rs/runc/latest/runc/) |
 | [containerd-runc-shim](crates/runc-shim) | Runtime v2 runc shim implementation | [![Crates.io](https://img.shields.io/crates/v/containerd-runc-shim)](https://crates.io/crates/containerd-runc-shim) |
+| [containerd-pause](crates/pause) | Anchor process holding a PID namespace open | [![Crates.io](https://img.shields.io/crates/v/containerd-pause)](https://crates.io/crates/containerd-pause) |
 
 ## How to build
 Install `protoc` first. The CI workflow does this explicitly via [scripts/install-protobuf.sh](./scripts/install-protobuf.sh), and crates such as `containerd-client` and `containerd-snapshots` require it during `build.rs`.

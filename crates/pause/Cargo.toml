@@ -1,0 +1,22 @@
+[package]
+name = "containerd-pause"
+version = "0.1.0"
+authors = ["The containerd Authors"]
+description = "Anchor process holding a PID namespace open"
+keywords = ["containerd", "pause", "containers", "namespace"]
+categories = ["os::unix-apis"]
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "containerd-pause"
+path = "src/main.rs"
+test = false
+bench = false
+doc = false
+
+[dependencies]
+libc.workspace = true
