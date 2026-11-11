@@ -241,7 +241,8 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
         Ok(())
     }
 
-    #[cfg(target_os = "linux")]
+    /// Applies the new resources with `runc update`, as the Go shim does, so
+    /// runc converts them for the host's cgroup version and cgroup driver.
     async fn update(&self, p: &mut InitProcess, resources: &LinuxResources) -> Result<()> {
         if p.pid <= 0 {
             return Err(other!(
@@ -249,24 +250,10 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 p.pid
             ));
         }
-
-        // Check if cgroup still exists before attempting update
-        if !self.ensure_init_cgroup_exists().await {
-            return Err(other!(
-                "failed to update resources because cgroup for process {} has been released",
-                p.pid
-            ));
+        if let Err(e) = self.runtime.update(&p.id, resources).await {
+            return Err(runtime_error(&self.bundle, e, "OCI runtime update failed").await);
         }
-        let cgroup_guard = p.lifecycle.cgroup_cache.read().unwrap();
-        let cgroup = cgroup_guard
-            .as_ref()
-            .ok_or_else(|| other!("cgroup cache is empty for process {}", p.pid))?;
-        containerd_shim::cgroup::update_resources(cgroup, resources)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    async fn update(&self, _p: &mut InitProcess, _resources: &LinuxResources) -> Result<()> {
-        Err(Error::Unimplemented("update resource".to_string()))
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
