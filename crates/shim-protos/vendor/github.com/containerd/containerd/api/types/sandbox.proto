@@ -23,6 +23,13 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/containerd/containerd/api/types;types";
 
+// SandboxPrepareRestoreOptions contains the runtime-independent information
+// needed to prepare a sandbox before StartSandbox during a restore.
+message SandboxPrepareRestoreOptions {
+  string checkpoint_path = 1;
+  map<string, string> options = 2;
+}
+
 // Sandbox represents a sandbox metadata object that keeps all info required by controller to
 // work with a particular instance.
 message Sandbox {
