@@ -250,6 +250,9 @@ impl ProcessLifecycle<InitProcess> for RuncInitLifecycle {
                 p.pid
             ));
         }
+        if p.state == Status::STOPPED {
+            return Err(other!("cannot update a stopped container"));
+        }
         if let Err(e) = self.runtime.update(&p.id, resources).await {
             return Err(runtime_error(&self.bundle, e, "OCI runtime update failed").await);
         }
