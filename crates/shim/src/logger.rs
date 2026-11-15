@@ -79,6 +79,7 @@ impl FifoLogger {
         use std::os::windows::io::{AsRawHandle, BorrowedHandle};
 
         use mio::{windows::NamedPipe, Events, Interest, Poll, Token};
+        use windows_sys::Win32::Foundation::ERROR_PIPE_NOT_CONNECTED;
 
         let mut pipe_server = NamedPipe::new(name)?;
 
@@ -117,7 +118,15 @@ impl FifoLogger {
                         };
                     }
                     if event.is_readable() {
-                        pipe_server.disconnect().unwrap();
+                        // The client went away. disconnect() can fail with
+                        // ERROR_PIPE_NOT_CONNECTED if the pipe is already disconnected;
+                        // that must not kill this thread, which is the only one that
+                        // accepts clients, or no client can ever connect again.
+                        if let Err(e) = pipe_server.disconnect()
+                            && e.raw_os_error() != Some(ERROR_PIPE_NOT_CONNECTED as i32)
+                        {
+                            panic!("Error disconnecting client: {}", e);
+                        }
                     }
                 }
             }
@@ -237,7 +246,11 @@ mod tests {
     static LOG_LEVEL_LOCK: Mutex<()> = Mutex::new(());
 
     pub(super) fn lock_log_level() -> std::sync::MutexGuard<'static, ()> {
-        LOG_LEVEL_LOCK.lock().unwrap()
+        // A test that panics while holding the lock poisons it; the `()` it guards
+        // can't be left inconsistent, so recover rather than fail every later test.
+        LOG_LEVEL_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     // Only this test touches `LOG_ENV`, and it does so from a single thread.
