@@ -51,7 +51,7 @@ jobs:
           RUSTDOCFLAGS: "--cfg docsrs -Dwarnings"
 
       - name: check unused dependencies
-        uses: bnjbvr/cargo-machete@v0.10.0
+        uses: bnjbvr/cargo-machete@v0.10.1
         env:
           RUSTUP_TOOLCHAIN: "stable"
 
