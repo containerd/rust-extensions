@@ -23,6 +23,7 @@ import "google/protobuf/timestamp.proto";
 import "types/metrics.proto";
 import "types/mount.proto";
 import "types/platform.proto";
+import "types/sandbox.proto";
 
 option go_package = "github.com/containerd/containerd/api/runtime/sandbox/v1;sandbox";
 
@@ -58,6 +59,21 @@ service Sandbox {
 
   // SandboxMetrics retrieves metrics about a sandbox instance.
   rpc SandboxMetrics(SandboxMetricsRequest) returns (SandboxMetricsResponse);
+
+  // UpdateSandbox applies an update of the sandbox metadata object to a running
+  // sandbox instance (for example a pod level resource resize).
+  // Implementing this RPC is optional: a shim that does not support updates MUST
+  // return a `github.com/containerd/errdefs.ErrNotImplemented` error (gRPC
+  // `codes.Unimplemented`), which callers are expected to tolerate.
+  rpc UpdateSandbox(UpdateSandboxRequest) returns (UpdateSandboxResponse);
+}
+
+// Checkpoint is an optional sandbox-shim capability. It is a separate service
+// so existing Sandbox implementations do not need to implement checkpoint and
+// restore methods.
+service Checkpoint {
+  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
+  rpc Restore(RestoreRequest) returns (RestoreResponse);
 }
 
 message CreateSandboxRequest {
@@ -67,6 +83,7 @@ message CreateSandboxRequest {
   google.protobuf.Any options = 4;
   string netns_path = 5;
   map<string, string> annotations = 6;
+  containerd.types.SandboxPrepareRestoreOptions prepare_restore = 7;
 }
 
 message CreateSandboxResponse {}
@@ -98,8 +115,16 @@ message StopSandboxResponse {}
 
 message UpdateSandboxRequest {
   string sandbox_id = 1;
-  google.protobuf.Any resources = 2;
-  map<string, string> annotations = 3;
+  // Deprecated: not set by containerd, use `sandbox` instead.
+  google.protobuf.Any resources = 2 [deprecated = true];
+  // Deprecated: not set by containerd, use `sandbox` instead.
+  map<string, string> annotations = 3 [deprecated = true];
+  // Sandbox is the updated sandbox metadata object as stored by containerd,
+  // including its labels, spec and extensions.
+  containerd.types.Sandbox sandbox = 4;
+  // Fields are the fieldpaths of `sandbox` that have been updated.
+  // An empty list means the whole object should be considered updated.
+  repeated string fields = 5;
 }
 
 message WaitSandboxRequest {
@@ -146,4 +171,46 @@ message SandboxMetricsRequest {
 
 message SandboxMetricsResponse {
   containerd.types.Metric metrics = 1;
+}
+
+message CheckpointContainer {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Any config = 3;
+  google.protobuf.Any status = 4;
+}
+
+message CheckpointRequest {
+  string sandbox_id = 1;
+  string output_path = 2;
+  google.protobuf.Any sandbox_config = 3;
+  repeated CheckpointContainer containers = 4;
+  map<string, string> options = 5;
+}
+
+message CheckpointResponse {}
+
+message RestoreContainer {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Any config = 3;
+}
+
+message RestoreRequest {
+  string sandbox_id = 1;
+  string checkpoint_path = 2;
+  google.protobuf.Any sandbox_config = 3;
+  repeated RestoreContainer containers = 4;
+  map<string, string> options = 5;
+}
+
+message RestoredContainer {
+  string name = 1;
+  // Ownership transfers from the controller to the caller when Restore
+  // succeeds. Empty when no containerd task checkpoint is required.
+  string task_checkpoint_image = 2;
+}
+
+message RestoreResponse {
+  repeated RestoredContainer containers = 1;
 }

@@ -41,3 +41,7 @@ pub mod introspection {
 pub mod platform {
     include!(concat!(env!("OUT_DIR"), "/types/platform.rs"));
 }
+#[cfg(feature = "sandbox")]
+pub mod sandbox {
+    include!(concat!(env!("OUT_DIR"), "/types/sandbox.rs"));
+}

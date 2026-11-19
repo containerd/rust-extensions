@@ -70,7 +70,12 @@ pub mod api {
 /// stdin/stdout at shim startup.
 pub use bootstrap::bootstrap as bootstrap_api;
 #[cfg(feature = "sandbox")]
-pub use sandbox::sandbox as sandbox_api;
+pub mod sandbox_api {
+    pub use crate::{
+        sandbox::sandbox::*,
+        types::sandbox::{Sandbox, SandboxPrepareRestoreOptions},
+    };
+}
 
 #[cfg(feature = "sandbox")]
 pub mod sandbox_sync {

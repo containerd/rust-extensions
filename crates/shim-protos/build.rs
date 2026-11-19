@@ -33,6 +33,8 @@ fn main() {
             "vendor/github.com/containerd/containerd/api/types/task/task.proto",
             "vendor/github.com/containerd/containerd/api/types/introspection.proto",
             #[cfg(feature = "sandbox")]
+            "vendor/github.com/containerd/containerd/api/types/sandbox.proto",
+            #[cfg(feature = "sandbox")]
             "vendor/github.com/containerd/containerd/api/types/platform.proto",
         ],
         false,
@@ -111,6 +113,7 @@ fn main() {
             ],
             false,
         );
+        rewrite_sandbox_type_refs("sandbox");
 
         #[cfg(feature = "async")]
         genmodule(
@@ -121,6 +124,8 @@ fn main() {
             ],
             true,
         );
+        #[cfg(feature = "async")]
+        rewrite_sandbox_type_refs("sandbox_async");
     }
 }
 
@@ -190,4 +195,20 @@ fn genmodule(name: &str, inputs: &[&str], async_all: bool) {
 
         fs::write(&path, joined).unwrap();
     }
+}
+
+// rust-protobuf derives module names from the proto basename. Both
+// api/types/sandbox.proto and api/runtime/sandbox/v1/sandbox.proto therefore
+// map to `sandbox`; point references from the runtime binding at the types
+// binding generated in the crate's `types` module.
+fn rewrite_sandbox_type_refs(module: &str) {
+    let path = PathBuf::from(env::var("OUT_DIR").unwrap())
+        .join(module)
+        .join("sandbox.rs");
+    let generated = fs::read_to_string(&path).unwrap();
+    fs::write(
+        path,
+        generated.replace("super::sandbox::", "crate::types::sandbox::"),
+    )
+    .unwrap();
 }
