@@ -444,6 +444,14 @@ impl RuncExecLifecycle {
 #[async_trait]
 impl ProcessLifecycle<ExecProcess> for RuncExecLifecycle {
     async fn start(&self, p: &mut ExecProcess) -> containerd_shim::Result<()> {
+        // An exec runs once, as in the Go shim. Checked before touching the io
+        // tasks, which still belong to the process that was started.
+        if p.state != Status::CREATED {
+            return Err(Error::FailedPreconditionError(format!(
+                "cannot start exec {}: process is {:?}",
+                p.id, p.state
+            )));
+        }
         if let Err(e) = self.start_exec(p).await {
             // Fresh io tasks, as the exec stays registered and may be started again.
             let fresh = p.io_tasks.renew();

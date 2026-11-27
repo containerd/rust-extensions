@@ -1250,6 +1250,49 @@ mod tests {
         assert_eq!(code_of(&err), Some(Code::FAILED_PRECONDITION));
     }
 
+    #[tokio::test]
+    async fn start_running_exec() {
+        let shim = TestShim::new().await;
+        shim.start_container("exec-twice").await;
+        shim.start_exec("exec-twice", "e1").await;
+
+        let err = shim
+            .task
+            .start(&ctx(), start_request("exec-twice", "e1"))
+            .await
+            .expect_err("starting a running exec should fail");
+        assert_eq!(code_of(&err), Some(Code::FAILED_PRECONDITION));
+        assert_eq!(
+            shim.runc.calls_for("exec").len(),
+            1,
+            "no second process is spawned"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_exited_exec() {
+        let mut shim = TestShim::new().await;
+        shim.start_container("exec-rerun").await;
+        let exec_pid = shim.start_exec("exec-rerun", "e1").await;
+        shim.exit_process(exec_pid, 7).await;
+
+        let err = shim
+            .task
+            .start(&ctx(), start_request("exec-rerun", "e1"))
+            .await
+            .expect_err("starting an exited exec should fail");
+        assert_eq!(code_of(&err), Some(Code::FAILED_PRECONDITION));
+        assert_eq!(shim.runc.calls_for("exec").len(), 1);
+
+        // The exec keeps its one exit record, so Wait still reports it.
+        let resp = shim
+            .task
+            .wait(&ctx(), wait_request("exec-rerun", "e1"))
+            .await
+            .expect("wait after rejected start");
+        assert_eq!(resp.exit_status, 7);
+    }
+
     // ===========================================================================
     // Delete
     // ===========================================================================
