@@ -439,17 +439,20 @@ impl Task for TaskService {
         let exec_id = Some(req.exec_id.as_str()).filter(|id| !id.is_empty());
         let wait_rx = {
             let mut container = self.container_mut(req.id()).await?;
-            let state = container.state(exec_id).await?;
-            if state.status() != Status::RUNNING && state.status() != Status::CREATED {
+            // Only the process's own exit record says it has exited; pausing
+            // does not, though `Container::state` reports the init's PAUSED
+            // status for every process. Answering an exited process here,
+            // under the lock, also keeps a Delete that races the re-read
+            // below from turning the answer into NOT_FOUND.
+            let (_, code, exited_at) = container.get_exit_info(exec_id).await?;
+            if exited_at.is_some() {
                 let mut resp = WaitResponse::new();
-                resp.exit_status = state.exit_status;
-                resp.exited_at = state.exited_at;
+                resp.set_exit_status(code as u32);
+                resp.set_exited_at(convert_to_timestamp(exited_at));
                 info!("Wait request for {:?} returns {:?}", req, &resp);
                 return Ok(resp);
             }
-            container
-                .wait_channel(Some(req.exec_id()).filter(|id| !id.is_empty()))
-                .await?
+            container.wait_channel(exec_id).await?
         };
 
         wait_rx.await.unwrap_or_default();
@@ -1114,6 +1117,79 @@ mod tests {
         }
     }
 
+    /// Checks that waits on the init and on exec "e1" of the paused container
+    /// `id` block until each process itself exits, and return its exit code.
+    async fn assert_wait_blocks_while_paused(
+        shim: &mut TestShim,
+        id: &str,
+        pid: i32,
+        exec_pid: i32,
+    ) {
+        let spawn_wait = |exec_id: &'static str| {
+            let task = shim.task.clone();
+            let req = wait_request(id, exec_id);
+            tokio::spawn(async move { task.wait(&ctx(), req).await })
+        };
+        let mut init_waiter = spawn_wait("");
+        let mut exec_waiter = spawn_wait("e1");
+        for waiter in [&mut init_waiter, &mut exec_waiter] {
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), waiter)
+                    .await
+                    .is_err(),
+                "wait returned while the task was only paused"
+            );
+        }
+
+        async fn exit_status(
+            waiter: tokio::task::JoinHandle<ttrpc::Result<containerd_shim::api::WaitResponse>>,
+        ) -> u32 {
+            let resp = tokio::time::timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("a waiter was never woken after the process exited")
+                .expect("waiter task panicked")
+                .expect("wait should succeed");
+            assert!(resp.exited_at.is_some());
+            resp.exit_status
+        }
+
+        // The exec's waiter wakes on the exec's own exit; the init's waits on.
+        shim.exit_process(exec_pid, 5).await;
+        assert_eq!(exit_status(exec_waiter).await, 5);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut init_waiter)
+                .await
+                .is_err(),
+            "the init's wait returned when only the exec exited"
+        );
+
+        shim.exit_process(pid, 9).await;
+        assert_eq!(exit_status(init_waiter).await, 9);
+    }
+
+    /// A paused task reports PAUSED for every process, but that is not an exit:
+    /// a wait must block until the process really exits.
+    #[tokio::test]
+    async fn wait_while_paused() {
+        let mut shim = TestShim::new().await;
+        let pid = shim.start_container("paused-wait").await;
+        let exec_pid = shim.start_exec("paused-wait", "e1").await;
+
+        // Set the status directly rather than through `pause`, which is
+        // Linux-only, so this runs on every platform. `wait_while_paused_rpc`
+        // pauses through the RPC.
+        shim.task
+            .containers
+            .write()
+            .await
+            .get_mut("paused-wait")
+            .expect("container")
+            .init
+            .state = Status::PAUSED;
+
+        assert_wait_blocks_while_paused(&mut shim, "paused-wait", pid, exec_pid).await;
+    }
+
     #[tokio::test]
     async fn state_after_exit() {
         let mut shim = TestShim::new().await;
@@ -1576,6 +1652,30 @@ mod tests {
                 .unwrap_or_else(|e| panic!("state({:?}): {}", exec_id, e));
             assert_eq!(resp.status(), Status::RUNNING);
         }
+    }
+
+    /// `wait_while_paused`, pausing through the `Pause` RPC.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn wait_while_paused_rpc() {
+        use containerd_shim::api::PauseRequest;
+
+        let mut shim = TestShim::new().await;
+        let pid = shim.start_container("paused-rpc").await;
+        let exec_pid = shim.start_exec("paused-rpc", "e1").await;
+
+        shim.task
+            .pause(
+                &ctx(),
+                PauseRequest {
+                    id: "paused-rpc".to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("pause");
+
+        assert_wait_blocks_while_paused(&mut shim, "paused-rpc", pid, exec_pid).await;
     }
 
     #[cfg(not(target_os = "linux"))]
