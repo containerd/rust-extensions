@@ -170,6 +170,19 @@ async fn monitor_oom(id: &String, pid: u32, tx: EventSender) -> Result<()> {
     Ok(())
 }
 
+/// Publishes TaskOOM for container `id` whenever a process in the cgroup v2
+/// group of `pid` is OOM-killed. Exec processes share that cgroup, so this is
+/// registered once per container.
+#[cfg(target_os = "linux")]
+async fn monitor_oom_v2(id: &str, pid: u32, tx: EventSender) -> Result<()> {
+    let cgroup_path = cgroup_memory::get_cgroup2_path(pid).await?;
+    let rx = cgroup_memory::register_memory_event_v2(id, &cgroup_path)
+        .await
+        .map_err(other_error!("register_memory_event_v2 failed:"))?;
+    run_oom_monitor(rx, id.to_string(), tx);
+    Ok(())
+}
+
 #[async_trait]
 impl Task for TaskService {
     async fn state(&self, _ctx: &TtrpcContext, req: StateRequest) -> TtrpcResult<StateResponse> {
@@ -198,6 +211,18 @@ impl Task for TaskService {
             containers.insert(id.to_string(), container);
             pid
         };
+
+        // Watch for OOM kills on cgroup v2 from Create, as the Go shim does: on
+        // a normal create the init process is already in the container's cgroup
+        // but hasn't run the container's program yet, so an OOM kill right after
+        // Start can't be missed. cgroup v1 is watched from Start (the Go shim
+        // watches it from Create too).
+        #[cfg(target_os = "linux")]
+        if is_cgroup2_unified_mode()
+            && let Err(e) = monitor_oom_v2(id, pid, self.tx.clone()).await
+        {
+            error!("monitor_oom_v2 for {} failed: {:?}.", id, e);
+        }
 
         self.send_event(TaskCreate {
             container_id: req.id.to_string(),
@@ -576,6 +601,8 @@ mod tests {
         ps_pids: Vec<usize>,
         /// stderr to fail with, keyed by subcommand.
         failures: HashMap<String, String>,
+        /// Pid `create` reports, instead of a fake one.
+        create_pid: Option<i32>,
     }
 
     /// A [`Spawner`] that records invocations and simulates the side effects the
@@ -596,6 +623,12 @@ mod tests {
                 .unwrap()
                 .failures
                 .insert(subcommand.to_string(), stderr.to_string());
+        }
+
+        /// Makes `create` report `pid` as the container's init.
+        #[cfg(target_os = "linux")]
+        fn set_create_pid(&self, pid: i32) {
+            self.state.lock().unwrap().create_pid = Some(pid);
         }
 
         /// Sets what `runc ps` reports.
@@ -655,13 +688,16 @@ mod tests {
             let subcommand = tail_from_subcommand(&argv)[0].clone();
             let pid_file = flag_value(&argv, "--pid-file");
 
-            let failure = {
+            let (failure, create_pid) = {
                 let mut state = self.state.lock().unwrap();
                 let failure = state.failures.get(&subcommand).cloned();
                 state.calls.push(argv);
-                failure
+                (failure, state.create_pid)
             };
-            let pid = next_fake_pid();
+            let pid = match create_pid {
+                Some(pid) if subcommand == "create" => pid,
+                _ => next_fake_pid(),
+            };
 
             if let Some(stderr) = failure {
                 // Exit code 1. `launch_io` turns any non-success status into
@@ -1384,6 +1420,78 @@ mod tests {
                 "/tasks/exec-started",
             ]
         );
+    }
+
+    /// On cgroup v2, an OOM kill of the init between Create and Start publishes
+    /// TaskOOM: the watch starts in Create. The init is the cgroup's only
+    /// process, so the kill also empties the cgroup.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn oom_event_cgroup_v2_before_start() {
+        use cgroups_rs::fs::hierarchies::is_cgroup2_unified_mode;
+        use containerd_shim::protos::events::task::TaskOOM;
+
+        use crate::cgroup_memory::tests::{exec_oom, oom_test_cgroup, spawn_sh_in};
+
+        if !is_cgroup2_unified_mode() {
+            return;
+        }
+        let Some(cg) = oom_test_cgroup("task_oom_event_cgroup_v2_before_start") else {
+            return;
+        };
+        let mut init = spawn_sh_in(&cg);
+
+        let mut shim = TestShim::new().await;
+        shim.runc.set_create_pid(init.id().unwrap() as i32);
+        shim.task
+            .create(&ctx(), shim.create_request("oom"))
+            .await
+            .expect("create container");
+
+        exec_oom(&mut init).await;
+        let oom = shim.await_event::<TaskOOM>("/tasks/oom").await;
+        assert_eq!(oom.container_id, "oom");
+
+        cg.delete().unwrap();
+    }
+
+    /// On cgroup v2, an OOM kill after Start publishes exactly one TaskOOM.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn oom_event_cgroup_v2() {
+        use cgroups_rs::fs::hierarchies::is_cgroup2_unified_mode;
+        use containerd_shim::protos::events::task::TaskOOM;
+
+        use crate::cgroup_memory::tests::{exec_oom, oom_test_cgroup, spawn_sh_in};
+
+        if !is_cgroup2_unified_mode() {
+            return;
+        }
+        let Some(cg) = oom_test_cgroup("task_oom_event_cgroup_v2") else {
+            return;
+        };
+        let mut init = spawn_sh_in(&cg);
+
+        let mut shim = TestShim::new().await;
+        shim.runc.set_create_pid(init.id().unwrap() as i32);
+        shim.task
+            .create(&ctx(), shim.create_request("oom"))
+            .await
+            .expect("create container");
+        shim.task
+            .start(&ctx(), start_request("oom", ""))
+            .await
+            .expect("start container");
+
+        exec_oom(&mut init).await;
+        let oom = shim.await_event::<TaskOOM>("/tasks/oom").await;
+        assert_eq!(oom.container_id, "oom");
+
+        // No second event, e.g. from registering in both Create and Start.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!shim.event_topics().contains(&"/tasks/oom".to_string()));
+
+        cg.delete().unwrap();
     }
 
     // ===========================================================================
