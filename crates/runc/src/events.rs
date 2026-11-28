@@ -63,8 +63,9 @@ pub struct Stats {
     pub pids: Pids,
     #[serde(rename = "blkio")]
     pub block_io: BlkIO,
+    /// Hugetlb stats keyed by page size, such as "2MB" or "1GB"
     #[serde(rename = "hugetlb")]
-    pub huge_tlb: HugeTLB,
+    pub huge_tlb: HashMap<String, HugeTLB>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,7 +138,14 @@ pub struct CpuUsage {
     /// Total CPU time consumed
     pub total: Option<u64>,
     /// Total CPU time consumed per core
+    #[serde(rename = "percpu")]
     pub per_cpu: Option<Vec<u64>>,
+    /// CPU time consumed per core in kernel mode
+    #[serde(rename = "percpu_kernel")]
+    pub per_cpu_kernel: Option<Vec<u64>>,
+    /// CPU time consumed per core in user mode
+    #[serde(rename = "percpu_user")]
+    pub per_cpu_user: Option<Vec<u64>>,
     /// Total CPU time consumed in kernel mode
     pub kernel: u64,
     /// Total CPU time consumed in user mode
@@ -146,7 +154,7 @@ pub struct CpuUsage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cpu {
-    pub usage: Option<u64>,
+    pub usage: Option<CpuUsage>,
     pub throttling: Option<Throttling>,
 }
 
@@ -178,4 +186,90 @@ pub struct Memory {
     pub kernel_tcp: Option<MemoryEntry>,
     /// Raw stats of memory
     pub raw: Option<HashMap<String, u64>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `runc events --stats` from runc 1.6.0 on cgroup v2. The container had no
+    // CPU limit and did no block IO, so runc leaves out cpu.throttling, the
+    // percpu fields, memory.kernel, memory.swap.max and every blkio list.
+    #[test]
+    fn stats_event() {
+        let j = include_str!("../testdata/runc-1.6.0/events-stats.json");
+        let e: Event = serde_json::from_str(j).unwrap();
+        assert!(matches!(e.event_type, EventType::Stats));
+        assert_eq!(e.id, "withann");
+        let s = e.stats.unwrap();
+
+        let usage = s.cpu.usage.unwrap();
+        assert_eq!(usage.total, Some(134491000));
+        assert_eq!(usage.kernel, 134491000);
+        assert_eq!(usage.user, 0);
+        assert!(usage.per_cpu.is_none());
+        assert!(usage.per_cpu_kernel.is_none());
+        assert!(usage.per_cpu_user.is_none());
+        assert!(s.cpu.throttling.is_none());
+
+        let mem = s.memory.usage.unwrap();
+        assert_eq!(mem.limit, u64::MAX);
+        assert_eq!(mem.usage, Some(974848));
+        assert_eq!(mem.max, Some(4931584));
+        assert_eq!(mem.fail_count, 0);
+        let swap = s.memory.swap.unwrap();
+        assert_eq!(swap.usage, Some(974848));
+        assert!(swap.max.is_none());
+        assert!(s.memory.kernel.is_none());
+        assert!(s.memory.kernel_tcp.is_none());
+        assert!(s.memory.cache.is_none());
+        assert_eq!(s.memory.raw.unwrap()["anon"], 204800);
+
+        assert_eq!(s.pids.current, Some(2));
+        assert!(s.pids.limit.is_none());
+
+        assert!(s.block_io.io_service_bytes_recursive.is_none());
+
+        assert_eq!(s.huge_tlb.len(), 2);
+        for size in ["2MB", "1GB"] {
+            let h = &s.huge_tlb[size];
+            assert!(h.usage.is_none());
+            assert!(h.max.is_none());
+            assert_eq!(h.fail_count, 0);
+        }
+    }
+
+    // runc only fills the percpu fields on cgroup v1 and the throttling counters
+    // when a CPU limit is hit, so the cgroup v2 fixture above has none of them.
+    // This one is written by hand from the JSON tags in runc's types/events.go.
+    #[test]
+    fn cpu_percpu_and_throttling() {
+        let j = r#"{
+            "usage": {
+                "total": 300,
+                "percpu": [100, 200],
+                "percpu_kernel": [10, 20],
+                "percpu_user": [90, 180],
+                "kernel": 30,
+                "user": 270
+            },
+            "throttling": {
+                "periods": 5,
+                "throttledPeriods": 2,
+                "throttledTime": 1000
+            }
+        }"#;
+        let cpu: Cpu = serde_json::from_str(j).unwrap();
+        let usage = cpu.usage.unwrap();
+        assert_eq!(usage.total, Some(300));
+        assert_eq!(usage.per_cpu, Some(vec![100, 200]));
+        assert_eq!(usage.per_cpu_kernel, Some(vec![10, 20]));
+        assert_eq!(usage.per_cpu_user, Some(vec![90, 180]));
+        assert_eq!(usage.kernel, 30);
+        assert_eq!(usage.user, 270);
+        let t = cpu.throttling.unwrap();
+        assert_eq!(t.periods, Some(5));
+        assert_eq!(t.throtted_periods, Some(2));
+        assert_eq!(t.throtted_time, Some(1000));
+    }
 }
