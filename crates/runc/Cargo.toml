@@ -23,7 +23,7 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 tempfile.workspace = true
 thiserror.workspace = true
-time = { workspace = true, features = ["serde", "std"] }
+time = { workspace = true, features = ["serde", "std", "formatting", "parsing"] }
 
 # Async dependencies
 async-trait = { workspace = true, optional = true }

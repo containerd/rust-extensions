@@ -1,0 +1,10 @@
+{
+  "ociVersion": "1.3.0",
+  "id": "stopped",
+  "pid": 0,
+  "status": "stopped",
+  "bundle": "/b/stopped",
+  "rootfs": "/rootfs",
+  "created": "2026-11-28T06:34:42.672342222Z",
+  "owner": ""
+}
