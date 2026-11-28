@@ -521,16 +521,53 @@ mod tests {
         let path = "\\\\.\\pipe\\test-pipe-requeue-limit".to_string();
         let (tx, rx) = mpsc::channel();
         let (server, publisher) = connected_publisher(&path, &tx, &rx);
-
-        // containerd stays down for longer than the retries take: the event is dropped.
         stop_server(server, &path);
-        assert!(publish_oom(&publisher, "dropped").is_err());
-        // Restart before a 6th retry would be due.
-        std::thread::sleep(retry_window() + RETRY_DELAY * 4);
 
-        let server = start_server(&path, &tx);
-        assert!(rx.recv_timeout(RETRY_DELAY * 10).is_err());
-        server.shutdown();
+        // On unix, count the tries: each one reconnects once, to a listener that closes the
+        // connection at once. On Windows, the test only checks that the retries end.
+        #[cfg(unix)]
+        let (stop, accepts, acceptor) = {
+            let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let stop = Arc::new(AtomicBool::new(false));
+            let accepts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let (stop2, accepts2) = (stop.clone(), accepts.clone());
+            let acceptor = std::thread::spawn(move || {
+                while !stop2.load(Ordering::SeqCst) {
+                    match listener.accept() {
+                        Ok(_) => {
+                            accepts2.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(5))
+                        }
+                        Err(e) => panic!("accept: {e}"),
+                    }
+                }
+            });
+            (stop, accepts, acceptor)
+        };
+
+        assert!(publish_oom(&publisher, "dropped").is_err());
+        // The retry thread exits once the publisher is dropped and the event is dropped too.
+        let inner = Arc::downgrade(&publisher.inner);
+        drop(publisher);
+        let start = Instant::now();
+        while inner.upgrade().is_some() {
+            assert!(
+                start.elapsed() < Duration::from_secs(20),
+                "event still being retried"
+            );
+            std::thread::sleep(RETRY_DELAY);
+        }
+
+        #[cfg(unix)]
+        {
+            stop.store(true, Ordering::SeqCst);
+            acceptor.join().unwrap();
+            // The reconnect in publish(), then one per retry.
+            assert_eq!(accepts.load(Ordering::SeqCst), 1 + MAX_REQUEUE);
+        }
     }
 
     #[test]
