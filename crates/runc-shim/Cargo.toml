@@ -50,5 +50,5 @@ ignored = ["libc"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs.workspace = true
-nix = { workspace = true, features = ["event"] }
+nix = { workspace = true, features = ["event", "inotify"] }
 tokio-eventfd = "0.2.2"
